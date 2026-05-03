@@ -1,5 +1,5 @@
 defmodule Twelvgaige.BreechFileStoreTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Twelvgaige.Breech
   alias Twelvgaige.Round.Snapshot
