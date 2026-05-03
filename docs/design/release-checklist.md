@@ -11,7 +11,10 @@ This checklist gates the current local single-node CLI release. It assumes Twelv
 - Provider adapters: Anthropic, OpenAI, Gemini, and Ollama with offline fixture coverage.
 - Kubernetes support: structured `kubectl` tools with fake-runner tests and opt-in live smoke tests.
 - Distribution: source-built escript, native Mix release tarball, and Burrito single-file executable for the target OS/architecture.
-- Package targets emit `artifacts/BUILD-METADATA.txt` and `artifacts/SHA256SUMS`; verify both are uploaded with release artifacts before publishing.
+- Package targets emit `artifacts/BUILD-METADATA.txt` and `artifacts/SHA256SUMS`.
+  The GitHub release workflow stages a flat asset directory, prefixes duplicate
+  metadata filenames with the build artifact name, and uploads a top-level
+  `RELEASE-SHA256SUMS`.
 
 Not release blockers for this target:
 

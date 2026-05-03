@@ -109,6 +109,7 @@ Anthropic, OpenAI, Gemini, and Ollama setup.
 - [Use cases](docs/use-cases.md)
 - [Release flow](docs/release.md)
 - [Design spec](docs/design/spec.md)
+- [Shot authoring and management plan](docs/design/shot-authoring-management-plan.md)
 - [Release checklist](docs/design/release-checklist.md)
 
 ## License

@@ -54,3 +54,9 @@ Pushing a `v*` tag starts `.github/workflows/release.yml`. That workflow builds:
 - SHA-256 checksums.
 
 The workflow then creates or updates the GitHub Release for the tag.
+
+Release assets are staged into a flat `release-assets/` directory before
+upload. GitHub Release assets share one filename namespace, so per-job metadata
+files such as `BUILD-METADATA.txt` and `SHA256SUMS` are renamed with their
+artifact prefix. The publish job also emits one top-level `RELEASE-SHA256SUMS`
+for the staged assets.

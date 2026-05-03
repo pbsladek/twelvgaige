@@ -150,11 +150,12 @@ jobs:
         with:
           path: dist
 
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Stage release assets
         run: |
           set -euo pipefail
+
+          rm -rf release-assets
+          mkdir -p release-assets
 
           mapfile -d '' files < <(find dist -type f -print0)
           if [ "${#files[@]}" -eq 0 ]; then
@@ -162,8 +163,64 @@ jobs:
             exit 1
           fi
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
-          else
-            gh release create "$RELEASE_TAG" "${files[@]}" --verify-tag --generate-notes
+          for file in "${files[@]}"; do
+            rel="${file#dist/}"
+            artifact="${rel%%/*}"
+            base="$(basename "$file")"
+
+            case "$base" in
+              BUILD-METADATA.txt|SHA256SUMS)
+                target="${artifact}-${base}"
+                ;;
+              *)
+                target="$base"
+                if [ -e "release-assets/$target" ]; then
+                  target="${artifact}-${base}"
+                fi
+                ;;
+            esac
+
+            cp "$file" "release-assets/$target"
+          done
+
+          (
+            cd release-assets
+            rm -f RELEASE-SHA256SUMS
+            find . -maxdepth 1 -type f ! -name RELEASE-SHA256SUMS -print0 \
+              | sort -z \
+              | xargs -0 sha256sum > RELEASE-SHA256SUMS
+          )
+
+          find release-assets -maxdepth 1 -type f | sort
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f -print0)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "no release assets found" >&2
+            exit 1
           fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "release $RELEASE_TAG already exists; uploading assets"
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG"
+          fi
+
+          gh release delete-asset "$RELEASE_TAG" BUILD-METADATA.txt --yes >/dev/null 2>&1 || true
+          gh release delete-asset "$RELEASE_TAG" SHA256SUMS --yes >/dev/null 2>&1 || true
+
+          for attempt in 1 2 3; do
+            if gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber; then
+              exit 0
+            fi
+
+            echo "release asset upload failed on attempt $attempt" >&2
+            sleep $((attempt * 5))
+          done
+
+          exit 1
