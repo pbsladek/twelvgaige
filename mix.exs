@@ -4,7 +4,7 @@ defmodule Twelvgaige.MixProject do
   def project do
     [
       app: :twelvgaige,
-      version: "0.0.1",
+      version: "0.0.2",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
