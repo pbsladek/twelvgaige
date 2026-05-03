@@ -1,0 +1,13 @@
+/_build/
+/artifacts/
+/burrito_out/
+/cover/
+/deps/
+/doc/
+/rel/
+/packaging/mix_release_overlay/
+/packaging/mix_release_overlays/
+/twelvgaige
+/.elixir_ls/
+*.ez
+*.beam

@@ -1,0 +1,12 @@
+kind: workflow
+id: safety_simple
+version: 1.0.0
+shots:
+  - id: approval
+    kind: safety
+    description: "Approve foreground run"
+  - id: after
+    kind: slug
+    agent: mock_agent
+    depends_on: [approval]
+    prompt: "run after approval"

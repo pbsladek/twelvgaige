@@ -1,0 +1,167 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish, for example v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  package:
+    name: mix package (${{ matrix.suffix }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            suffix: linux-x86_64
+          - os: macos-14
+            suffix: macos-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
+        with:
+          otp-version: "28"
+          elixir-version: "1.19.5"
+
+      - name: Cache Mix
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-release-mix-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-release-mix-
+
+      - name: Build and smoke package artifacts
+        run: make package ARTIFACT_SUFFIX=${{ matrix.suffix }}
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: twelvgaige-package-${{ matrix.suffix }}
+          path: artifacts/**
+          if-no-files-found: error
+
+  burrito:
+    name: burrito (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+            smoke: true
+          - os: ubuntu-latest
+            target: linux_arm64
+            smoke: false
+          - os: ubuntu-latest
+            target: windows
+            smoke: false
+          - os: macos-13
+            target: macos
+            smoke: true
+          - os: macos-14
+            target: macos_silicon
+            smoke: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
+        with:
+          otp-version: "28.4"
+          elixir-version: "1.19.5"
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29
+        with:
+          version: "0.15.2"
+
+      - name: Install Burrito host tools on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xz-utils p7zip-full
+
+      - name: Install Burrito host tools on macOS
+        if: runner.os == 'macOS'
+        run: brew install xz p7zip
+
+      - name: Cache Mix
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-release-burrito-${{ matrix.target }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-release-burrito-${{ matrix.target }}-
+
+      - name: Build Burrito executable
+        run: make burrito BURRITO_TARGET=${{ matrix.target }}
+
+      - name: Smoke host-runnable Burrito executable
+        if: matrix.smoke
+        run: make burrito-smoke-only BURRITO_TARGET=${{ matrix.target }}
+
+      - name: Package Burrito executable
+        run: make package-burrito-artifact BURRITO_TARGET=${{ matrix.target }}
+
+      - name: Upload Burrito artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: twelvgaige-burrito-${{ matrix.target }}
+          path: artifacts/**
+          if-no-files-found: error
+
+  publish:
+    name: publish GitHub release
+    runs-on: ubuntu-latest
+    needs:
+      - package
+      - burrito
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          path: dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mapfile -d '' files < <(find dist -type f -print0)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "no release files found" >&2
+            exit 1
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${files[@]}" --verify-tag --generate-notes
+          fi

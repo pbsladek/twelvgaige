@@ -1,0 +1,7 @@
+kind: agent
+id: mock_agent
+name: Mock Agent
+version: 1.0.0
+provider: mock
+model: mock-model
+system_prompt: Run the mock shot.

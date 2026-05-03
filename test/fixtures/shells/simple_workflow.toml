@@ -1,0 +1,17 @@
+kind = "workflow"
+id = "simple"
+name = "Simple Workflow"
+version = "1.0.0"
+
+[[shots]]
+id = "first"
+kind = "slug"
+agent = "mock_agent"
+prompt = "first prompt"
+
+[[shots]]
+id = "second"
+kind = "slug"
+agent = "mock_agent"
+depends_on = ["first"]
+prompt = "second prompt"
