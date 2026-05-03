@@ -64,6 +64,16 @@ defmodule Twelvgaige.Breech.IPC.Server do
     end
   end
 
+  @spec child_spec([start_option()]) :: Supervisor.child_spec()
+  def child_spec(opts) do
+    %{
+      id: Keyword.get(opts, :id, __MODULE__),
+      start: {__MODULE__, :start_link, [opts]},
+      restart: :transient,
+      type: :worker
+    }
+  end
+
   @spec port(GenServer.server()) :: :inet.port_number()
   def port(server), do: GenServer.call(server, :port)
 

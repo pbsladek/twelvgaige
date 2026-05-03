@@ -405,7 +405,8 @@ defmodule Twelvgaige.Breech.IPCTest do
     server =
       start_supervised!(%{
         id: {:ipc_server, path},
-        start: {Server, :start_link, [[port: 0, endpoint_path: path, lock_path: lock_path]]}
+        start: {Server, :start_link, [[port: 0, endpoint_path: path, lock_path: lock_path]]},
+        restart: :temporary
       })
 
     assert {:ok, owner} = Lock.read_owner(lock_path)
@@ -435,7 +436,8 @@ defmodule Twelvgaige.Breech.IPCTest do
       start_supervised!(%{
         id: {:ipc_stop_server, endpoint_path},
         start:
-          {Server, :start_link, [[port: 0, endpoint_path: endpoint_path, lock_path: lock_path]]}
+          {Server, :start_link, [[port: 0, endpoint_path: endpoint_path, lock_path: lock_path]]},
+        restart: :temporary
       })
 
     ref = Process.monitor(server)
@@ -462,7 +464,8 @@ defmodule Twelvgaige.Breech.IPCTest do
           id: {:unix_ipc_server, socket_path},
           start:
             {Server, :start_link,
-             [[transport: :unix, socket_path: socket_path, endpoint_path: endpoint_path]]}
+             [[transport: :unix, socket_path: socket_path, endpoint_path: endpoint_path]]},
+          restart: :temporary
         })
 
       assert Server.address(server) == {:unix, socket_path}

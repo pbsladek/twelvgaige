@@ -325,7 +325,8 @@ defmodule Twelvgaige.CLI.CommandsTest do
         id: {:cli_stop_server, endpoint_path},
         start:
           {Twelvgaige.Breech.IPC.Server, :start_link,
-           [[port: 0, endpoint_path: endpoint_path, lock_path: lock_path]]}
+           [[port: 0, endpoint_path: endpoint_path, lock_path: lock_path]]},
+        restart: :temporary
       })
 
     ref = Process.monitor(server)
