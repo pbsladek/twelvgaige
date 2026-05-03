@@ -35,6 +35,27 @@ defmodule Twelvgaige.Security.FileModeTest do
     end)
   end
 
+  @tag :posix_only
+  test "allows files in existing sticky shared parents without chmoding the parent" do
+    posix_only(fn ->
+      parent = tmp_dir!()
+      File.chmod!(parent, 0o755)
+
+      assert :ok = FileMode.ensure_private_parent_dir(Path.join(parent, "store.sqlite3"))
+      assert mode(parent) == 0o755
+    end)
+  end
+
+  @tag :posix_only
+  test "creates missing file parent directories as private" do
+    posix_only(fn ->
+      parent = Path.join(tmp_dir!(), "state")
+
+      assert :ok = FileMode.ensure_private_parent_dir(Path.join(parent, "store.sqlite3"))
+      assert mode(parent) == 0o700
+    end)
+  end
+
   defp mode(path) do
     {:ok, %{mode: mode}} = File.stat(path)
     mode &&& 0o777

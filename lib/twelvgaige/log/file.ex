@@ -26,9 +26,7 @@ defmodule Twelvgaige.Log.File do
   def write_line(_path, _line, _max_bytes), do: {:error, :invalid_log_path}
 
   defp ensure_parent(path) do
-    path
-    |> Path.dirname()
-    |> FileMode.ensure_private_dir()
+    FileMode.ensure_private_parent_dir(path)
   end
 
   defp enforce_retention(_path, _line, nil), do: :ok

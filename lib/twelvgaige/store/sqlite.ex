@@ -196,7 +196,7 @@ defmodule Twelvgaige.Store.SQLite do
     path = opts |> Keyword.fetch!(:path) |> Path.expand()
 
     with :ok <- preload_external_term_atoms(),
-         :ok <- FileMode.ensure_private_dir(Path.dirname(path)),
+         :ok <- FileMode.ensure_private_parent_dir(path),
          {:ok, repo_pid} <- start_repo(path, opts),
          :ok <- configure_connection(opts),
          :ok <- ensure_schema(),

@@ -51,6 +51,30 @@ defmodule Twelvgaige.Store.SQLiteTest do
     end)
   end
 
+  @tag :posix_only
+  test "allows sqlite database directly in an existing shared parent", %{name: name} do
+    posix_only(fn ->
+      parent =
+        Path.join(
+          System.tmp_dir!(),
+          "twelvgaige_sqlite_shared_parent_#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(parent)
+      File.chmod!(parent, 0o755)
+      on_exit(fn -> File.rm_rf(parent) end)
+
+      path = Path.join(parent, "store.db")
+      start_supervised!({SQLiteStore, name: name, path: path})
+
+      snapshot = %{id: "round_1", status: :firing, version: 0}
+      assert :ok = GenServer.call(name, {:create_round, snapshot, %{}, []})
+
+      assert file_mode(parent) == 0o755
+      assert file_mode(path) == 0o600
+    end)
+  end
+
   test "persists and reloads rounds, manifests, transitions, and events", %{
     name: name,
     path: path

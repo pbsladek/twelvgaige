@@ -12,6 +12,7 @@ SMOKE_WORKFLOW_TOML := traphouse/workflows/simple.toml
 SMOKE_INPUT := '{}'
 SMOKE_BIN ?= ./$(APP)
 SMOKE_TMP ?= /tmp/$(APP)-smoke-$(ARTIFACT_SUFFIX)
+SMOKE_ENV ?=
 
 NATIVE_BIN := _build/prod/rel/$(NATIVE_RELEASE)/bin/$(APP)
 NATIVE_TARBALL := _build/prod/$(NATIVE_RELEASE)-$(VERSION).tar.gz
@@ -60,19 +61,19 @@ escript-smoke: escript
 smoke-shell-formats:
 	rm -rf $(SMOKE_TMP)
 	mkdir -p $(SMOKE_TMP)
-	$(SMOKE_BIN) version
-	$(SMOKE_BIN) shell validate $(SMOKE_WORKFLOW_YAML)
-	$(SMOKE_BIN) shell validate $(SMOKE_WORKFLOW_JSON)
-	$(SMOKE_BIN) shell validate $(SMOKE_WORKFLOW_TOML)
-	$(SMOKE_BIN) shell normalize $(SMOKE_WORKFLOW_TOML) --format json > $(SMOKE_TMP)/normalized.json
-	$(SMOKE_BIN) shell validate $(SMOKE_TMP)/normalized.json
-	$(SMOKE_BIN) shell convert $(SMOKE_WORKFLOW_YAML) --to toml > $(SMOKE_TMP)/converted.toml
-	$(SMOKE_BIN) shell validate $(SMOKE_TMP)/converted.toml
-	$(SMOKE_BIN) shell convert $(SMOKE_WORKFLOW_TOML) --to yaml > $(SMOKE_TMP)/converted.yaml
-	$(SMOKE_BIN) shell validate $(SMOKE_TMP)/converted.yaml
-	$(SMOKE_BIN) round run $(SMOKE_WORKFLOW_YAML) --input $(SMOKE_INPUT)
-	$(SMOKE_BIN) round run $(SMOKE_WORKFLOW_JSON) --input $(SMOKE_INPUT)
-	$(SMOKE_BIN) round run $(SMOKE_WORKFLOW_TOML) --input $(SMOKE_INPUT)
+	$(SMOKE_ENV) $(SMOKE_BIN) version
+	$(SMOKE_ENV) $(SMOKE_BIN) shell validate $(SMOKE_WORKFLOW_YAML)
+	$(SMOKE_ENV) $(SMOKE_BIN) shell validate $(SMOKE_WORKFLOW_JSON)
+	$(SMOKE_ENV) $(SMOKE_BIN) shell validate $(SMOKE_WORKFLOW_TOML)
+	$(SMOKE_ENV) $(SMOKE_BIN) shell normalize $(SMOKE_WORKFLOW_TOML) --format json > $(SMOKE_TMP)/normalized.json
+	$(SMOKE_ENV) $(SMOKE_BIN) shell validate $(SMOKE_TMP)/normalized.json
+	$(SMOKE_ENV) $(SMOKE_BIN) shell convert $(SMOKE_WORKFLOW_YAML) --to toml > $(SMOKE_TMP)/converted.toml
+	$(SMOKE_ENV) $(SMOKE_BIN) shell validate $(SMOKE_TMP)/converted.toml
+	$(SMOKE_ENV) $(SMOKE_BIN) shell convert $(SMOKE_WORKFLOW_TOML) --to yaml > $(SMOKE_TMP)/converted.yaml
+	$(SMOKE_ENV) $(SMOKE_BIN) shell validate $(SMOKE_TMP)/converted.yaml
+	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_YAML) --input $(SMOKE_INPUT)
+	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_JSON) --input $(SMOKE_INPUT)
+	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_TOML) --input $(SMOKE_INPUT)
 
 .PHONY: release
 release: deps
@@ -92,8 +93,8 @@ burrito-smoke: burrito burrito-smoke-only
 
 .PHONY: burrito-smoke-only
 burrito-smoke-only:
-	$(MAKE) smoke-shell-formats SMOKE_BIN=$(BURRITO_BIN) SMOKE_TMP=/tmp/$(APP)-burrito-smoke-$(BURRITO_TARGET)
-	TWELVGAIGE_STORE_SQLITE=/tmp/$(APP)-burrito-release-$(BURRITO_TARGET).sqlite3 $(BURRITO_BIN) round run $(SMOKE_WORKFLOW_TOML) --input $(SMOKE_INPUT)
+	$(MAKE) smoke-shell-formats SMOKE_BIN=$(BURRITO_BIN) SMOKE_TMP=/tmp/$(APP)-burrito-smoke-$(BURRITO_TARGET) SMOKE_ENV='TWELVGAIGE_INSTALL_DIR=/tmp/$(APP)-burrito-smoke-$(BURRITO_TARGET)/install'
+	TWELVGAIGE_INSTALL_DIR=/tmp/$(APP)-burrito-smoke-$(BURRITO_TARGET)/install TWELVGAIGE_STORE_SQLITE=/tmp/$(APP)-burrito-release-$(BURRITO_TARGET).sqlite3 $(BURRITO_BIN) round run $(SMOKE_WORKFLOW_TOML) --input $(SMOKE_INPUT)
 
 .PHONY: package-escript
 package-escript: escript-smoke

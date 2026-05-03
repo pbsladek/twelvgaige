@@ -26,6 +26,19 @@ defmodule Twelvgaige.Security.FileMode do
 
   def ensure_private_dir(_path), do: {:error, :invalid_path}
 
+  @spec ensure_private_parent_dir(Path.t()) :: :ok | {:error, term()}
+  def ensure_private_parent_dir(file_path) when is_binary(file_path) do
+    parent = file_path |> Path.expand() |> Path.dirname()
+
+    if File.dir?(parent) do
+      refuse_world_writable_parent(parent)
+    else
+      ensure_private_dir(parent)
+    end
+  end
+
+  def ensure_private_parent_dir(_file_path), do: {:error, :invalid_path}
+
   @spec ensure_private_file(Path.t()) :: :ok | {:error, term()}
   def ensure_private_file(path) when is_binary(path) do
     path = Path.expand(path)

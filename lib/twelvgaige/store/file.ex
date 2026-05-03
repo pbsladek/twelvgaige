@@ -51,7 +51,7 @@ defmodule Twelvgaige.Store.File do
   def init(opts) do
     path = opts |> Keyword.fetch!(:path) |> Path.expand()
 
-    with :ok <- FileMode.ensure_private_dir(Path.dirname(path)),
+    with :ok <- FileMode.ensure_private_parent_dir(path),
          {:ok, state} <- load_state(path) do
       state =
         state

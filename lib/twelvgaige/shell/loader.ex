@@ -9,12 +9,16 @@ defmodule Twelvgaige.Shell.Loader do
   alias Twelvgaige.Shell.Format.YAML, as: YAMLFormat
   alias Twelvgaige.Shell.Validation, as: V
 
-  @formats [YAMLFormat, JSONFormat, TOMLFormat]
+  @formats [
+    {YAMLFormat, [".yaml", ".yml"]},
+    {JSONFormat, [".json"]},
+    {TOMLFormat, [".toml"]}
+  ]
 
   @spec supported_extensions() :: [String.t()]
   def supported_extensions do
     @formats
-    |> Enum.flat_map(& &1.extensions())
+    |> Enum.flat_map(fn {_format, extensions} -> extensions end)
     |> Enum.uniq()
   end
 
@@ -185,7 +189,7 @@ defmodule Twelvgaige.Shell.Loader do
   defp format_for_path(path) do
     extension = path |> Path.extname() |> String.downcase()
 
-    Enum.find(@formats, &(extension in &1.extensions()))
+    Enum.find(@formats, fn {_format, extensions} -> extension in extensions end)
     |> case do
       nil ->
         V.error(:invalid_shell, "unsupported shell file extension", [], %{
@@ -194,7 +198,7 @@ defmodule Twelvgaige.Shell.Loader do
           supported_extensions: supported_extensions()
         })
 
-      format ->
+      {format, _extensions} ->
         {:ok, format}
     end
   end

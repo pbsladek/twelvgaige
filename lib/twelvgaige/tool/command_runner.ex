@@ -279,9 +279,9 @@ defmodule Twelvgaige.Tool.CommandRunner do
         ]
 
     {executable, port_args, process_group?} =
-      case System.find_executable("setsid") do
+      case waitable_setsid() do
         nil -> {env_binary, command_args, false}
-        setsid -> {setsid, [env_binary | command_args], true}
+        setsid -> {setsid, ["--wait", env_binary | command_args], true}
       end
 
     port_opts =
@@ -307,6 +307,18 @@ defmodule Twelvgaige.Tool.CommandRunner do
          retryable: true,
          details: %{binary: binary, reason: Exception.message(error)}
        )}
+  end
+
+  defp waitable_setsid do
+    with setsid when is_binary(setsid) <- System.find_executable("setsid"),
+         {help, _status} <- System.cmd(setsid, ["--help"], stderr_to_stdout: true),
+         true <- String.contains?(help, "--wait") do
+      setsid
+    else
+      _other -> nil
+    end
+  rescue
+    _error -> nil
   end
 
   defp port_os_pid(port) do
