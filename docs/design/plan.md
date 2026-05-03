@@ -1066,7 +1066,7 @@ Release gates and manual smoke checks are tracked in [`release-checklist.md`](re
 - Decide whether cleanup must require an audit export checkpoint before terminal round records are removed.
 - k3d is now the preferred disposable local Kubernetes live-test target. Existing kind, minikube, or dev-cluster contexts remain supported through `TWELVGAIGE_K8S_CONTEXT`.
 - Build and smoke-test Mix release bundles on Linux and Windows CI runners. Mix releases are target-specific; the macOS bundle does not validate Linux or Windows runtime behavior.
-- Build and smoke-test Burrito binaries on runners with Zig `0.15.2`, `xz`, and `7z`/`7zz` for Windows targets. macOS Apple Silicon host smoke is verified locally with Homebrew `zig@0.15` and `BURRITO_CUSTOM_ERTS_MACOS_SILICON`; remaining targets still need runner-native smoke coverage.
+- Build and smoke-test Burrito binaries on runners with Zig `0.15.2`, `xz`, and `7z`/`7zz` for Windows targets. macOS Apple Silicon host smoke is verified locally with Homebrew `zig@0.15` and `BURRITO_CUSTOM_ERTS_MACOS_SILICON`; Linux, Linux ARM64, and Windows targets still need runner-native smoke coverage.
 
 ## 26. One-Sentence Pitch
 

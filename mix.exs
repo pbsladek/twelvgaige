@@ -40,7 +40,6 @@ defmodule Twelvgaige.MixProject do
         steps: [:assemble, &Burrito.wrap/1],
         burrito: [
           targets: [
-            macos: burrito_target(:macos, :darwin, :x86_64),
             macos_silicon: burrito_target(:macos_silicon, :darwin, :aarch64),
             linux: burrito_target(:linux, :linux, :x86_64),
             linux_arm64: burrito_target(:linux_arm64, :linux, :aarch64),

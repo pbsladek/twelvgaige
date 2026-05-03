@@ -63,8 +63,8 @@ make burrito BURRITO_TARGET=macos_silicon
 ./burrito_out/twelvgaige_macos_silicon version
 ```
 
-Choose the target for the machine you are publishing to: `macos`,
-`macos_silicon`, `linux`, `linux_arm64`, or `windows`. Burrito needs Zig
+Choose the target for the machine you are publishing to: `macos_silicon`,
+`linux`, `linux_arm64`, or `windows`. Burrito needs Zig
 `0.15.2` and `xz` to build; Windows targets also need `7z` or `7zz`. The output
 is `burrito_out/twelvgaige_<target>` or `burrito_out/twelvgaige_<target>.exe`.
 Run it like the normal CLI:
@@ -83,8 +83,8 @@ BURRITO_CUSTOM_ERTS_MACOS_SILICON="$(elixir -e 'IO.puts(:code.root_dir())')" \
 make package-burrito-smoke BURRITO_TARGET=macos_silicon
 ```
 
-The target-specific variables are `BURRITO_CUSTOM_ERTS_MACOS`,
-`BURRITO_CUSTOM_ERTS_MACOS_SILICON`, `BURRITO_CUSTOM_ERTS_LINUX`,
+The target-specific variables are `BURRITO_CUSTOM_ERTS_MACOS_SILICON`,
+`BURRITO_CUSTOM_ERTS_LINUX`,
 `BURRITO_CUSTOM_ERTS_LINUX_ARM64`, and `BURRITO_CUSTOM_ERTS_WINDOWS`.
 `BURRITO_CUSTOM_ERTS` applies to every target. Only use a custom ERTS that
 matches the target OS and architecture. On macOS with newer SDKs, Homebrew's
@@ -95,7 +95,7 @@ GitHub workflows live in `.github/workflows`:
 - `ci.yml`: formatter, compile, normal tests, persistence tests.
 - `build.yml`: smoke-builds escript, Mix release artifacts, and Burrito
   executables. Burrito runs as a multi-platform matrix for `linux`,
-  `linux_arm64`, `windows`, `macos`, and `macos_silicon`.
+  `linux_arm64`, `windows`, and `macos_silicon`.
 - `release.yml`: publishes tag/manual release artifacts. Burrito binaries are
   the primary multi-platform release artifacts.
 

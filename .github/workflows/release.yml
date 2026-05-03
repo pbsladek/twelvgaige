@@ -76,9 +76,6 @@ jobs:
           - os: ubuntu-latest
             target: windows
             smoke: false
-          - os: macos-13
-            target: macos
-            smoke: true
           - os: macos-14
             target: macos_silicon
             smoke: true

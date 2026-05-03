@@ -95,8 +95,8 @@ target names, or the global `BURRITO_CUSTOM_ERTS`. The custom ERTS must match
 the target OS and architecture. On macOS with newer SDKs, prefer Homebrew's
 patched `zig@0.15` if the upstream Zig binary fails during wrapper linking.
 
-Target names are `macos`, `macos_silicon`, `linux`, `linux_arm64`, and
-`windows`. Burrito outputs `burrito_out/twelvgaige_<target>` or
+Target names are `macos_silicon`, `linux`, `linux_arm64`, and `windows`.
+Burrito outputs `burrito_out/twelvgaige_<target>` or
 `burrito_out/twelvgaige_<target>.exe`. Use `make package-burrito-smoke` only
 for host-runnable targets; cross-built targets should use `make package-burrito`
 and be smoke-tested on native or emulated runners.
