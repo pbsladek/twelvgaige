@@ -35,10 +35,10 @@ For a quick local smoke test, use the runnable traphouse examples:
 
 ```bash
 mix escript.build
-./twelvgaige shell validate traphouse/workflows/simple.yaml
-./twelvgaige shell validate traphouse/workflows/simple.json
-./twelvgaige shell validate traphouse/workflows/simple.toml
-./twelvgaige round run traphouse/workflows/simple.toml
+./twelvgaige shell validate docs/traphouse/workflows/simple.yaml
+./twelvgaige shell validate docs/traphouse/workflows/simple.json
+./twelvgaige shell validate docs/traphouse/workflows/simple.toml
+./twelvgaige round run docs/traphouse/workflows/simple.toml
 ```
 
 Those shells use the `mock` provider, so they never call a live LLM.

@@ -21,7 +21,7 @@ Why Twelvgaige helps:
 - Approval is a workflow node, not a model suggestion.
 - Watch and audit streams give operators a live view and a record.
 
-See [Kubernetes Incident Response](../traphouse/drills/kubernetes-incident-response.md).
+See [Kubernetes Incident Response](traphouse/drills/kubernetes-incident-response.md).
 
 ## Release Readiness Review
 
@@ -38,7 +38,7 @@ Why Twelvgaige helps:
 - CI can consume JSON output and deterministic exit codes.
 - A failed or halted round is visible to scripts without parsing prose.
 
-See [Release Readiness](../traphouse/drills/release-readiness.md).
+See [Release Readiness](traphouse/drills/release-readiness.md).
 
 ## Repository Maintenance
 
@@ -55,7 +55,7 @@ Why Twelvgaige helps:
 - `git_commit` is explicit and destructive, so it belongs behind safety policy.
 - Audit records capture what the agent inspected and attempted.
 
-See [Repository Maintenance](../traphouse/drills/repo-maintenance.md).
+See [Repository Maintenance](traphouse/drills/repo-maintenance.md).
 
 ## Local LLM Triage With Ollama
 
@@ -71,7 +71,7 @@ Why Twelvgaige helps:
 - The same shell can be moved from `ollama` to a cloud provider later.
 - Laptop resource profiles prevent local LLM calls from overwhelming the host.
 
-See [Local Ollama Analysis](../traphouse/drills/local-ollama-analysis.md).
+See [Local Ollama Analysis](traphouse/drills/local-ollama-analysis.md).
 
 ## Terraform Plan Review
 
@@ -88,7 +88,7 @@ Why Twelvgaige helps:
 - The analysis can be attached to CI or PR review as JSON.
 - Apply is kept out of the reviewer loadout.
 
-See [Terraform Plan Review](../traphouse/drills/terraform-plan-review.md).
+See [Terraform Plan Review](traphouse/drills/terraform-plan-review.md).
 
 ## Database Migration Guardrail
 
@@ -105,7 +105,7 @@ Why Twelvgaige helps:
 - Human approval is explicit.
 - No SQL execution is needed in the review round.
 
-See [Database Migration Guardrail](../traphouse/drills/database-migration-guardrail.md).
+See [Database Migration Guardrail](traphouse/drills/database-migration-guardrail.md).
 
 ## Security Patch Triage
 
@@ -122,7 +122,7 @@ Why Twelvgaige helps:
 - Network fetches can be allowlisted.
 - Patch actions can live in a separate, guarded round.
 
-See [Security Patch Triage](../traphouse/drills/security-patch-triage.md).
+See [Security Patch Triage](traphouse/drills/security-patch-triage.md).
 
 ## Cloud Cost Patrol
 
@@ -139,7 +139,7 @@ Why Twelvgaige helps:
 - Large exports stay bounded by retained-byte and tool-output chokes.
 - The model suggests follow-up, not cloud changes.
 
-See [Cloud Cost Patrol](../traphouse/drills/cloud-cost-patrol.md).
+See [Cloud Cost Patrol](traphouse/drills/cloud-cost-patrol.md).
 
 ## SLO Error Budget Watch
 
@@ -156,7 +156,7 @@ Why Twelvgaige helps:
 - Notification remains a controlled workflow step.
 - The LLM cannot decide paging policy.
 
-See [SLO Error Budget Watch](../traphouse/drills/slo-error-budget-watch.md).
+See [SLO Error Budget Watch](traphouse/drills/slo-error-budget-watch.md).
 
 ## Incident Postmortem Draft
 
@@ -173,7 +173,7 @@ Why Twelvgaige helps:
 - Sensitive conclusions stay behind safety review.
 - The output shape can be consistent across incidents.
 
-See [Incident Postmortem Draft](../traphouse/drills/incident-postmortem-draft.md).
+See [Incident Postmortem Draft](traphouse/drills/incident-postmortem-draft.md).
 
 ## Scheduled Operational Reports
 

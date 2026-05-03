@@ -4,7 +4,7 @@ Twelvgaige runs deterministic agent workflows from the CLI. Elixir/OTP owns the 
 
 For broader documentation, start at [`README.md`](README.md). For scenario
 drills, see the traphouse rack at
-[`traphouse/drills/README.md`](traphouse/drills/README.md).
+[`docs/traphouse/drills/README.md`](docs/traphouse/drills/README.md).
 Provider credentials and endpoint policy are covered in
 [`docs/secrets-and-providers.md`](docs/secrets-and-providers.md).
 JSON and TOML authoring examples are covered in
@@ -72,8 +72,8 @@ is `burrito_out/twelvgaige_<target>` or `burrito_out/twelvgaige_<target>.exe`.
 Run it like the normal CLI:
 
 ```bash
-./burrito_out/twelvgaige_macos_silicon shell validate traphouse/workflows/simple.yaml
-./burrito_out/twelvgaige_macos_silicon round run traphouse/workflows/simple.yaml
+./burrito_out/twelvgaige_macos_silicon shell validate docs/traphouse/workflows/simple.yaml
+./burrito_out/twelvgaige_macos_silicon round run docs/traphouse/workflows/simple.yaml
 ```
 
 If your local OTP patch release is newer than the Burrito ERTS archive mirror,
@@ -107,7 +107,7 @@ commands to the Makefile first.
 ## A Minimal Workflow
 
 The repo includes the same minimal workflow as YAML, JSON, and TOML under
-`traphouse/workflows/`. The YAML shape is:
+`docs/traphouse/workflows/`. The YAML shape is:
 
 ```yaml
 kind: workflow
@@ -130,7 +130,7 @@ shots:
 See [`docs/shell-formats.md`](docs/shell-formats.md) for JSON and TOML versions,
 nested policy examples, and conversion commands.
 
-The adjacent mock agent lives at `traphouse/workflows/agents/mock_agent.yaml`:
+The adjacent mock agent lives at `docs/traphouse/workflows/agents/mock_agent.yaml`:
 
 ```yaml
 kind: agent
@@ -147,7 +147,7 @@ automatically for trusted local roots. For shells stored elsewhere, pass one or
 more explicit paths:
 
 ```bash
-twelvgaige round run traphouse/workflows/simple.yaml --agent-shell traphouse/workflows/agents/mock_agent.yaml
+twelvgaige round run docs/traphouse/workflows/simple.yaml --agent-shell docs/traphouse/workflows/agents/mock_agent.yaml
 ```
 
 When testing a workflow from an unreviewed repository, disable adjacent agent
@@ -164,9 +164,9 @@ workflow-relative auto-discovery unless a privileged API caller opts back in.
 Validate it:
 
 ```bash
-twelvgaige shell validate traphouse/workflows/simple.yaml
-twelvgaige shell validate traphouse/workflows/simple.yaml --format json
-twelvgaige shell reload traphouse --format json
+twelvgaige shell validate docs/traphouse/workflows/simple.yaml
+twelvgaige shell validate docs/traphouse/workflows/simple.yaml --format json
+twelvgaige shell reload docs/traphouse --format json
 twelvgaige shell list --format json
 twelvgaige shell show simple
 ```
@@ -175,31 +175,31 @@ Normalize or convert shells when reviewing generated definitions or moving
 between YAML, JSON, and TOML:
 
 ```bash
-twelvgaige shell normalize traphouse/workflows/simple.yaml
-twelvgaige shell normalize traphouse/workflows/simple.toml --format json
-twelvgaige shell convert traphouse/workflows/simple.yaml --to toml --output traphouse/workflows/simple.toml
-twelvgaige shell convert traphouse/workflows/simple.toml --to yaml
+twelvgaige shell normalize docs/traphouse/workflows/simple.yaml
+twelvgaige shell normalize docs/traphouse/workflows/simple.toml --format json
+twelvgaige shell convert docs/traphouse/workflows/simple.yaml --to toml --output docs/traphouse/workflows/simple.toml
+twelvgaige shell convert docs/traphouse/workflows/simple.toml --to yaml
 ```
 
 Run it in the foreground:
 
 ```bash
-twelvgaige round run traphouse/workflows/simple.yaml
+twelvgaige round run docs/traphouse/workflows/simple.yaml
 ```
 
 Input defaults to `{}`. When a workflow needs data, input can be inline JSON, a
 JSON file, or stdin:
 
 ```bash
-twelvgaige round run traphouse/workflows/simple.yaml --input '{"cluster":"dev"}'
-twelvgaige round run traphouse/workflows/simple.yaml --input input.json
-cat input.json | twelvgaige round run traphouse/workflows/simple.yaml --input -
+twelvgaige round run docs/traphouse/workflows/simple.yaml --input '{"cluster":"dev"}'
+twelvgaige round run docs/traphouse/workflows/simple.yaml --input input.json
+cat input.json | twelvgaige round run docs/traphouse/workflows/simple.yaml --input -
 ```
 
 Use JSON output for scripts:
 
 ```bash
-twelvgaige round run traphouse/workflows/simple.yaml --format json
+twelvgaige round run docs/traphouse/workflows/simple.yaml --format json
 ```
 
 ## Foreground Safety Flow
@@ -224,7 +224,7 @@ shots:
 Run and auto-approve local safety shots:
 
 ```bash
-twelvgaige round run traphouse/workflows/safety.yaml --approve-safety
+twelvgaige round run docs/traphouse/workflows/safety.yaml --approve-safety
 ```
 
 Without `--approve-safety`, the foreground run returns an awaiting-safety snapshot. Use the daemon flow when you want to approve later from another command.
@@ -261,7 +261,7 @@ twelvgaige daemon paths
 Submit a detached round:
 
 ```bash
-twelvgaige round run traphouse/workflows/simple.yaml --detach
+twelvgaige round run docs/traphouse/workflows/simple.yaml --detach
 ```
 
 Inspect rounds:
@@ -334,8 +334,8 @@ twelvgaige round cancel <round-id> --reason "operator stopped it"
 Use foreground runs while editing workflow shells:
 
 ```bash
-twelvgaige shell validate traphouse/workflows/simple.yaml
-twelvgaige round run traphouse/workflows/simple.yaml --format json
+twelvgaige shell validate docs/traphouse/workflows/simple.yaml
+twelvgaige round run docs/traphouse/workflows/simple.yaml --format json
 ```
 
 This is the fastest loop. No daemon is required.

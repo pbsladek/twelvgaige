@@ -3,12 +3,30 @@ VERSION := $(shell awk -F'"' '/version:/ {print $$2; exit}' mix.exs)
 
 ARTIFACT_DIR ?= artifacts
 ARTIFACT_SUFFIX ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)
-BURRITO_TARGET ?= linux
 NATIVE_RELEASE := twelvgaige_native
+BUMP ?= patch
+RELEASE_VERSION ?=
 
-SMOKE_WORKFLOW_YAML := traphouse/workflows/simple.yaml
-SMOKE_WORKFLOW_JSON := traphouse/workflows/simple.json
-SMOKE_WORKFLOW_TOML := traphouse/workflows/simple.toml
+UNAME_S := $(shell uname -s 2>/dev/null || echo unknown)
+UNAME_M := $(shell uname -m 2>/dev/null || echo unknown)
+
+ifeq ($(UNAME_S),Darwin)
+BURRITO_TARGET ?= macos_silicon
+else ifeq ($(UNAME_S),Linux)
+ifeq ($(UNAME_M),aarch64)
+BURRITO_TARGET ?= linux_arm64
+else ifeq ($(UNAME_M),arm64)
+BURRITO_TARGET ?= linux_arm64
+else
+BURRITO_TARGET ?= linux
+endif
+else
+BURRITO_TARGET ?= linux
+endif
+
+SMOKE_WORKFLOW_YAML := docs/traphouse/workflows/simple.yaml
+SMOKE_WORKFLOW_JSON := docs/traphouse/workflows/simple.json
+SMOKE_WORKFLOW_TOML := docs/traphouse/workflows/simple.toml
 SMOKE_BIN ?= ./$(APP)
 SMOKE_TMP ?= /tmp/$(APP)-smoke-$(ARTIFACT_SUFFIX)
 SMOKE_ENV ?=
@@ -21,11 +39,44 @@ ifeq ($(BURRITO_TARGET),windows)
 BURRITO_EXT := .exe
 endif
 BURRITO_BIN := burrito_out/$(APP)_$(BURRITO_TARGET)$(BURRITO_EXT)
+RELEASE_ARGS := $(if $(RELEASE_VERSION),--version $(RELEASE_VERSION),--bump $(BUMP))
+
+.DEFAULT_GOAL := help
+
+.PHONY: help
+help:
+	@printf "%s\n" "$(APP) $(VERSION)"
+	@printf "%s\n" ""
+	@printf "%s\n" "Local development:"
+	@printf "%s\n" "  make setup             Fetch dependencies"
+	@printf "%s\n" "  make check             Format check, compile, unit tests"
+	@printf "%s\n" "  make test-local        Run default local test suite"
+	@printf "%s\n" "  make smoke             Build escript and run CLI smoke checks"
+	@printf "%s\n" ""
+	@printf "%s\n" "Builds:"
+	@printf "%s\n" "  make build             Build escript and native Mix release"
+	@printf "%s\n" "  make escript           Build ./$(APP)"
+	@printf "%s\n" "  make release           Build native Mix release"
+	@printf "%s\n" "  make burrito           Build Burrito executable for BURRITO_TARGET=$(BURRITO_TARGET)"
+	@printf "%s\n" ""
+	@printf "%s\n" "Release/package:"
+	@printf "%s\n" "  make package-local     Build, smoke, and package local escript/native artifacts"
+	@printf "%s\n" "  make package-burrito-smoke BURRITO_TARGET=$(BURRITO_TARGET)"
+	@printf "%s\n" "  make checksums         Regenerate artifact metadata and SHA256SUMS"
+	@printf "%s\n" "  make release-plan      Show next git tag/version without changing files"
+	@printf "%s\n" "  make release-tag       Bump version, commit, and create local tag"
+	@printf "%s\n" "  make release-github    Run checks, bump version, tag, and push to trigger GitHub release"
+	@printf "%s\n" "                         Use BUMP=patch|minor|major or RELEASE_VERSION=X.Y.Z"
+	@printf "%s\n" ""
+	@printf "%s\n" "Cleaning:"
+	@printf "%s\n" "  make clean             Remove build outputs and artifacts"
 
 .PHONY: all
 all: ci
 
-.PHONY: deps
+.PHONY: setup deps
+setup: deps
+
 deps:
 	mix deps.get
 
@@ -41,16 +92,32 @@ format-check:
 test:
 	MIX_ENV=test mix test
 
+.PHONY: test-local
+test-local: test
+
+.PHONY: test-all
+test-all:
+	MIX_ENV=test mix test --include integration --include daemon --include persistence --include slow
+
 .PHONY: test-persistence
 test-persistence:
 	MIX_ENV=test mix test --include persistence
 
+.PHONY: check
+check: format-check compile test
+
 .PHONY: ci
 ci: deps format-check compile test test-persistence
+
+.PHONY: build
+build: escript release
 
 .PHONY: escript
 escript: deps
 	mix escript.build
+
+.PHONY: smoke
+smoke: escript-smoke
 
 .PHONY: escript-smoke
 escript-smoke: escript
@@ -144,6 +211,24 @@ package-checksums: package-metadata
 
 .PHONY: package
 package: package-escript package-release package-checksums
+
+.PHONY: package-local
+package-local: package
+
+.PHONY: checksums
+checksums: package-checksums
+
+.PHONY: release-plan
+release-plan:
+	elixir scripts/release.exs $(RELEASE_ARGS) --dry-run
+
+.PHONY: release-tag
+release-tag:
+	elixir scripts/release.exs $(RELEASE_ARGS)
+
+.PHONY: release-github
+release-github: check
+	elixir scripts/release.exs $(RELEASE_ARGS) --push
 
 .PHONY: clean
 clean:

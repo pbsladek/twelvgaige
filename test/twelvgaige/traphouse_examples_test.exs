@@ -5,16 +5,18 @@ defmodule Twelvgaige.TraphouseExamplesTest do
   alias Twelvgaige.Shell.Loader
 
   @workflow_paths [
-    "traphouse/workflows/simple.yaml",
-    "traphouse/workflows/simple.json",
-    "traphouse/workflows/simple.toml"
+    "docs/traphouse/workflows/simple.yaml",
+    "docs/traphouse/workflows/simple.json",
+    "docs/traphouse/workflows/simple.toml"
   ]
 
   @agent_paths [
-    "traphouse/workflows/agents/mock_agent.yaml",
-    "traphouse/workflows/agents/mock_agent.json",
-    "traphouse/workflows/agents/mock_agent.toml"
+    "docs/traphouse/workflows/agents/mock_agent.yaml",
+    "docs/traphouse/workflows/agents/mock_agent.json",
+    "docs/traphouse/workflows/agents/mock_agent.toml"
   ]
+
+  @safety_path "docs/traphouse/workflows/safety.yaml"
 
   test "traphouse workflow examples are equivalent across supported formats" do
     workflows =
@@ -49,8 +51,23 @@ defmodule Twelvgaige.TraphouseExamplesTest do
     end
   end
 
+  test "traphouse safety workflow example runs with local approval" do
+    assert {:ok, workflow} = Loader.load(@safety_path)
+    assert workflow.id == "safety_simple"
+
+    assert {:ok, snapshot} =
+             Twelvgaige.run_round_sync(@safety_path, %{}, approve_all_safety?: true)
+
+    assert snapshot.status == :complete
+
+    assert snapshot.shots |> Enum.map(&{&1.id, &1.status}) |> Enum.sort() == [
+             {"after", :complete},
+             {"approval", :complete}
+           ]
+  end
+
   test "shell cache accepts duplicate equivalent examples across formats" do
-    cache = start_supervised!({Cache, name: nil, paths: ["traphouse/workflows"]})
+    cache = start_supervised!({Cache, name: nil, paths: ["docs/traphouse/workflows"]})
 
     assert {:ok, workflow} = Cache.get_workflow("simple", server: cache)
     assert workflow.id == "simple"

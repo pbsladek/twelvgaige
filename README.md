@@ -61,20 +61,20 @@ Released binaries are produced by the GitHub release workflow.
 Validate a shell:
 
 ```bash
-./twelvgaige shell validate traphouse/workflows/simple.yaml
+./twelvgaige shell validate docs/traphouse/workflows/simple.yaml
 ```
 
 Run a round:
 
 ```bash
-./twelvgaige round run traphouse/workflows/simple.yaml
+./twelvgaige round run docs/traphouse/workflows/simple.yaml
 ```
 
 Use JSON or TOML shells too:
 
 ```bash
-./twelvgaige shell validate traphouse/workflows/simple.json
-./twelvgaige shell validate traphouse/workflows/simple.toml
+./twelvgaige shell validate docs/traphouse/workflows/simple.json
+./twelvgaige shell validate docs/traphouse/workflows/simple.toml
 ```
 
 Serve the local daemon in one terminal:
@@ -107,6 +107,7 @@ Anthropic, OpenAI, Gemini, and Ollama setup.
 - [Secrets and providers](docs/secrets-and-providers.md)
 - [Security](docs/security.md)
 - [Use cases](docs/use-cases.md)
+- [Release flow](docs/release.md)
 - [Design spec](docs/design/spec.md)
 - [Release checklist](docs/design/release-checklist.md)
 

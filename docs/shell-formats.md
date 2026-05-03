@@ -10,30 +10,30 @@ Use the format that fits the source:
 - JSON is useful for generated shells, API-driven tooling, and strict diffing.
 - TOML is readable for developers who prefer config-file style sections.
 
-The canonical examples live in [`traphouse/workflows`](../traphouse/workflows).
+The canonical examples live in [`docs/traphouse/workflows`](traphouse/workflows).
 
 ## Commands
 
 Validate any supported shell:
 
 ```bash
-twelvgaige shell validate traphouse/workflows/simple.json
-twelvgaige shell validate traphouse/workflows/simple.toml
+twelvgaige shell validate docs/traphouse/workflows/simple.json
+twelvgaige shell validate docs/traphouse/workflows/simple.toml
 ```
 
 Run any supported workflow shell:
 
 ```bash
-twelvgaige round run traphouse/workflows/simple.json
-twelvgaige round run traphouse/workflows/simple.toml
+twelvgaige round run docs/traphouse/workflows/simple.json
+twelvgaige round run docs/traphouse/workflows/simple.toml
 ```
 
 Normalize or convert between formats:
 
 ```bash
-twelvgaige shell normalize traphouse/workflows/simple.toml --format json
-twelvgaige shell convert traphouse/workflows/simple.yaml --to toml
-twelvgaige shell convert traphouse/workflows/simple.toml --to yaml
+twelvgaige shell normalize docs/traphouse/workflows/simple.toml --format json
+twelvgaige shell convert docs/traphouse/workflows/simple.yaml --to toml
+twelvgaige shell convert docs/traphouse/workflows/simple.toml --to yaml
 ```
 
 ## JSON Workflow

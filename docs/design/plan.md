@@ -776,7 +776,7 @@ twelvgaige/
 |       +-- event/
 |       +-- telemetry/
 +-- priv/
-|   +-- traphouse/
+|   +-- docs/traphouse/
 |       +-- drills/
 |       +-- shells/
 |       +-- agents/
@@ -826,7 +826,7 @@ Goal: run a deterministic foreground workflow with a mock LLM and no daemon.
 - Unit tests for compiler and condition logic.
 - GenServer tests for round advancement.
 
-Milestone: `twelvgaige round run traphouse/workflows/simple.yaml` completes locally in the foreground with default `{}` input.
+Milestone: `twelvgaige round run docs/traphouse/workflows/simple.yaml` completes locally in the foreground with default `{}` input.
 
 ### Phase 2 - Tools And Safety
 
