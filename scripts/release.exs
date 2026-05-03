@@ -9,7 +9,7 @@ defmodule Twelvgaige.ReleaseScript do
          {:ok, current} <- current_version(),
          {:ok, next} <- next_version(current, opts),
          :ok <- validate_version(next),
-         :ok <- ensure_next_version(current, next),
+         :ok <- ensure_release_version(current, next, opts),
          :ok <- ensure_clean_worktree(opts),
          :ok <- ensure_tag_absent(next),
          :ok <- maybe_print_plan(current, next, opts),
@@ -103,7 +103,17 @@ defmodule Twelvgaige.ReleaseScript do
     end
   end
 
-  defp ensure_next_version(current, next) do
+  defp ensure_release_version(current, next, %{version: _version}) do
+    with {:ok, current_parts} <- parse_version(current),
+         {:ok, next_parts} <- parse_version(next) do
+      case Version.compare(Enum.join(next_parts, "."), Enum.join(current_parts, ".")) do
+        :lt -> {:error, "next version #{next} must not be less than current version #{current}"}
+        _eq_or_gt -> :ok
+      end
+    end
+  end
+
+  defp ensure_release_version(current, next, _opts) do
     with {:ok, current_parts} <- parse_version(current),
          {:ok, next_parts} <- parse_version(next) do
       if Version.compare(Enum.join(next_parts, "."), Enum.join(current_parts, ".")) == :gt do
@@ -159,12 +169,20 @@ defmodule Twelvgaige.ReleaseScript do
   defp maybe_apply(current, next, opts) do
     tag = tag_name(next)
 
-    with :ok <- update_mix_version(current, next),
-         :ok <- run_git(["add", @mix_file]),
-         :ok <- run_git(["commit", "-m", "Release #{tag}"]),
+    with :ok <- maybe_commit_version(current, next, tag),
          :ok <- run_git(["tag", "-a", tag, "-m", "Release #{tag}"]),
          :ok <- maybe_push(tag, opts) do
       IO.puts("created release #{tag}")
+      :ok
+    end
+  end
+
+  defp maybe_commit_version(version, version, _tag), do: :ok
+
+  defp maybe_commit_version(current, next, tag) do
+    with :ok <- update_mix_version(current, next),
+         :ok <- run_git(["add", @mix_file]),
+         :ok <- run_git(["commit", "-m", "Release #{tag}"]) do
       :ok
     end
   end

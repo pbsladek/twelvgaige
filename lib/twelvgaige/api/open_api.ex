@@ -17,7 +17,7 @@ defmodule Twelvgaige.API.OpenAPI do
       "jsonSchemaDialect" => "https://json-schema.org/draft/2020-12/schema",
       "info" => %{
         "title" => "Twelvgaige Local Control API",
-        "version" => "0.1.0",
+        "version" => Twelvgaige.version(),
         "description" =>
           "Local-first API for running, inspecting, controlling, and auditing Twelvgaige rounds."
       },

@@ -273,7 +273,7 @@ defmodule Twelvgaige.BreechTest do
 
     assert status.daemon_id == "daemon_test"
     assert status.status == "running"
-    assert status.version == "0.1.0"
+    assert status.version == Twelvgaige.version()
     assert status.profile == "laptop"
     assert status.ipc == "in_vm"
     assert status.started_at == "2026-05-01T00:00:00Z"

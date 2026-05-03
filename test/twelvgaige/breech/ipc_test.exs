@@ -117,7 +117,7 @@ defmodule Twelvgaige.Breech.IPCTest do
     assert {:ok, status} = Client.status(address, token: @token)
 
     assert status["status"] == "running"
-    assert status["version"] == "0.1.0"
+    assert status["version"] == Twelvgaige.version()
     assert status["profile"] == "laptop"
   end
 

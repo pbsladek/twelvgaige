@@ -16,7 +16,6 @@ defmodule Twelvgaige.LLM.Providers.Common do
     :transport_not_configured
   ]
 
-  @user_agent "twelvgaige/0.1.0"
   @max_timeout_ms 120_000
   @official_hosts %{
     "anthropic" => ["api.anthropic.com"],
@@ -239,23 +238,25 @@ defmodule Twelvgaige.LLM.Providers.Common do
   defp request_headers("anthropic", api_key, _opts) do
     [
       {"content-type", "application/json"},
-      {"user-agent", @user_agent},
+      {"user-agent", user_agent()},
       {"anthropic-version", "2023-06-01"}
     ] ++ key_header("x-api-key", api_key)
   end
 
   defp request_headers("openai", api_key, _opts) do
-    [{"content-type", "application/json"}, {"user-agent", @user_agent}] ++ bearer_header(api_key)
+    [{"content-type", "application/json"}, {"user-agent", user_agent()}] ++ bearer_header(api_key)
   end
 
   defp request_headers("gemini", api_key, _opts) do
-    [{"content-type", "application/json"}, {"user-agent", @user_agent}] ++
+    [{"content-type", "application/json"}, {"user-agent", user_agent()}] ++
       key_header("x-goog-api-key", api_key)
   end
 
   defp request_headers("ollama", _api_key, _opts) do
-    [{"content-type", "application/json"}, {"user-agent", @user_agent}]
+    [{"content-type", "application/json"}, {"user-agent", user_agent()}]
   end
+
+  defp user_agent, do: "twelvgaige/#{Twelvgaige.version()}"
 
   defp encode_body(body) do
     case Jason.encode(body) do

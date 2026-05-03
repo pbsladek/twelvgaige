@@ -10,14 +10,14 @@ defmodule Twelvgaige.CLI.MainTest do
   end
 
   test "prints version" do
-    assert Main.run(["version"]) == {:ok, "0.1.0\n", 0}
+    assert Main.run(["version"]) == {:ok, "#{Twelvgaige.version()}\n", 0}
   end
 
   test "prints local daemon status" do
     assert {:ok, output, 0} = Main.run(["status"])
 
     assert output =~ "Breech: running"
-    assert output =~ "Version: 0.1.0"
+    assert output =~ "Version: #{Twelvgaige.version()}"
     assert output =~ "Profile: laptop"
   end
 
@@ -26,7 +26,7 @@ defmodule Twelvgaige.CLI.MainTest do
 
     decoded = Jason.decode!(output)
     assert decoded["status"] == "running"
-    assert decoded["version"] == "0.1.0"
+    assert decoded["version"] == Twelvgaige.version()
     assert decoded["profile"] == "laptop"
     assert decoded["resources"]["status"] in ["ok", "unavailable"]
   end
