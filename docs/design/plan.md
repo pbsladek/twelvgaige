@@ -538,7 +538,7 @@ Preferred command groups:
 twelvgaige shell validate path/to/workflow.yaml
 twelvgaige shell normalize path/to/workflow.yaml --format json
 twelvgaige shell convert path/to/workflow.yaml --to toml --output path/to/workflow.toml
-twelvgaige round run path/to/workflow.yaml --input input.json
+twelvgaige round run path/to/workflow.yaml
 
 # Daemon-backed shell cache usage
 twelvgaige shell validate path/to/workflow.yaml
@@ -826,7 +826,7 @@ Goal: run a deterministic foreground workflow with a mock LLM and no daemon.
 - Unit tests for compiler and condition logic.
 - GenServer tests for round advancement.
 
-Milestone: `twelvgaige round run traphouse/workflows/simple.yaml --input input.json` completes locally in the foreground.
+Milestone: `twelvgaige round run traphouse/workflows/simple.yaml` completes locally in the foreground with default `{}` input.
 
 ### Phase 2 - Tools And Safety
 

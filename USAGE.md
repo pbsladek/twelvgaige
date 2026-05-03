@@ -7,6 +7,8 @@ drills, see the traphouse rack at
 [`traphouse/drills/README.md`](traphouse/drills/README.md).
 Provider credentials and endpoint policy are covered in
 [`docs/secrets-and-providers.md`](docs/secrets-and-providers.md).
+JSON and TOML authoring examples are covered in
+[`docs/shell-formats.md`](docs/shell-formats.md).
 
 ## Core Terms
 
@@ -71,7 +73,7 @@ Run it like the normal CLI:
 
 ```bash
 ./burrito_out/twelvgaige_macos_silicon shell validate traphouse/workflows/simple.yaml
-./burrito_out/twelvgaige_macos_silicon round run traphouse/workflows/simple.yaml --input '{}'
+./burrito_out/twelvgaige_macos_silicon round run traphouse/workflows/simple.yaml
 ```
 
 If your local OTP patch release is newer than the Burrito ERTS archive mirror,
@@ -125,6 +127,9 @@ shots:
     prompt: second prompt
 ```
 
+See [`docs/shell-formats.md`](docs/shell-formats.md) for JSON and TOML versions,
+nested policy examples, and conversion commands.
+
 The adjacent mock agent lives at `traphouse/workflows/agents/mock_agent.yaml`:
 
 ```yaml
@@ -142,15 +147,15 @@ automatically for trusted local roots. For shells stored elsewhere, pass one or
 more explicit paths:
 
 ```bash
-twelvgaige round run traphouse/workflows/simple.yaml --input '{}' --agent-shell traphouse/workflows/agents/mock_agent.yaml
+twelvgaige round run traphouse/workflows/simple.yaml --agent-shell traphouse/workflows/agents/mock_agent.yaml
 ```
 
 When testing a workflow from an unreviewed repository, disable adjacent agent
 discovery and pass only reviewed agent shells:
 
 ```bash
-twelvgaige round run ./downloaded/workflow.yaml --input '{}' --untrusted-root --agent-shell ./reviewed-agents/mock_agent.yaml
-twelvgaige round run ./downloaded/workflow.yaml --input '{}' --no-agent-discovery --agent-shell ./reviewed-agents/mock_agent.yaml
+twelvgaige round run ./downloaded/workflow.yaml --untrusted-root --agent-shell ./reviewed-agents/mock_agent.yaml
+twelvgaige round run ./downloaded/workflow.yaml --no-agent-discovery --agent-shell ./reviewed-agents/mock_agent.yaml
 ```
 
 `--untrusted-root` keeps explicit `--agent-shell` paths working but blocks
@@ -179,10 +184,11 @@ twelvgaige shell convert traphouse/workflows/simple.toml --to yaml
 Run it in the foreground:
 
 ```bash
-twelvgaige round run traphouse/workflows/simple.yaml --input '{}'
+twelvgaige round run traphouse/workflows/simple.yaml
 ```
 
-Input can be inline JSON, a JSON file, or stdin:
+Input defaults to `{}`. When a workflow needs data, input can be inline JSON, a
+JSON file, or stdin:
 
 ```bash
 twelvgaige round run traphouse/workflows/simple.yaml --input '{"cluster":"dev"}'
@@ -193,7 +199,7 @@ cat input.json | twelvgaige round run traphouse/workflows/simple.yaml --input -
 Use JSON output for scripts:
 
 ```bash
-twelvgaige round run traphouse/workflows/simple.yaml --input '{}' --format json
+twelvgaige round run traphouse/workflows/simple.yaml --format json
 ```
 
 ## Foreground Safety Flow
@@ -218,7 +224,7 @@ shots:
 Run and auto-approve local safety shots:
 
 ```bash
-twelvgaige round run traphouse/workflows/safety.yaml --input '{}' --approve-safety
+twelvgaige round run traphouse/workflows/safety.yaml --approve-safety
 ```
 
 Without `--approve-safety`, the foreground run returns an awaiting-safety snapshot. Use the daemon flow when you want to approve later from another command.
@@ -255,7 +261,7 @@ twelvgaige daemon paths
 Submit a detached round:
 
 ```bash
-twelvgaige round run traphouse/workflows/simple.yaml --input '{}' --detach
+twelvgaige round run traphouse/workflows/simple.yaml --detach
 ```
 
 Inspect rounds:
@@ -329,7 +335,7 @@ Use foreground runs while editing workflow shells:
 
 ```bash
 twelvgaige shell validate traphouse/workflows/simple.yaml
-twelvgaige round run traphouse/workflows/simple.yaml --input '{}' --format json
+twelvgaige round run traphouse/workflows/simple.yaml --format json
 ```
 
 This is the fastest loop. No daemon is required.
@@ -488,7 +494,7 @@ twelvgaige shell reload [path ...] [--format human|json]
 twelvgaige shell list [--kind workflow|agent|all] [--format human|json]
 twelvgaige shell show <shell-id> [--kind workflow|agent] [--format human|json]
 
-twelvgaige round run <workflow-shell-path-or-id> --input <json-or-path> [--agent-shell <path>] [--no-agent-discovery] [--untrusted-root] [--profile minimal|laptop|workstation|server] [--format human|json] [--approve-safety] [--detach]
+twelvgaige round run <workflow-shell-path-or-id> [--input <json-or-path>] [--agent-shell <path>] [--no-agent-discovery] [--untrusted-root] [--profile minimal|laptop|workstation|server] [--format human|json] [--approve-safety] [--detach]
 twelvgaige round list [--format human|json] [--status <status>]
 twelvgaige round show <round-id> [--format human|json]
 twelvgaige round watch <round-id> [--format human|ndjson] [--after-seq <seq>] [--limit <count>] [--follow] [--until-terminal] [--timeout-ms <ms>]

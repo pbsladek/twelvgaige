@@ -130,9 +130,9 @@ Then submit a detached round, stop the daemon, restart it against the same datab
 Run at least one representative round under each supported local profile:
 
 ```bash
-TWELVGAIGE_PROFILE=minimal ./twelvgaige round run test/fixtures/shells/simple_workflow.yaml --agent-shell test/fixtures/shells/mock_agent.yaml --input '{}'
-TWELVGAIGE_PROFILE=laptop ./twelvgaige round run test/fixtures/shells/simple_workflow.yaml --agent-shell test/fixtures/shells/mock_agent.yaml --input '{}'
-TWELVGAIGE_PROFILE=workstation ./twelvgaige round run test/fixtures/shells/simple_workflow.yaml --agent-shell test/fixtures/shells/mock_agent.yaml --input '{}'
+TWELVGAIGE_PROFILE=minimal ./twelvgaige round run test/fixtures/shells/simple_workflow.yaml --agent-shell test/fixtures/shells/mock_agent.yaml
+TWELVGAIGE_PROFILE=laptop ./twelvgaige round run test/fixtures/shells/simple_workflow.yaml --agent-shell test/fixtures/shells/mock_agent.yaml
+TWELVGAIGE_PROFILE=workstation ./twelvgaige round run test/fixtures/shells/simple_workflow.yaml --agent-shell test/fixtures/shells/mock_agent.yaml
 ```
 
 For release notes, record approximate idle daemon RSS, peak RSS during the smoke workflow, and whether other normal desktop workloads remain responsive.

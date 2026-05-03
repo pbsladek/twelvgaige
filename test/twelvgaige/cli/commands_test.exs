@@ -645,10 +645,12 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert output =~ "after [pending]"
   end
 
-  test "round run requires input" do
-    assert {:ok, output, 4} = Main.run(["round", "run", @workflow_path])
+  test "round run defaults input to an empty object" do
+    assert {:ok, output, 0} = Main.run(["round", "run", @workflow_path])
 
-    assert output == "error: --input is required\n"
+    assert output =~ "Status: complete"
+    assert output =~ "first [complete]"
+    assert output =~ "second [complete]"
   end
 
   test "round run returns not-found exit code for missing shell files" do

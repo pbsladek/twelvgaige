@@ -822,7 +822,7 @@ Phase 1 in-process execution is foreground-only. A Phase 1 CLI invocation must r
 
 Flow:
 
-1. CLI parses `twelvgaige round run <shell> --input <json>`.
+1. CLI parses `twelvgaige round run <shell> [--input <json>]`.
 2. CLI starts the OTP application if it is not already running.
 3. Shell loader loads workflow shell and referenced agent shells.
 4. Input JSON is validated against `input_schema`.
@@ -2167,7 +2167,7 @@ twelvgaige shell convert <path> --to json|yaml|toml [--output <path>]
 twelvgaige shell reload [path ...] [--format human|json]
 twelvgaige shell list [--kind workflow|agent|all] [--format human|json]
 twelvgaige shell show <shell-id> [--kind workflow|agent] [--format human|json]
-twelvgaige round run <workflow-shell-path> --input <json-or-path> [--profile laptop|minimal|workstation] [--format human|json]
+twelvgaige round run <workflow-shell-path> [--input <json-or-path>] [--profile laptop|minimal|workstation] [--format human|json]
 ```
 
 Phase 1 `round run` waits by default and exits only after terminal state, timeout, or inline safety prompt handling. A detached run without a daemon must return exit code `5` with `daemon_required`.
@@ -2175,7 +2175,7 @@ Phase 1 `round run` waits by default and exits only after terminal state, timeou
 Phase 3 command set:
 
 ```bash
-twelvgaige round run <workflow-shell-or-id> --input <json-or-path> [--detach] [--profile laptop|minimal|workstation|server] [--format human|json]
+twelvgaige round run <workflow-shell-or-id> [--input <json-or-path>] [--detach] [--profile laptop|minimal|workstation|server] [--format human|json]
 twelvgaige round show <round-id> [--format human|json]
 twelvgaige round list [--format human|json]
 twelvgaige round watch <round-id> [--format human|ndjson] [--after-seq <seq>] [--limit <count>] [--follow] [--until-terminal] [--timeout-ms <ms>]
@@ -2200,6 +2200,7 @@ twelvgaige tool test <tool-name> --input <json-or-path>
 
 Input parsing:
 
+- Omitted `--input` defaults to `{}`.
 - `--input '{"key":"value"}'` accepts inline JSON.
 - `--input path.json` reads JSON from file.
 - `--input -` reads JSON from stdin.

@@ -34,9 +34,9 @@ The workflow uses the `mock` provider and auto-discovers agents from
 `traphouse/workflows/agents/`, so it does not call a live LLM:
 
 ```bash
-twelvgaige round run traphouse/workflows/simple.yaml --input '{}'
-twelvgaige round run traphouse/workflows/simple.json --input '{}'
-twelvgaige round run traphouse/workflows/simple.toml --input '{}'
+twelvgaige round run traphouse/workflows/simple.yaml
+twelvgaige round run traphouse/workflows/simple.json
+twelvgaige round run traphouse/workflows/simple.toml
 ```
 
 ## Format Guidance

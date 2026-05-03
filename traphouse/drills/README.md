@@ -38,7 +38,7 @@ mix escript.build
 ./twelvgaige shell validate traphouse/workflows/simple.yaml
 ./twelvgaige shell validate traphouse/workflows/simple.json
 ./twelvgaige shell validate traphouse/workflows/simple.toml
-./twelvgaige round run traphouse/workflows/simple.toml --input '{}'
+./twelvgaige round run traphouse/workflows/simple.toml
 ```
 
 Those shells use the `mock` provider, so they never call a live LLM.

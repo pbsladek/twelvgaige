@@ -9,7 +9,6 @@ NATIVE_RELEASE := twelvgaige_native
 SMOKE_WORKFLOW_YAML := traphouse/workflows/simple.yaml
 SMOKE_WORKFLOW_JSON := traphouse/workflows/simple.json
 SMOKE_WORKFLOW_TOML := traphouse/workflows/simple.toml
-SMOKE_INPUT := '{}'
 SMOKE_BIN ?= ./$(APP)
 SMOKE_TMP ?= /tmp/$(APP)-smoke-$(ARTIFACT_SUFFIX)
 SMOKE_ENV ?=
@@ -71,9 +70,9 @@ smoke-shell-formats:
 	$(SMOKE_ENV) $(SMOKE_BIN) shell validate $(SMOKE_TMP)/converted.toml
 	$(SMOKE_ENV) $(SMOKE_BIN) shell convert $(SMOKE_WORKFLOW_TOML) --to yaml > $(SMOKE_TMP)/converted.yaml
 	$(SMOKE_ENV) $(SMOKE_BIN) shell validate $(SMOKE_TMP)/converted.yaml
-	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_YAML) --input $(SMOKE_INPUT)
-	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_JSON) --input $(SMOKE_INPUT)
-	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_TOML) --input $(SMOKE_INPUT)
+	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_YAML)
+	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_JSON)
+	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_TOML)
 
 .PHONY: release
 release: deps
@@ -82,7 +81,7 @@ release: deps
 .PHONY: release-smoke
 release-smoke: release
 	$(MAKE) smoke-shell-formats SMOKE_BIN=$(NATIVE_BIN)
-	TWELVGAIGE_STORE_SQLITE=/tmp/$(APP)-native-release-$(ARTIFACT_SUFFIX).sqlite3 $(NATIVE_BIN) round run $(SMOKE_WORKFLOW_TOML) --input $(SMOKE_INPUT)
+	TWELVGAIGE_STORE_SQLITE=/tmp/$(APP)-native-release-$(ARTIFACT_SUFFIX).sqlite3 $(NATIVE_BIN) round run $(SMOKE_WORKFLOW_TOML)
 
 .PHONY: burrito
 burrito: deps
@@ -94,7 +93,7 @@ burrito-smoke: burrito burrito-smoke-only
 .PHONY: burrito-smoke-only
 burrito-smoke-only:
 	$(MAKE) smoke-shell-formats SMOKE_BIN=$(BURRITO_BIN) SMOKE_TMP=/tmp/$(APP)-burrito-smoke-$(BURRITO_TARGET) SMOKE_ENV='TWELVGAIGE_INSTALL_DIR=/tmp/$(APP)-burrito-smoke-$(BURRITO_TARGET)/install'
-	TWELVGAIGE_INSTALL_DIR=/tmp/$(APP)-burrito-smoke-$(BURRITO_TARGET)/install TWELVGAIGE_STORE_SQLITE=/tmp/$(APP)-burrito-release-$(BURRITO_TARGET).sqlite3 $(BURRITO_BIN) round run $(SMOKE_WORKFLOW_TOML) --input $(SMOKE_INPUT)
+	TWELVGAIGE_INSTALL_DIR=/tmp/$(APP)-burrito-smoke-$(BURRITO_TARGET)/install TWELVGAIGE_STORE_SQLITE=/tmp/$(APP)-burrito-release-$(BURRITO_TARGET).sqlite3 $(BURRITO_BIN) round run $(SMOKE_WORKFLOW_TOML)
 
 .PHONY: package-escript
 package-escript: escript-smoke

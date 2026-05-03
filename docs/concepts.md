@@ -47,6 +47,9 @@ shots:
     prompt: second prompt
 ```
 
+The same shell can be authored as JSON or TOML. See
+[Shell Formats](shell-formats.md) for examples and conversion commands.
+
 Validate before running:
 
 ```bash

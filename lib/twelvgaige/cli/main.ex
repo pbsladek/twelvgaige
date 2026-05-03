@@ -31,7 +31,7 @@ defmodule Twelvgaige.CLI.Main do
     twelvgaige shell reload [path ...] [--format human|json]
     twelvgaige shell list [--kind workflow|agent|all] [--format human|json]
     twelvgaige shell show <shell-id> [--kind workflow|agent] [--format human|json]
-    twelvgaige round run <workflow-shell-path-or-id> --input <json-or-path> [--agent-shell <path>] [--no-agent-discovery] [--untrusted-root] [--format human|json] [--approve-safety] [--detach]
+    twelvgaige round run <workflow-shell-path-or-id> [--input <json-or-path>] [--agent-shell <path>] [--no-agent-discovery] [--untrusted-root] [--profile minimal|laptop|workstation|server] [--format human|json] [--approve-safety] [--detach]
     twelvgaige round list [--format human|json] [--status <status>]
     twelvgaige round show <round-id> [--format human|json]
     twelvgaige round watch <round-id> [--format human|ndjson] [--after-seq <seq>] [--limit <count>] [--follow] [--until-terminal] [--timeout-ms <ms>]
@@ -536,9 +536,7 @@ defmodule Twelvgaige.CLI.Main do
         trusted_root?: true
       })
 
-  defp parse_round_opts([], %{input: nil}) do
-    {:error, Twelvgaige.Error.new(:input_error, :invalid_shell, "--input is required")}
-  end
+  defp parse_round_opts([], %{input: nil} = opts), do: {:ok, %{opts | input: "{}"}}
 
   defp parse_round_opts([], opts), do: {:ok, opts}
 

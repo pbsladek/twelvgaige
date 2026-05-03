@@ -67,7 +67,7 @@ Validate a shell:
 Run a round:
 
 ```bash
-./twelvgaige round run traphouse/workflows/simple.yaml --input '{}'
+./twelvgaige round run traphouse/workflows/simple.yaml
 ```
 
 Use JSON or TOML shells too:
@@ -103,6 +103,7 @@ Anthropic, OpenAI, Gemini, and Ollama setup.
 
 - [Usage](USAGE.md)
 - [Core concepts](docs/concepts.md)
+- [Shell formats](docs/shell-formats.md)
 - [Secrets and providers](docs/secrets-and-providers.md)
 - [Security](docs/security.md)
 - [Use cases](docs/use-cases.md)
