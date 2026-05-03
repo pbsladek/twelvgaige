@@ -306,7 +306,7 @@ defmodule Twelvgaige.Tool.Builtins.GitCommit do
   defp tool_error(reason, message, details \\ %{}) do
     {:error,
      Error.new(:tool_error, reason, message,
-       retryable: reason in [:tool_retryable, :tool_timeout],
+       retryable: reason == :tool_retryable,
        safety_required: reason in [:tool_denied],
        details: Map.new(details)
      )}

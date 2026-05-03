@@ -317,7 +317,7 @@ defmodule Twelvgaige.Tool.Builtins.HTTPGet do
       http_opts = [timeout: timeout_ms, autoredirect: false]
       body_opts = [body_format: :binary]
 
-      case :httpc.request(:get, request, http_opts, body_opts) do
+      case apply(:httpc, :request, [:get, request, http_opts, body_opts]) do
         {:ok, {{_version, status, _reason}, headers, body}} ->
           {:ok, %{status: status, headers: headers, body: body}}
 
@@ -350,7 +350,7 @@ defmodule Twelvgaige.Tool.Builtins.HTTPGet do
   defp tool_error(reason, message, details \\ %{}) do
     {:error,
      Error.new(:tool_error, reason, message,
-       retryable: reason in [:tool_retryable, :tool_timeout],
+       retryable: reason == :tool_retryable,
        safety_required: reason in [:network_policy_denied, :http_redirect_denied],
        details: Map.new(details)
      )}

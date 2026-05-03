@@ -306,7 +306,7 @@ defmodule Twelvgaige.Shot.Executor do
   defp assistant_message(response) do
     %{
       role: "assistant",
-      content: response.content || "",
+      content: response.content,
       source: :round_context
     }
   end
@@ -383,8 +383,7 @@ defmodule Twelvgaige.Shot.Executor do
      )}
   end
 
-  defp merge_usage(left, right) when map_size(left) == 0, do: right || %{}
-  defp merge_usage(left, nil), do: left
+  defp merge_usage(left, right) when map_size(left) == 0, do: right
   defp merge_usage(left, right) when map_size(right) == 0, do: left
 
   defp merge_usage(left, right) do
@@ -468,8 +467,6 @@ defmodule Twelvgaige.Shot.Executor do
     |> byte_size()
   end
 
-  defp total_tokens(nil), do: nil
-
   defp total_tokens(%{} = usage) do
     case Map.get(usage, :total_tokens, Map.get(usage, "total_tokens")) do
       value when is_integer(value) and value >= 0 -> value
@@ -477,8 +474,6 @@ defmodule Twelvgaige.Shot.Executor do
       _value -> nil
     end
   end
-
-  defp total_tokens(_usage), do: nil
 
   defp choke_value(%Attempt{definition: %{choke: choke}}, key) do
     Map.get(choke, key, Map.get(choke, Atom.to_string(key)))

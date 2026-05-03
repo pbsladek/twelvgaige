@@ -265,7 +265,7 @@ defmodule Twelvgaige.Scheduler do
       {:ok, {:cron, cron}, nil, cron}
     else
       {:error, %Error{} = error} ->
-        {:error, %{error | details: Map.put(error.details || %{}, :job_id, id)}}
+        {:error, %{error | details: Map.put(error.details, :job_id, id)}}
     end
   end
 

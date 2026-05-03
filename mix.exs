@@ -9,6 +9,7 @@ defmodule Twelvgaige.MixProject do
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
+      dialyzer: dialyzer(),
       escript: [main_module: Twelvgaige.CLI.Main, app: nil, include_priv_for: [:exqlite]],
       default_release: :twelvgaige_native,
       releases: releases()
@@ -25,11 +26,19 @@ defmodule Twelvgaige.MixProject do
   defp deps do
     [
       {:burrito, "~> 1.5", runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ecto_sql, "~> 3.12"},
       {:ecto_sqlite3, "~> 0.17"},
       {:jason, "~> 1.4"},
       {:toml_elixir, "~> 3.1"},
       {:yamerl, "~> 0.10"}
+    ]
+  end
+
+  defp dialyzer do
+    [
+      plt_add_apps: [:inets, :mix, :public_key, :ssl],
+      flags: [:error_handling]
     ]
   end
 

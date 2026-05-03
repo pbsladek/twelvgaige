@@ -50,6 +50,7 @@ help:
 	@printf "%s\n" "Local development:"
 	@printf "%s\n" "  make setup             Fetch dependencies"
 	@printf "%s\n" "  make check             Format check, compile, unit tests"
+	@printf "%s\n" "  make typecheck         Run Dialyzer via Dialyxir"
 	@printf "%s\n" "  make test-local        Run default local test suite"
 	@printf "%s\n" "  make smoke             Build escript and run CLI smoke checks"
 	@printf "%s\n" ""
@@ -94,6 +95,12 @@ test:
 
 .PHONY: test-local
 test-local: test
+
+.PHONY: typecheck dialyzer
+typecheck: dialyzer
+
+dialyzer:
+	MIX_ENV=dev mix dialyzer
 
 .PHONY: test-all
 test-all:

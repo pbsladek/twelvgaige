@@ -457,7 +457,7 @@ defmodule Twelvgaige.Tool.Builtins.HTTPPost do
       http_opts = [timeout: timeout_ms, autoredirect: false]
       body_opts = [body_format: :binary]
 
-      case :httpc.request(:post, request, http_opts, body_opts) do
+      case apply(:httpc, :request, [:post, request, http_opts, body_opts]) do
         {:ok, {{_version, status, _reason}, response_headers, response_body}} ->
           {:ok, %{status: status, headers: response_headers, body: response_body}}
 
@@ -520,9 +520,8 @@ defmodule Twelvgaige.Tool.Builtins.HTTPPost do
   defp tool_error(reason, message, details \\ %{}) do
     {:error,
      Error.new(:tool_error, reason, message,
-       retryable: reason in [:tool_retryable, :tool_timeout],
-       safety_required:
-         reason in [:network_policy_denied, :http_redirect_denied, :http_request_too_large],
+       retryable: reason == :tool_retryable,
+       safety_required: reason in [:network_policy_denied, :http_redirect_denied],
        details: Map.new(details)
      )}
   end

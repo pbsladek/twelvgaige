@@ -114,14 +114,12 @@ defmodule Twelvgaige.API.Router do
     with {:ok, config} <- Webhook.fetch_config(webhook_id, opts),
          {:ok, payload} <- decode_json_body(body, webhook_body_opts),
          :ok <- Webhook.verify(webhook_id, config, body, opts),
-         workflow when not is_nil(workflow) <- Webhook.workflow(config),
+         {:ok, workflow} <- webhook_workflow(config),
          input when is_map(input) <- Webhook.round_input(payload, config),
          {:ok, round_id} <- Breech.start_round(workflow, input, Webhook.round_opts(config, opts)) do
       {:ok, 202, %{id: round_id, status: "queued", webhook_id: webhook_id}}
     else
       {:error, reason} -> {:error, reason}
-      nil -> {:error, {:bad_request, "webhook workflow is required"}}
-      _invalid -> {:error, {:bad_request, "webhook input must be a JSON object"}}
     end
   end
 
@@ -330,6 +328,13 @@ defmodule Twelvgaige.API.Router do
 
   defp workflow_payload(_payload),
     do: {:error, {:bad_request, "workflow or workflow_path is required"}}
+
+  defp webhook_workflow(config) do
+    case Webhook.workflow(config) do
+      nil -> {:error, {:bad_request, "webhook workflow is required"}}
+      workflow -> {:ok, workflow}
+    end
+  end
 
   defp authenticate(method, segments, query, opts) do
     token = Keyword.get(opts, :bearer_token, Keyword.get(opts, :auth_token))

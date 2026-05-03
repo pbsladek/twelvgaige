@@ -78,7 +78,7 @@ defmodule Twelvgaige.LLM.Providers.Common do
       body_opts = [body_format: :binary]
       http_request = {String.to_charlist(request.url), headers, ~c"application/json", body}
 
-      case :httpc.request(:post, http_request, http_opts, body_opts) do
+      case apply(:httpc, :request, [:post, http_request, http_opts, body_opts]) do
         {:ok, {{_version, status, _reason}, response_headers, response_body}} ->
           {:ok,
            %{status: status, headers: normalize_headers(response_headers), body: response_body}}

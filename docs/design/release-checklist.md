@@ -35,6 +35,9 @@ make ci
 normal tests, and persistence tests. GitHub Actions uses the same Make target.
 All reusable workflow actions must stay pinned to full commit SHAs.
 
+Run `make typecheck` during local type-warning cleanup. It uses Dialyxir/Dialyzer
+and is not a release gate until the Dialyzer backlog has a clean baseline.
+
 Run the daemon suite on machines where local IPC tests are supported:
 
 ```bash

@@ -14,12 +14,6 @@ defmodule Twelvgaige.Shell.Format.TOML do
       {:ok, map} when is_map(map) ->
         {:ok, map}
 
-      {:ok, _other} ->
-        V.error(:invalid_shell, "TOML shell document must be a map", [], %{
-          file_path: path,
-          format: "toml"
-        })
-
       {:error, error} ->
         V.error(:invalid_shell, "failed to parse TOML shell file", [], %{
           file_path: path,
@@ -30,5 +24,4 @@ defmodule Twelvgaige.Shell.Format.TOML do
   end
 
   defp error_message(%{__exception__: true} = error), do: Exception.message(error)
-  defp error_message(error), do: inspect(error)
 end

@@ -40,6 +40,9 @@ semantics.
   checksum, and provenance model is explicit.
 - Do not implement split, merge, or `doctor --apply` before graph, lint, and
   minimal scaffolding prove useful.
+- Do not implement write-capable patch application until a dedicated
+  `patch_apply` RFC defines canonical patch plans, digest-bound approval, path
+  isolation, and audit behavior.
 
 ## Problem Statement
 
@@ -61,14 +64,28 @@ The design target is a developer workflow closer to:
 
 ```bash
 twelvgaige shell new k8s-incident --scaffold inspect-analyze-gate-fix-verify
-twelvgaige shot add docs/traphouse/workflows/k8s-incident.yaml verify_recovery --after remediate
-twelvgaige shell graph docs/traphouse/workflows/k8s-incident.yaml
-twelvgaige shell lint docs/traphouse/workflows/k8s-incident.yaml
-twelvgaige shell explain docs/traphouse/workflows/k8s-incident.yaml
+twelvgaige shot add traphouse/workflows/k8s-incident.yaml verify_recovery --after remediate
+twelvgaige shell graph traphouse/workflows/k8s-incident.yaml
+twelvgaige shell lint traphouse/workflows/k8s-incident.yaml
+twelvgaige shell explain traphouse/workflows/k8s-incident.yaml
 ```
 
 The file remains ordinary shell data. The tooling just makes the boring parts
 harder to get wrong.
+
+## Early Scope Boundary
+
+The first implementation slice should stay narrow:
+
+- SAM0a root/command contracts.
+- SAM1 graph inspection.
+- SAM2 workflow-only lint.
+- SAM3 local scaffolding with deterministic mock agents.
+
+The following are intentionally later work unless a phase explicitly depends on
+them: variants, lifecycle mutation commands, full lockfile updates, repo-wide
+shared agent loading, remote drafting, write-capable patch application,
+condition AST rewriting, split/merge refactors, and `doctor --apply`.
 
 ## Authoring Model
 
@@ -85,13 +102,216 @@ Only the Shell IR is executed. Scaffolds, libraries, and assistants are
 authoring inputs. Their output must pass the same loader, normalization,
 compiler, safety, and resource checks as a hand-written shell.
 
+## Design Principles
+
+The authoring system should optimize for long-term maintainability rather than
+one-time generation.
+
+- **Files remain the source of truth.** The daemon can load and run shells, but
+  authoring state belongs in reviewed repository files.
+- **Generation produces diffs.** Any generated or refactored shell should be
+  reviewed like code before it is run in production.
+- **No hidden imports at runtime.** Scaffolds, templates, overlays, and
+  libraries expand into ordinary shell files. A future reader should not need a
+  live library server to understand what will execute.
+- **Bulk operations are first-class.** Teams manage collections of workflows,
+  agents, tools, and policies. Single-file commands must have directory-level
+  equivalents.
+- **Safety is structural.** Write-capable flows require explicit graph-level
+  safety shots and policy metadata, not prompt-only warnings.
+- **Edits are reversible.** Mutating commands should support dry-run output,
+  deterministic formatting, atomic writes, and small reviewable diffs.
+- **LLM assistance is optional.** The deterministic local authoring tools must
+  be useful without hosted provider credentials.
+- **Hosted model use is explicit.** Any authoring command or authoring round
+  that sends data to Anthropic, OpenAI, Gemini, or another hosted provider must
+  require `--allow-remote` and print a provider/data disclosure summary before
+  transport.
+
+## Developer Usage Flows
+
+### Flow 1 - Understand An Existing Workflow
+
+This is the safest first user experience because it is read-only:
+
+```bash
+twelvgaige shell validate traphouse/workflows/k8s-incident.yaml
+twelvgaige shell graph traphouse/workflows/k8s-incident.yaml
+twelvgaige shell graph traphouse/workflows/k8s-incident.yaml --format json
+twelvgaige shell explain traphouse/workflows/k8s-incident.yaml
+```
+
+The CLI should answer:
+
+- Which shots can run in parallel?
+- Which shots are safety gates?
+- Which shots can write to external systems?
+- Which agents and tools are referenced?
+- Which input keys and output schemas shape the workflow?
+- What will block the workflow from compiling or running?
+
+### Flow 2 - Create A New Workflow From A Scaffold
+
+```bash
+twelvgaige shell new k8s-incident \
+  --scaffold inspect-analyze-gate-fix-verify \
+  --format yaml \
+  --output traphouse/workflows/k8s-incident.yaml \
+  --write
+
+twelvgaige shell lint traphouse/workflows/k8s-incident.yaml
+twelvgaige round run traphouse/workflows/k8s-incident.yaml --input incident.json
+```
+
+Default behavior should print the candidate shell. Writing requires `--write`.
+For a runnable local demo, the command can create adjacent mock agents when
+`--with-mock-agents` is supplied:
+
+```bash
+twelvgaige shell new demo \
+  --scaffold single-shot \
+  --output traphouse/workflows/demo.yaml \
+  --with-mock-agents \
+  --write
+```
+
+### Flow 3 - Evolve A Workflow With Reviewable Diffs
+
+```bash
+twelvgaige shot add traphouse/workflows/k8s-incident.yaml verify_recovery \
+  --template k8s.verify_recovery \
+  --after remediate
+
+twelvgaige shot rename traphouse/workflows/k8s-incident.yaml analyze analyze_root_cause
+twelvgaige shell graph traphouse/workflows/k8s-incident.yaml
+twelvgaige shell lint traphouse/workflows/k8s-incident.yaml --strict
+```
+
+The first run prints a diff and a validation report. The developer adds
+`--write` only after the diff is acceptable.
+
+### Flow 4 - Maintain A Repository Of Workflows
+
+```bash
+twelvgaige shell inventory traphouse --format json
+twelvgaige shell lint traphouse --strict
+twelvgaige shell impact traphouse --tool kubectl_apply
+twelvgaige shell impact traphouse --agent k8s_inspector
+```
+
+This flow is for CI, platform teams, and code review. It should find stale
+owners, deprecated shells, write-capable tools without safety policy metadata,
+generated shells that were never reviewed, and workflows affected by a changed
+agent or tool.
+
+### Flow 5 - Draft From Intent
+
+```bash
+twelvgaige shell draft \
+  --from incident-notes.md \
+  --scaffold k8s-triage \
+  --provider openai \
+  --allow-remote \
+  --output traphouse/workflows/k8s-triage-draft.yaml
+```
+
+The draft command never runs a workflow. It emits a candidate shell plus lint
+results. Hosted providers always require explicit `--allow-remote`, regardless
+of whether the source is a file, stdin, an inline prompt, or generated inventory.
+Local Ollama or mock providers can be used without that flag.
+
+### Flow 6 - Use Twelvgaige To Improve Twelvgaige Shells
+
+The authoring system should be able to use Twelvgaige itself. A shell authoring
+round can inspect an existing traphouse, propose workflow edits, run lint, and
+produce a patch for human review.
+
+```bash
+twelvgaige round run traphouse/workflows/shell-authoring-review-readonly.yaml \
+  --input '{"path":"traphouse/workflows/k8s-incident.yaml"}'
+```
+
+The round might use agents such as:
+
+- `shell_architect`: understands the workflow graph and desired operating flow.
+- `shot_editor`: proposes concrete shot additions, removals, or rewrites.
+- `safety_reviewer`: checks write-capable tools and safety gate policy.
+- `schema_reviewer`: checks output schemas and dependency data flow.
+- `docs_reviewer`: updates adjacent docs and usage notes.
+
+Even when agents help, the output is still a candidate diff. The round does not
+write files unless a human-approved safety shot permits a write-capable patch
+tool, and the resulting shell must pass validation and lint.
+
+### End-To-End Team Lifecycle
+
+A realistic team flow should look like this:
+
+```bash
+# 1. Scaffold and write a draft file.
+twelvgaige shell new prod-rollout-check \
+  --scaffold release-readiness \
+  --output traphouse/workflows/prod-rollout-check.yaml \
+  --write
+
+# 2. Review the candidate graph and lint findings.
+twelvgaige shell graph traphouse/workflows/prod-rollout-check.yaml
+twelvgaige shell lint traphouse/workflows/prod-rollout-check.yaml
+
+# 3. Mark review/approval metadata.
+twelvgaige shell review traphouse/workflows/prod-rollout-check.yaml --by platform-oncall
+twelvgaige shell approve traphouse/workflows/prod-rollout-check.yaml --scope prod --by release-manager
+
+# 4. CI checks the whole collection.
+twelvgaige shell inventory traphouse --format json
+twelvgaige shell lint traphouse --strict
+
+# 5. A later agent or template change gets an impact report.
+twelvgaige shell impact traphouse --agent release_analyst
+twelvgaige shell impact traphouse --template release.readiness_gate
+```
+
+This flow makes the desired operating model explicit: scaffolding is quick,
+review is file-based, approval is metadata, CI is collection-aware, and runtime
+execution remains ordinary `round run` or daemon-triggered execution.
+
 ## Proposed CLI Surface
+
+### Shared Command Contract
+
+Authoring commands should follow one mutation contract so developers can trust
+them in CI and code review:
+
+- Read-only commands never write files.
+- Mutating commands default to stdout diff or generated document output.
+- `--output <path>` declares the intended destination, but does not write by
+  itself.
+- `--write` performs the write.
+- `--force` is required to overwrite an existing destination when the command
+  would otherwise create a new file.
+- Invalid `--format` values fail before reading or writing files.
+- JSON output includes `status`, `exit_code`, `errors`, and command-specific
+  payload fields.
+- Human output may be richer, but must not be the only place critical errors are
+  reported.
+
+Initial implementation modules should keep these contracts explicit:
+
+| Module | Responsibility |
+| --- | --- |
+| `Twelvgaige.Shell.Graph` | Pure graph extraction, dependency groups, reverse edges, and graph JSON. |
+| `Twelvgaige.Shell.Lint` | Pure and contextual lint rules with stable finding IDs. |
+| `Twelvgaige.Authoring.Root` | Traphouse root resolution and no-cross-root guarantees. |
+| `Twelvgaige.Authoring.Scaffold` | Scaffold expansion into ordinary shell maps. |
+| `Twelvgaige.Authoring.Mutation` | Diff-first shell edits and validation orchestration. |
+| `Twelvgaige.Authoring.AtomicWriter` | Sibling temp-file writes, cleanup, and replacement. |
+| `Twelvgaige.Authoring.PatchPlan` | Structured patch-plan generation without file mutation. |
 
 ### Scaffold Workflow Shells
 
 ```bash
 twelvgaige shell new <id> [--scaffold <scaffold-id>] [--output <path>] [--format yaml|json|toml]
-twelvgaige shell new k8s-incident --scaffold inspect-analyze-gate-fix-verify --output docs/traphouse/workflows/k8s-incident.yaml
+twelvgaige shell new k8s-incident --scaffold inspect-analyze-gate-fix-verify --output traphouse/workflows/k8s-incident.yaml
 ```
 
 Behavior:
@@ -157,11 +377,15 @@ Behavior:
 - Always emits a candidate file or diff, never directly runs it.
 - Candidate shells are marked with generated metadata.
 - Candidate shells must pass strict validation before use.
-- Generated tools are restricted to known tool IDs; unknown tools are comments
-  or validation errors.
-- Remote providers require explicit `--allow-remote` when input is read from a
-  file or stdin. Draft input is size-bounded and passed through the configured
+- Generated tools are restricted to known tool IDs. Unknown tool IDs are hard
+  validation errors; suggestions for new tools belong in the draft report or
+  metadata, not in executable shell fields.
+- Hosted providers always require explicit `--allow-remote`, regardless of
+  input source. Draft input is size-bounded and passed through the configured
   redactor before leaving the machine.
+- Before remote transport, the CLI prints a provider/data disclosure summary:
+  provider, model, source paths or stdin, byte count after redaction, and
+  whether generated output will include provenance metadata.
 
 ### Manage Local Shot Libraries
 
@@ -335,7 +559,7 @@ Rules:
 - Metadata values pass through the same redaction rules used for logs and audit
   payloads.
 - Metadata must not affect readiness, retry, safety, resource limits, or output.
-- SAM0 must add metadata fields to the workflow and shot schema, structs, and
+- SAM0b must add metadata fields to the workflow and shot schema, structs, and
   document encoding before any command relies on metadata preservation.
 
 Lifecycle values:
@@ -356,6 +580,42 @@ twelvgaige shell review <shell-path> --by <actor>
 twelvgaige shell approve <shell-path> --scope prod --by <actor>
 twelvgaige shell deprecate <shell-path> --reason <text>
 ```
+
+Lifecycle transitions:
+
+```text
+draft -> reviewed -> approved -> scheduled
+   |         |           |
+   |         |           +-> deprecated -> retired
+   |         +-> draft
+   +-> retired
+```
+
+Rules:
+
+- Generated or scaffolded shells start as `draft`.
+- `reviewed` means a human has reviewed the shell content, but it is not
+  automatically allowed for scheduled or production use.
+- `approved` requires owner, scope, review timestamp, and safety policy metadata
+  when write-capable tools are present.
+- `scheduled` requires `approved` plus trigger/schedule metadata.
+- `deprecated` shells remain loadable for replay or audit but strict lint warns
+  when they are referenced by new automation.
+- `retired` shells are retained for history and should fail strict lint if
+  selected for new runs.
+- `reviewed` and `approved` records must bind to the content that was reviewed:
+  normalized workflow digest, referenced agent/loadout digests, approver,
+  timestamp, approval scope, expiry when relevant, and evidence hash.
+- Any workflow, agent, loadout, safety policy, or approved patch-plan change
+  invalidates the bound review or approval. Strict lint should fail or downgrade
+  the shell to `draft` until a new review is recorded.
+
+Lifecycle metadata is authoring-only and does not change DAG execution
+semantics. Runtime still validates the shell and enforces safety policies
+independently. Separately, daemon, scheduler, and CI admission policy may require
+`approved` or `scheduled` lifecycle metadata bound to the current digest for
+production or unattended runs. Manual local runs should warn when approval is
+missing instead of silently treating metadata as runtime control flow.
 
 ## Lint Rules
 
@@ -394,14 +654,14 @@ The authoring tool should support common maintenance edits:
 
 | Operation | Example | Notes |
 | --- | --- | --- |
-| Rename shot | `shot rename shell.yaml old new` | Updates dependencies and conditions. |
+| Rename shot | `shot rename shell.yaml old new` | Updates dependencies; condition rewrites wait for AST support. |
 | Extract safety gate | `shot gate shell.yaml remediate --id approval` | Inserts safety dependency before write shot. |
 | Split shot | `shot split shell.yaml analyze --into classify,explain` | Creates draft shots and preserves dependencies. |
 | Merge shots | `shot merge shell.yaml collect_logs collect_events --id inspect` | Requires compatible agents/tools. |
 | Replace agent | `shot replace-agent shell.yaml old_agent new_agent` | Dry-run impact report first. |
 | Replace tool | `shot replace-tool shell.yaml old_tool new_tool` | Revalidates tool safety and allowlists. |
 | Update schema | `shot schema set shell.yaml analyze schema.json` | Validates output schema shape. |
-| Bulk metadata | `shell metadata set docs/traphouse --owner platform` | Collection-scale operation. |
+| Bulk metadata | `shell metadata set traphouse --owner platform` | Collection-scale operation. |
 | Convert format | existing `shell convert` | Preserve metadata; comments are best effort only. |
 | Sort shots | `shell fmt shell.yaml` | Stable ordering by DAG groups. |
 
@@ -424,6 +684,8 @@ LLM-assisted generation is useful only if it is constrained:
 
 - Sensitive source artifacts are out of scope until redaction and explicit
   remote-provider consent are implemented.
+- Hosted providers require explicit `--allow-remote` for every authoring
+  command and authoring round, even when input is an inline prompt.
 - The model receives the shell schema, allowed tools, known agents, and selected
   scaffolds.
 - Input is capped by bytes and summarized locally where possible before any
@@ -450,40 +712,385 @@ prompt or source artifact
   -> normal round run
 ```
 
-## Storage And Discovery
+## Agent-Assisted Authoring Rounds
 
-Suggested local paths:
+Twelvgaige should dogfood its own model: authoring assistance can be expressed
+as ordinary workflow shells that operate on other shells. This gives us
+parallel review agents, safety gates, resource limits, audit logs, and
+repeatable authoring workflows without creating a separate hidden generator.
 
-```text
-docs/traphouse/
-  scaffolds/
-  shots/
-  workflows/
-  agents/
+### Core Rule
 
-~/.config/twelvgaige/
-  scaffolds/
-  shots/
+Agent-assisted authoring is not a privileged path. It follows the same contract
+as `shell draft`:
+
+- It reads workflow, agent, scaffold, template, inventory, and lint data.
+- It proposes normalized shell maps, diffs, or patch plans.
+- It runs validation, graph inspection, and lint as tool calls.
+- It cannot directly mutate files without an explicit write-capable tool and a
+  safety shot.
+- It never bypasses shell compile, tool-safety, metadata, or provenance rules.
+
+### Authoring Agents
+
+Recommended built-in authoring agents:
+
+| Agent | Role | Default Tools |
+| --- | --- | --- |
+| `shell_architect` | Designs workflow shape, shot boundaries, and dependency flow. | `shell_validate`, `shell_graph`, `shell_lint` |
+| `shot_editor` | Proposes concrete shot edits and templates. | `shell_validate`, `shell_graph`, `shell_diff` |
+| `safety_reviewer` | Reviews write-capable shots, approval policy, and unsafe tool exposure. | `shell_lint`, `tool_catalog_read` |
+| `schema_reviewer` | Reviews output schemas and dependency data contracts. | `shell_validate`, `shell_graph` |
+| `collection_curator` | Reviews inventory, owners, stale lifecycle states, and impact reports. | `shell_inventory`, `shell_impact`, `shell_lint` |
+| `docs_reviewer` | Proposes README/usage updates for changed workflows. | `shell_graph`, `shell_explain` |
+
+These agents should default to read-only tools. A separate `patch_writer` agent
+may exist, but it must sit behind a safety shot and use a narrow patch tool that
+only writes approved paths.
+
+### Authoring Tools
+
+The agent-authoring workflow should use product APIs as tools rather than
+private internals:
+
+| Tool | Purpose | Safety |
+| --- | --- | --- |
+| `shell_validate` | Load and validate shell files. | read-only |
+| `shell_graph` | Return deterministic graph JSON. | read-only |
+| `shell_lint` | Return lint findings. | read-only |
+| `shell_inventory` | Inventory a traphouse directory. | read-only |
+| `shell_impact` | Find workflows affected by agent/tool/template changes. | read-only |
+| `shell_diff` | Compare original and candidate normalized shells. | read-only |
+| `shell_normalize` | Normalize candidate shell maps. | read-only |
+| `tool_catalog_read` | Return known tools, safety levels, and write capability. | read-only |
+| `patch_plan` | Build a structured patch plan without writing. | read-only |
+| `patch_apply` | Apply an approved patch to allowed paths. | write-capable |
+
+`patch_apply` must require:
+
+- a dedicated `patch_apply` RFC before implementation,
+- a structured patch plan emitted by `patch_plan`, not natural-language edit
+  instructions,
+- approval whose canonical patch-plan hash exactly matches the current
+  patch-plan hash,
+- base workflow/file digests that still match the files being changed,
+- repository-root-relative normalized paths,
+- rejection of absolute paths, `..`, symlinks, hardlinks, binary files, and
+  paths outside the configured traphouse root,
+- allowlisted file kinds and roots such as `traphouse/workflows/**/*.yaml`,
+  `traphouse/workflows/**/*.json`, `traphouse/workflows/**/*.toml`, and
+  explicitly configured docs paths,
+- maximum changed files, hunks, bytes, and resulting file size,
+- clean worktree by default, with an explicit dirty-worktree acknowledgment for
+  local interactive use,
+- atomic sibling temp-file writes with cleanup on validation or write failure,
+- audit events containing patch-plan hash, before/after file digests, changed
+  paths, approval actor, and approval scope.
+
+`patch_apply` should only write. Post-write `shell_validate` and `shell_lint`
+must be separate dependent shots so validation remains visible in the graph and
+can fail independently.
+
+### Example Read-Only Shell Authoring Round
+
+```yaml
+kind: workflow
+id: shell_authoring_review_readonly
+version: 1.0.0
+input_schema:
+  type: object
+  required: [path]
+  properties:
+    path:
+      type: string
+shots:
+  - id: inspect_graph
+    kind: slug
+    agent: shell_architect
+    tools: [shell_validate, shell_graph]
+    prompt: "Inspect the workflow graph and summarize structural issues."
+
+  - id: lint_shell
+    kind: slug
+    agent: safety_reviewer
+    tools: [shell_lint]
+    prompt: "Run lint and classify findings by risk."
+
+  - id: propose_patch
+    kind: slug
+    agent: shot_editor
+    depends_on: [inspect_graph, lint_shell]
+    tools: [patch_plan, shell_diff]
+    prompt: "Propose the smallest reviewable patch plan."
 ```
 
-Discovery order:
+This SAM5 round is read-only. It can produce a graph report, lint report, and
+patch plan, but it cannot mutate files. Metadata can be added after SAM0b lands;
+until then this example should remain loadable by the current shell schema.
+
+### Later Apply Round
+
+SAM8 can add a separate write-capable round after the `patch_apply` RFC is
+accepted:
+
+```yaml
+kind: workflow
+id: shell_authoring_apply
+version: 1.0.0
+input_schema:
+  type: object
+  required: [patch_plan_path, expected_patch_hash]
+  properties:
+    patch_plan_path:
+      type: string
+    expected_patch_hash:
+      type: string
+shots:
+  - id: approve_patch
+    kind: safety
+    metadata:
+      approver_role: maintainer
+      required_evidence: [patch_plan_path, expected_patch_hash]
+
+  - id: apply_patch
+    kind: slug
+    agent: patch_writer
+    depends_on: [approve_patch]
+    tools: [patch_apply]
+    prompt: "Apply the approved patch only if the patch-plan hash matches."
+
+  - id: validate_after_apply
+    kind: slug
+    agent: shell_architect
+    depends_on: [apply_patch]
+    tools: [shell_validate, shell_lint]
+    prompt: "Rerun validation and lint after the write."
+```
+
+This is intentionally just another workflow. It can run locally with mock or
+Ollama agents, or against a hosted provider when the user opts in with
+`--allow-remote`.
+
+### Feedback Loop
+
+Agent-assisted authoring should produce structured artifacts:
+
+```text
+read-only authoring run
+  -> graph report
+  -> lint report
+  -> proposed patch plan
+  -> human safety decision
+
+later write-capable apply run
+  -> approved patch-plan hash check
+  -> applied patch, if approved
+  -> post-write validation and lint report
+```
+
+Those artifacts can feed future inventory and lifecycle commands. Over time,
+this lets Twelvgaige maintain its own traphouse without making the model the
+control plane.
+
+## Storage And Discovery
+
+Repository storage should make workflow ownership and review obvious. The
+authoring system should assume Git is the durable source of truth.
+
+The recommended project-local workspace name is `traphouse/`. In this
+repository, example material currently lives under `docs/traphouse/` because it
+is product documentation. For a team using Twelvgaige in its own repository,
+`traphouse/` should be the default root.
+
+```text
+traphouse/
+  README.md
+  workflows/
+    README.md
+    *.yaml
+    agents/
+      *.yaml
+  agents/
+    *.yaml
+  scaffolds/
+    README.md
+    *.yaml
+  shots/
+    README.md
+    *.yaml
+  inventory/
+    shell-inventory.json
+    shell-impact-*.json
+  twelvgaige-library.lock
+
+~/.config/twelvgaige/traphouse/
+  config.toml
+  workflows/
+  agents/
+  scaffolds/
+  shots/
+  libraries/
+```
+
+Repository-local files:
+
+| Path | Purpose | Committed |
+| --- | --- | --- |
+| `traphouse/workflows/` | Runnable workflow shells. | Yes |
+| `traphouse/workflows/agents/` | Workflow-local agents for examples or tightly coupled workflows. | Yes |
+| `traphouse/agents/` | Shared repository agents for future loader support and current authoring inventory. | Yes |
+| `traphouse/scaffolds/` | Team-owned scaffold definitions. | Yes |
+| `traphouse/shots/` | Team-owned shot templates. | Yes |
+| `traphouse/twelvgaige-library.lock` | Hashes for trusted scaffold/template sources. | Yes |
+| `traphouse/inventory/` | Optional generated inventory and impact reports. | Optional |
+
+The daemon does not need scaffolds, shot templates, inventory reports, or
+lockfiles to run a workflow. Those are authoring artifacts.
+
+### Root Resolution
+
+Commands that accept a traphouse collection must resolve exactly one root:
+
+1. `--root <path>` wins.
+2. If the current working directory contains `traphouse/`, use that root.
+3. In this repository, docs and tests may pass `--root docs/traphouse` because
+   shipped examples intentionally live under documentation.
+4. User-local `~/.config/twelvgaige/traphouse` is used only with an explicit
+   `--include-user` or equivalent opt-in.
+
+There is no cross-root discovery. A command operating on `traphouse/` must not
+silently merge files from `docs/traphouse/`, user-local config, or another
+repository. CI must forbid user-local roots so generated output is reproducible.
+
+The root resolver should emit a resolution manifest for inventory, lint, and
+authoring rounds:
+
+```json
+{
+  "root": "traphouse",
+  "workflow_paths": ["traphouse/workflows/k8s-incident.yaml"],
+  "agent_roots": ["traphouse/workflows/agents"],
+  "library_roots": ["traphouse/scaffolds", "traphouse/shots"],
+  "user_local_included": false
+}
+```
+
+### Agent Resolution
+
+Early runtime phases should match the current loader behavior before adding
+global traphouse-wide agent discovery:
+
+1. Workflow-adjacent agents under `<workflow-dir>/agents/`.
+2. Explicit agent shell paths when a command supplies them.
+3. Built-in or test/mock example agents where the existing loader already
+   supports them.
+
+Shared `traphouse/agents/` is authoring and inventory-only until explicit loader
+support is added. When that support lands, the resolver must define namespace
+rules, duplicate handling, digest recording, and stable precedence. Duplicate
+agent IDs across enabled roots should be hard errors unless a fully qualified
+namespace is used.
+
+The future full resolution manifest should include workflow path, workflow
+digest, enabled agent roots in order, resolved agent digests, tool catalog
+digest, provider/loadout digest, library lock digest, namespace decisions, and
+duplicate or skipped entries.
+
+Generated mock agents should be deterministic and live under the workflow's
+adjacent `agents/` directory unless the user supplies a different explicit
+agent output root.
+
+### Library Discovery Order
+
+Template and scaffold discovery order:
 
 1. Explicit `--library-path`.
 2. Built-in templates shipped with the binary.
-3. Repository-local `docs/traphouse/scaffolds` and `docs/traphouse/shots` when
+3. Repository-local `traphouse/scaffolds` and `traphouse/shots` when
    repo-local libraries are enabled.
-4. User-local config directory only when explicitly enabled.
+4. User-local `~/.config/twelvgaige/traphouse` directory only when explicitly
+   enabled.
 
 Conflicts are errors unless a command chooses a fully qualified ID.
 
 Trust rules:
 
 - Non-built-in libraries are never implicit in CI.
+- User-local libraries must not silently affect repository output.
 - Library entries are identified by namespace, ID, version, and content hash.
 - Generated metadata records the library source and hash.
 - A future `library verify` command should check a lockfile of expected hashes.
 - A future `shell library outdated` command should report copied shots whose
   source template changed.
+
+### Library Lockfile
+
+The lockfile records the exact content used by scaffolding and template
+insertion:
+
+```yaml
+kind: library_lock
+version: 1
+entries:
+  - kind: scaffold
+    namespace: builtin
+    id: inspect-analyze-gate-fix-verify
+    version: 1.0.0
+    digest: sha256:...
+  - kind: shot_template
+    namespace: team-platform
+    id: k8s.collect_namespace_state
+    version: 1.2.0
+    source: traphouse/shots/k8s.collect_namespace_state.yaml
+    digest: sha256:...
+```
+
+Rules:
+
+- `shell new` and `shot add --template` record the source entry and digest in
+  generated metadata.
+- `library verify` checks that local files still match the lock.
+- `library update` updates lock entries after human review.
+- CI uses the lockfile and explicit repository paths, not user-local libraries.
+
+### Runtime Manifest Provenance
+
+Workflow shells may include authoring metadata, but persisted round manifests
+should store only safe provenance:
+
+```yaml
+metadata:
+  owner: platform
+  lifecycle: approved
+  source:
+    repository: github.com/pbsladek/twelvgaige
+    path: traphouse/workflows/k8s-incident.yaml
+    digest: sha256:...
+  generated_by:
+    command: shell new
+    scaffold:
+      namespace: builtin
+      id: inspect-analyze-gate-fix-verify
+      version: 1.0.0
+      digest: sha256:...
+```
+
+The runtime manifest should prefer digests and selected safe fields over full
+free-form metadata. This keeps audit provenance useful without turning metadata
+into an accidental secret store.
+
+### Storage Rules
+
+- Workflow shells are stable source files.
+- Scaffolds and templates are copied into workflow shells during authoring.
+- Generated metadata records source and digest, but runtime does not import the
+  source again.
+- Normalization preserves allowlisted metadata.
+- File rewrite commands write to a temporary sibling file, validate it, then
+  atomically replace the target.
+- The authoring cache, if added later, is disposable and rebuildable from files.
+- Generated inventory reports are derived data and should never be required to
+  run a workflow.
 
 ## Collection-Scale Management
 
@@ -491,15 +1098,109 @@ Large teams maintain shell collections, not just single files. Collection
 commands should be first-class rather than late polish:
 
 ```bash
-twelvgaige shell inventory docs/traphouse --format json
-twelvgaige shell impact docs/traphouse --agent k8s_inspector
-twelvgaige shell impact docs/traphouse --tool kubectl_apply
-twelvgaige shell impact docs/traphouse --template k8s.collect_namespace_state
+twelvgaige shell inventory traphouse --format json
+twelvgaige shell impact traphouse --agent k8s_inspector
+twelvgaige shell impact traphouse --tool kubectl_apply
+twelvgaige shell impact traphouse --template k8s.collect_namespace_state
 ```
 
-Inventory should report workflow IDs, versions, lifecycle, owners, agents,
-providers, tools, safety gates, write-capable shots, schedules, and scaffold or
-template provenance.
+Inventory should report workflow IDs, versions, lifecycle, owners, freshness,
+agents, providers, tools, safety gates, write-capable shots, schedules, triggers,
+variants, scaffold/template provenance, agent/tool/provider digests, safety
+coverage, approval digest validity, stale review age, template drift, orphaned
+agents, orphaned templates, invalid partials, and duplicate IDs.
+
+Findings need stable IDs so CI can baseline or route them:
+
+```json
+{
+  "id": "approval.digest.stale",
+  "severity": "error",
+  "path": "traphouse/workflows/prod-rollout-check.yaml",
+  "subject": "workflow:prod-rollout-check",
+  "message": "approved digest does not match the normalized workflow digest"
+}
+```
+
+## Command Output Contracts
+
+Every authoring command should support human output and `--format json`.
+Machine-readable output needs stable shapes because these commands are likely to
+run in CI.
+
+### Graph JSON
+
+```json
+{
+  "status": "ok",
+  "exit_code": 0,
+  "errors": [],
+  "workflow_id": "k8s_incident",
+  "version": "1.0.0",
+  "nodes": [
+    {
+      "id": "inspect",
+      "kind": "slug",
+      "agent": "k8s_inspector",
+      "dependencies": [],
+      "dependents": ["analyze"],
+      "tools": ["kubectl_get"],
+      "safety": false,
+      "write_capable": false
+    }
+  ],
+  "edges": [{"from": "inspect", "to": "analyze"}],
+  "groups": [["inspect"], ["analyze"], ["approval"], ["remediate"], ["verify"]]
+}
+```
+
+### Lint JSON
+
+```json
+{
+  "path": "traphouse/workflows/k8s-incident.yaml",
+  "status": "failed",
+  "exit_code": 1,
+  "errors": [],
+  "findings": [
+    {
+      "id": "metadata.owner.missing",
+      "severity": "warning",
+      "class": "workflow",
+      "message": "workflow metadata owner is missing",
+      "location": {"shot_id": null}
+    }
+  ],
+  "skipped": [
+    {
+      "id": "tools.safety.write_without_gate",
+      "reason": "tool catalog unavailable"
+    }
+  ]
+}
+```
+
+### Mutation Dry-Run JSON
+
+```json
+{
+  "path": "traphouse/workflows/k8s-incident.yaml",
+  "status": "ok",
+  "exit_code": 0,
+  "errors": [],
+  "write": false,
+  "valid": true,
+  "summary": {
+    "shots_added": ["verify"],
+    "shots_removed": [],
+    "edges_added": [{"from": "remediate", "to": "verify"}],
+    "edges_removed": []
+  },
+  "diff": "--- old\n+++ new\n..."
+}
+```
+
+Human output can be richer, but JSON output should stay boring and stable.
 
 ## Variants And Overlays
 
@@ -507,12 +1208,45 @@ Teams often need dev/staging/prod variants, read-only versus write-capable
 variants, and provider/resource-profile variants. Variants are authoring-only:
 they compile into ordinary explicit shells.
 
+Suggested storage:
+
+```text
+traphouse/
+  workflows/
+    incident-response.yaml
+  variants/
+    incident-response.dev.yaml
+    incident-response.staging.yaml
+    incident-response.prod.yaml
+```
+
+Possible authoring commands:
+
+```bash
+twelvgaige shell variant create traphouse/workflows/incident-response.yaml \
+  --env prod \
+  --output traphouse/variants/incident-response.prod.yaml
+
+twelvgaige shell variant diff traphouse/variants/incident-response.dev.yaml \
+  traphouse/variants/incident-response.prod.yaml
+```
+
 Design constraints:
 
 - Variant expansion is not runtime behavior.
 - Expanded shells are committed or reviewed as ordinary shell files.
 - Lint can compare variants and report unintended differences.
 - Safety policy differences between environments must be explicit.
+- Production variants cannot silently inherit write-capable tools from a base
+  shell without an explicit safety gate and approval metadata.
+- Variant diffs should classify changes by graph, agent, provider, tool, safety,
+  resource profile, input schema, and metadata.
+- Variants record `base_path`, `base_digest`, `variant_kind`, overlay or patch
+  digest, generator command, and Twelvgaige version.
+- CI reports stale bases when `base_digest` no longer matches the referenced
+  base shell.
+- CI reports unauthorized deltas when a variant changes fields outside the
+  allowed delta model for its `variant_kind`.
 
 ## Safety Gate Policy Metadata
 
@@ -551,7 +1285,8 @@ CLI tests:
 Integration tests:
 
 - Generated shells run with mock agents.
-- Built-in scaffolds run against `docs/traphouse` examples.
+- Built-in scaffolds run against repository examples with `--root
+  docs/traphouse`, and against project-local `traphouse` layouts in fixtures.
 - CI strict lint catches unsafe write tools without safety gates.
 
 Property tests:
@@ -564,18 +1299,38 @@ Property tests:
 
 ## Implementation Phases
 
-### Phase SAM0 - Design And Shell Contract Review
+Phase dependencies:
+
+```text
+SAM0a command/root contracts
+  -> SAM1 graph
+      -> SAM0b metadata and approval binding
+          -> SAM2 lint
+          -> SAM3 scaffold
+              -> SAM4 inventory
+              -> SAM5 read-only authoring rounds
+                  -> SAM6 refactor
+                      -> SAM7 libraries
+                          -> SAM8 assisted draft and patch RFCs
+                              -> SAM9 maintenance polish
+```
+
+The dependency direction is intentional. Graph inspection should land first
+because it is read-only and exercises the same DAG analysis needed by lint,
+scaffolding validation, refactoring, inventory, and future assisted generation.
+
+### Phase SAM0a - Command Contracts And Root Resolution
 
 Status: design.
 
 - Confirm terminology and command names.
-- Add canonical metadata fields to the spec.
-- Add metadata fields to workflow/shot schemas, structs, parser validation, and
-  `Shell.Document.to_map/1`.
-- Define metadata allowlists, size limits, redaction, and manifest provenance
-  behavior.
 - Decide whether commands live under `shell`, `shot`, or both.
 - Decide the first built-in scaffolds.
+- Define root resolution, no-cross-root discovery, user-local opt-in, and CI
+  restrictions.
+- Define the shared mutation contract: stdout by default, `--output` as intended
+  path, `--write` for mutation, `--force` for overwrite, invalid `--format`
+  failures, and stable JSON fields.
 - Keep libraries, LLM drafting, `doctor --apply`, split, and merge out of early
   phases.
 
@@ -583,20 +1338,49 @@ Acceptance:
 
 - This plan is reviewed and updated.
 - `spec.md` states that authoring helpers do not alter runtime semantics.
-- Metadata survives normalize/convert round trips without affecting execution.
+- CLI examples use `traphouse/` for team repositories and `--root
+  docs/traphouse` only for this repository's examples/tests.
+- The first implementation slice can land graph inspection without schema
+  metadata changes.
+- Command output contracts are documented before new authoring commands are
+  added.
 
 ### Phase SAM1 - Graph Foundation
 
 - Add pure graph inspection helpers over `Shell.Workflow`.
 - Add `shell graph --format json|text`.
+- Include shot IDs, dependencies, reverse dependencies, derived ready groups,
+  kind, agent, tools, safety marker, and write-capable marker when known.
 - Keep this phase read-only.
 
 Acceptance:
 
 - Existing shells can be explained as DAG groups.
 - `shell graph --format json` is deterministic.
+- Graph output for YAML, JSON, and TOML equivalents is semantically identical.
 - No metadata, file rewrite, provider discovery, or runtime behavior changes are
   required.
+
+### Phase SAM0b - Metadata Persistence And Approval Binding
+
+- Add canonical metadata fields to the spec.
+- Add metadata fields to workflow/shot schemas, structs, parser validation, and
+  `Shell.Document.to_map/1`.
+- Define metadata allowlists, size limits, redaction, and manifest provenance
+  behavior.
+- Add digest-bound review and approval records.
+- Define execution admission policy for daemon, scheduler, and CI when
+  production or unattended runs require approved/scheduled shells.
+
+Acceptance:
+
+- Metadata survives normalize/convert round trips without affecting execution.
+- Existing workflow shells without metadata continue to load unchanged.
+- Metadata is excluded from runtime DAG, retry, resource, and safety decisions by
+  tests.
+- `reviewed` and `approved` records bind to normalized workflow, agent, and
+  loadout digests.
+- Strict lint can detect stale approval digests.
 
 ### Phase SAM2 - Lint Foundation
 
@@ -605,6 +1389,7 @@ Acceptance:
 - Add contextual lint plumbing for agents, tools, and profile without requiring
   every contextual lint immediately.
 - Add `shell lint`.
+- Add directory lint support for workflow-only checks.
 
 Acceptance:
 
@@ -612,13 +1397,17 @@ Acceptance:
 - Contextual lint reports skipped checks when agent/tool/profile context is
   absent.
 - Safety diagnostics reuse compiler/tool-safety helpers.
+- Strict lint returns a deterministic non-zero exit code only for configured
+  error-level findings.
 
 ### Phase SAM3 - Scaffolding
 
 - Add built-in scaffold structs or static scaffold files.
 - Add `shell new`.
 - Support YAML first, then JSON/TOML output through existing normalizers.
-- Add examples under `docs/traphouse/scaffolds`.
+- Add examples under this repository's `docs/traphouse/scaffolds` and document
+  `traphouse/scaffolds` as the recommended location for user projects.
+- Default to stdout. Require `--write` for filesystem changes.
 
 Acceptance:
 
@@ -627,25 +1416,56 @@ Acceptance:
   valid workflow with a safety shot.
 - Runnable local scaffolds either create companion mock agent shells or document
   required adjacent agents.
+- Scaffold output validates immediately.
+- Scaffold output includes provenance metadata only after SAM0b metadata support
+  exists.
+- Minimal `library verify` and lockfile write provenance exist before repo-local
+  scaffolds/templates are enabled in CI.
 
 ### Phase SAM4 - Collection Inventory
 
 - Add `shell inventory <dir>`.
 - Add `shell impact <dir> --agent/--tool/--template`.
 - Add collection lint output suitable for CI.
+- Add optional report writing under `traphouse/inventory/`.
 
 Acceptance:
 
 - Teams can audit owners, lifecycle, tools, agents, providers, and safety gates
   across a repository.
 - Impact reports are deterministic JSON.
+- Inventory does not require daemon state.
+- Inventory treats invalid shells as reportable findings rather than crashing
+  the whole collection scan.
 
-### Phase SAM5 - Shot Refactoring Commands
+### Phase SAM5 - Read-Only Agent-Assisted Authoring
+
+- Add read-only authoring tools: `shell_validate`, `shell_graph`,
+  `shell_lint`, `shell_inventory`, `shell_impact`, `shell_diff`.
+- Add catalog entries and safety classifications for those read-only tools before
+  any authoring round references them.
+- Add example `shell_authoring_review_readonly` workflow under this repository's
+  `docs/traphouse/workflows`.
+- Add mock agents for shell architecture, safety review, schema review, and shot
+  editing.
+- Keep all tools read-only.
+
+Acceptance:
+
+- Twelvgaige can run a shell-authoring review round against an existing shell.
+- The round emits graph, lint, and patch-plan artifacts.
+- No files are modified by this phase.
+- Hosted-provider use remains opt-in through normal provider configuration and
+  explicit `--allow-remote`.
+
+### Phase SAM6 - Shot Refactoring Commands
 
 - Add `shot add`, `shot rename`, `shot move`, and `shot remove`.
 - Use canonical rewrites only.
 - Require dry-run/diff by default and `--write` for mutation.
 - Refuse condition rewrites until condition AST support exists.
+- Implement one command at a time, starting with `shot add --template` or
+  `shot rename` over dependency edges only.
 
 Acceptance:
 
@@ -653,23 +1473,27 @@ Acceptance:
 - Renaming refuses shells with matching condition references.
 - Removing a shot with dependents fails unless `--cascade --yes` is supplied.
 - Every successful edit leaves a shell that validates.
+- Atomic writes are tested by failure injection or temp-file cleanup checks.
 
-### Phase SAM6 - Libraries
+### Phase SAM7 - Libraries
 
 - Add local shot template discovery.
 - Add `shot library list/show`.
 - Add template insertion through `shot add --template`.
 - Add repository-local example libraries.
 - Add lockfile/hash verification design before implicit repo-local use.
+- Add `library verify` before enabling repo-local libraries in CI.
 
 Acceptance:
 
 - Built-in templates can be listed offline.
-- Team-local templates can be loaded from `docs/traphouse/shots`.
+- Team-local templates can be loaded from `traphouse/shots`.
 - Inserted templates compile to ordinary shell shots.
 - Generated metadata records template source and hash.
+- Lockfile mismatch produces a clear finding and does not silently use changed
+  template content.
 
-### Phase SAM7 - Assisted Drafting
+### Phase SAM8 - Assisted Drafting And Patch Application
 
 - Add `shell draft --from <file|->`.
 - Use existing provider config and resource limits.
@@ -677,24 +1501,35 @@ Acceptance:
 - Emit candidate file or diff only.
 - Require `--allow-remote` for hosted providers and run redaction before remote
   calls.
+- Add write-capable `patch_apply` only after safety-shot approval, path
+  allowlists, atomic writes, and the dedicated `patch_apply` RFC exist.
 
 Acceptance:
 
 - Mock provider tests cover draft generation.
 - Unknown tools and unsafe write shots are rejected or safety-gated.
 - Generated shells are never executed by the draft command.
+- Hosted-provider drafting is impossible without explicit `--allow-remote`.
+- Draft input is size-bounded and redacted before provider transport.
+- Agent-assisted patch application records patch hashes and reruns validation
+  and lint after writing.
+- `patch_plan` can land before `patch_apply`; write-capable application remains
+  blocked until the RFC and hash-bound approval model are implemented.
 
-### Phase SAM8 - Maintenance And CI Ergonomics
+### Phase SAM9 - Maintenance And CI Ergonomics
 
 - Add `shell doctor`.
 - Add `shell fmt` for canonical ordering.
 - Add CI-friendly lint output.
 - Add docs for maintaining large shell collections.
+- Add lifecycle commands if the metadata model has proven useful.
+- Add `library outdated` and template drift reports after lockfiles exist.
 
 Acceptance:
 
-- A repository can run `twelvgaige shell lint docs/traphouse --strict`.
+- A repository can run `twelvgaige shell lint traphouse --strict`.
 - Developers can safely review generated and refactored shell diffs.
+- CI can produce inventory, impact, and lint artifacts without daemon startup.
 
 ## Open Questions
 
@@ -710,13 +1545,13 @@ Acceptance:
   drafting?
 - Should `shell graph` support Mermaid output for docs?
 - How much lint should be warning-only versus compile-blocking?
-- Should `shell draft` require `--write` to write files, defaulting to stdout?
 
 ## Recommended First Slice
 
 Start with non-LLM tooling:
 
-1. `shell graph`.
+1. SAM0a root and command contracts.
+2. `shell graph`.
 
 This gives immediate ergonomic value, stays deterministic, and creates the
 foundation needed for lint, scaffolding, refactoring, inventory, and assisted

@@ -147,7 +147,7 @@ defmodule Twelvgaige.ResourceLimiter do
   `queue_timeout_ms` is separate from execution timeout. If omitted, the waiter
   can remain queued until capacity appears, owner death, or explicit cancel.
   """
-  @spec acquire(resource_kind(), keyword()) ::
+  @spec acquire(resource_kind(), map() | keyword()) ::
           {:ok, Permit.t()} | {:queued, Waiter.t()} | {:error, reason()}
   @spec acquire(resource_kind(), map(), keyword()) ::
           {:ok, Permit.t()} | {:queued, Waiter.t()} | {:error, reason()}
@@ -630,7 +630,7 @@ defmodule Twelvgaige.ResourceLimiter do
   defp cancel_waiter_timer(%{timer_ref: nil}), do: :ok
 
   defp cancel_waiter_timer(%{timer_ref: timer_ref}) do
-    Process.cancel_timer(timer_ref)
+    _ = Process.cancel_timer(timer_ref)
     :ok
   end
 

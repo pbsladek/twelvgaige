@@ -414,7 +414,6 @@ defmodule Twelvgaige.API.Server do
   defp stream_terminal?(round_id, router_opts) do
     case Twelvgaige.Breech.get_round(round_id, server: Keyword.fetch!(router_opts, :server)) do
       {:ok, %Snapshot{} = snapshot} -> {:ok, Snapshot.terminal?(snapshot)}
-      {:ok, %{status: status}} -> {:ok, status in Twelvgaige.Round.State.terminal_statuses()}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -773,7 +772,7 @@ defmodule Twelvgaige.API.Server do
   end
 
   defp encode_response(%Response{} = response) do
-    body = response.body || ""
+    body = response.body
 
     headers =
       response.headers
@@ -815,7 +814,6 @@ defmodule Twelvgaige.API.Server do
   defp reason_phrase(501), do: "Not Implemented"
   defp reason_phrase(503), do: "Service Unavailable"
   defp reason_phrase(505), do: "HTTP Version Not Supported"
-  defp reason_phrase(_status), do: "Unknown"
 
   defp header(headers, name) do
     headers

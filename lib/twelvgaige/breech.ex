@@ -72,7 +72,7 @@ defmodule Twelvgaige.Breech do
     end
   end
 
-  @spec get_round(String.t(), keyword()) :: {:ok, Snapshot.t()} | {:error, :not_found}
+  @spec get_round(String.t(), keyword()) :: {:ok, Snapshot.t()} | {:error, term()}
   def get_round(round_id, opts \\ []) when is_binary(round_id) do
     with {:ok, store} <- store_for_option(opts),
          {:ok, snapshot} <- store.get_round(round_id) do

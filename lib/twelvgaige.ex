@@ -275,7 +275,7 @@ defmodule Twelvgaige do
   @doc """
   Returns local Breech daemon status.
   """
-  @spec status(keyword()) :: {:ok, Breech.status()} | {:error, :daemon_unavailable}
+  @spec status(keyword()) :: {:ok, Breech.status() | map()} | {:error, term()}
   def status(opts \\ []) do
     case ipc_address(opts) do
       {:ok, address} ->

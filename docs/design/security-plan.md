@@ -5,6 +5,10 @@ zero-trust within reason for a local-first agent orchestration tool: untrusted
 LLM output, untrusted tool output, trusted runtime configuration, narrow host
 authority, and explicit operator approval for risky side effects.
 
+Encryption-at-rest, native TLS/mTLS, key management, audit signing, and release
+signing are tracked separately in
+[`crypto-tls-encryption-plan.md`](crypto-tls-encryption-plan.md).
+
 ## Review Passes
 
 | Pass | Focus | Status | Exit Criteria |

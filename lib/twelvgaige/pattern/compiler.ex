@@ -69,9 +69,9 @@ defmodule Twelvgaige.Pattern.Compiler do
       nil ->
         :ok
 
-      tools ->
+      tool_names ->
         Enum.reduce_while(shots, :ok, fn shot, :ok ->
-          case Enum.find(shot.tools, &(not MapSet.member?(tools, &1))) do
+          case Enum.find(shot.tools, &(&1 not in tool_names)) do
             nil ->
               {:cont, :ok}
 
@@ -79,7 +79,7 @@ defmodule Twelvgaige.Pattern.Compiler do
               {:halt,
                {:error,
                 Error.new(:compile_error, :unknown_tool, "shot references unknown tool",
-                  details: %{shot_id: shot.id, tool: tool, known_tools: Enum.sort(tools)}
+                  details: %{shot_id: shot.id, tool: tool, known_tools: Enum.sort(tool_names)}
                 )}}
           end
         end)
@@ -99,7 +99,6 @@ defmodule Twelvgaige.Pattern.Compiler do
           else
             :error -> {:cont, :ok}
             :no_policy -> {:cont, :ok}
-            {:error, _error} = error -> {:halt, error}
           end
         end)
     end
@@ -288,10 +287,10 @@ defmodule Twelvgaige.Pattern.Compiler do
   defp normalize_tool_names(tools) when is_list(tools) do
     tools
     |> Enum.map(&tool_name/1)
-    |> MapSet.new()
+    |> Enum.uniq()
   end
 
-  defp normalize_tool_names(_tools), do: MapSet.new()
+  defp normalize_tool_names(_tools), do: []
 
   defp tool_names_from_catalog(catalog) when is_atom(catalog) do
     if Code.ensure_loaded?(catalog) and function_exported?(catalog, :names, 0) do
@@ -432,7 +431,7 @@ defmodule Twelvgaige.Pattern.Compiler do
            {:error,
             %{
               error
-              | details: Map.merge(error.details || %{}, %{shot_id: shot.id})
+              | details: Map.merge(error.details, %{shot_id: shot.id})
             }}}
       end
     end)
@@ -487,14 +486,14 @@ defmodule Twelvgaige.Pattern.Compiler do
       |> Enum.filter(fn {_id, deps} -> deps == [] end)
       |> Enum.map(&elem(&1, 0))
 
-    visited = visit_ready(ready, dependency_graph, MapSet.new())
+    visited = visit_ready(ready, dependency_graph, %{})
 
-    if MapSet.size(visited) == length(all_nodes) do
+    if map_size(visited) == length(all_nodes) do
       :ok
     else
       {:error,
        Error.new(:compile_error, :cycle_detected, "workflow dependency graph contains a cycle",
-         details: %{remaining: all_nodes -- MapSet.to_list(visited)}
+         details: %{remaining: all_nodes -- Map.keys(visited)}
        )}
     end
   end
@@ -502,15 +501,15 @@ defmodule Twelvgaige.Pattern.Compiler do
   defp visit_ready([], _graph, visited), do: visited
 
   defp visit_ready([node | rest], graph, visited) do
-    if MapSet.member?(visited, node) do
+    if Map.has_key?(visited, node) do
       visit_ready(rest, graph, visited)
     else
-      visited = MapSet.put(visited, node)
+      visited = Map.put(visited, node, true)
 
       newly_ready =
         graph
-        |> Enum.reject(fn {id, _deps} -> MapSet.member?(visited, id) end)
-        |> Enum.filter(fn {_id, deps} -> Enum.all?(deps, &MapSet.member?(visited, &1)) end)
+        |> Enum.reject(fn {id, _deps} -> Map.has_key?(visited, id) end)
+        |> Enum.filter(fn {_id, deps} -> Enum.all?(deps, &Map.has_key?(visited, &1)) end)
         |> Enum.map(&elem(&1, 0))
 
       visit_ready(rest ++ newly_ready, graph, visited)

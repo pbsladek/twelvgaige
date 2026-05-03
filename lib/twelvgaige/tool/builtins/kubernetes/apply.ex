@@ -95,10 +95,10 @@ defmodule Twelvgaige.Tool.Builtins.Kubernetes.Apply do
     if expanded_path != expanded_root and within_relative_path?(relative) do
       :ok
     else
-      Common.tool_error(:tool_denied, "manifest path is outside the allowed root",
+      Common.tool_error(:tool_denied, "manifest path is outside the allowed root", %{
         path: expanded_path,
         root: expanded_root
-      )
+      })
     end
   end
 
@@ -132,20 +132,20 @@ defmodule Twelvgaige.Tool.Builtins.Kubernetes.Apply do
       case File.lstat(current) do
         {:ok, %{type: :symlink}} ->
           {:halt,
-           Common.tool_error(:tool_denied, "symlink manifest paths are denied",
+           Common.tool_error(:tool_denied, "symlink manifest paths are denied", %{
              path: current,
              root: expanded_root
-           )}
+           })}
 
         {:ok, _stat} ->
           {:cont, {:ok, current}}
 
         {:error, reason} ->
           {:halt,
-           Common.tool_error(:tool_non_retryable, "could not inspect manifest path",
+           Common.tool_error(:tool_non_retryable, "could not inspect manifest path", %{
              path: current,
              reason: reason
-           )}
+           })}
       end
     end)
     |> case do
@@ -158,9 +158,9 @@ defmodule Twelvgaige.Tool.Builtins.Kubernetes.Apply do
     if File.regular?(expanded_path) do
       :ok
     else
-      Common.tool_error(:tool_non_retryable, "manifest path is not a regular file",
+      Common.tool_error(:tool_non_retryable, "manifest path is not a regular file", %{
         path: expanded_path
-      )
+      })
     end
   end
 

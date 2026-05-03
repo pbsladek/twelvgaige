@@ -546,7 +546,10 @@ defmodule Twelvgaige.Breech.IPC.Server do
             )}}
         end
 
-      {"approve_all_safety?", value}, {:ok, acc} when value in [false, nil] ->
+      {"approve_all_safety?", false}, {:ok, acc} ->
+        {:cont, {:ok, acc}}
+
+      {"approve_all_safety?", nil}, {:ok, acc} ->
         {:cont, {:ok, acc}}
 
       {"agent_shells", value}, {:ok, acc} when is_list(value) ->

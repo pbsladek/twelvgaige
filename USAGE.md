@@ -45,6 +45,15 @@ make package-burrito-smoke BURRITO_TARGET=linux
 normal tests, and persistence tests. GitHub Actions calls the same targets for
 CI, packaging, and release jobs.
 
+Run Dialyzer locally when working through ElixirLS type warnings:
+
+```bash
+make typecheck
+```
+
+This uses Dialyxir over the normal app build. It is intentionally separate from
+`make ci` until the current Dialyzer warning backlog is cleaned up.
+
 For a native Elixir release bundle:
 
 ```bash

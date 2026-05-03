@@ -361,7 +361,7 @@ defmodule Twelvgaige.Round.Runner do
     result =
       ShotExecutor.run(
         attempt_input,
-        shot_executor_opts(opts, attempt, Map.get(state.policy || %{}, :resource_profile))
+        shot_executor_opts(opts, attempt, Map.get(state.policy, :resource_profile))
       )
 
     record_shot_metrics(shot, result, started_mono, opts)
@@ -643,10 +643,10 @@ defmodule Twelvgaige.Round.Runner do
 
   defp awaiting_safety?(state), do: state.awaiting_safety != []
 
-  defp safety_scope(state), do: Map.get(state.policy || %{}, :safety_scope, :dependency)
+  defp safety_scope(state), do: Map.get(state.policy, :safety_scope, :dependency)
 
   defp rejected_round_status(state) do
-    case Map.get(state.policy || %{}, :on_safety_reject, :halt_round) do
+    case Map.get(state.policy, :on_safety_reject, :halt_round) do
       :fail_round -> :failed
       _halt_round -> :halted
     end
@@ -946,7 +946,6 @@ defmodule Twelvgaige.Round.Runner do
 
   defp shot_status({:ok, _result}), do: :complete
   defp shot_status({:error, _error}), do: :failed
-  defp shot_status(_result), do: :unknown
 
   defp record_safety_decision(decision, opts) do
     Metrics.counter(

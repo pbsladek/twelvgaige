@@ -41,7 +41,7 @@ defmodule Twelvgaige.API.Webhook do
     end
   end
 
-  @spec workflow(config()) :: term()
+  @spec workflow(config()) :: String.t() | map() | nil
   def workflow(config) do
     config = normalize_config(config)
     Map.get(config, :workflow, Map.get(config, :workflow_path))

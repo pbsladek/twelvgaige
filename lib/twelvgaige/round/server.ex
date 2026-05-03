@@ -1615,12 +1615,9 @@ defmodule Twelvgaige.Round.Server do
 
   defp failed_round_status(_round_state), do: :failed
 
-  defp event_type(:complete), do: :round_completed
   defp event_type(:failed), do: :round_failed
   defp event_type(:halted), do: :round_halted
-  defp event_type(:awaiting_safety), do: :round_awaiting_safety
   defp event_type(:awaiting_reconciliation), do: :round_awaiting_reconciliation
-  defp event_type(:cancelled), do: :round_cancelled
   defp event_type(status) when is_atom(status), do: :"round_#{status}"
 
   defp finish_result(state, result) do
@@ -2115,7 +2112,6 @@ defmodule Twelvgaige.Round.Server do
 
   defp shot_status({:ok, _result}), do: :complete
   defp shot_status({:error, _error}), do: :failed
-  defp shot_status(_result), do: :unknown
 
   defp record_safety_decision(decision, opts) do
     Metrics.counter(
@@ -2138,7 +2134,7 @@ defmodule Twelvgaige.Round.Server do
   defp cancel_timer(nil), do: :ok
 
   defp cancel_timer(ref) when is_reference(ref) do
-    Process.cancel_timer(ref)
+    _ = Process.cancel_timer(ref)
     :ok
   end
 
