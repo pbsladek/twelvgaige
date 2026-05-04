@@ -206,6 +206,11 @@ defmodule Twelvgaige.Breech do
       |> Keyword.put_new(:max_profile, state.profile)
 
     with {:ok, workflow, opts, source} <- load_workflow(shell_or_path, opts),
+         :ok <-
+           Shell.Admission.check(workflow,
+             policy: Keyword.get(opts, :admission_policy),
+             now: Twelvgaige.Clock.utc_now()
+           ),
          :ok <- InputValidator.validate(workflow, input),
          {:ok, round_id} <-
            create_queued_round(

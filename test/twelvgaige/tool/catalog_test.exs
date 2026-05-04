@@ -17,7 +17,16 @@ defmodule Twelvgaige.Tool.CatalogTest do
              "kubectl_logs",
              "kubectl_rollout_restart",
              "kubectl_scale",
-             "shell_read"
+             "patch_plan",
+             "shell_diff",
+             "shell_graph",
+             "shell_impact",
+             "shell_inventory",
+             "shell_lint",
+             "shell_normalize",
+             "shell_read",
+             "shell_validate",
+             "tool_catalog_read"
            ]
 
     assert {:ok, metadata} = Catalog.metadata("shell_read")
@@ -33,5 +42,6 @@ defmodule Twelvgaige.Tool.CatalogTest do
     assert "kubectl_get" in error.details.known_tools
     assert "kubectl_delete" in error.details.known_tools
     assert "shell_read" in error.details.known_tools
+    assert "shell_validate" in error.details.known_tools
   end
 end

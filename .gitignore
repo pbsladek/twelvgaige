@@ -4,6 +4,8 @@
 /cover/
 /deps/
 /doc/
+/erl_crash.dump
+/.crash_dumps/
 /rel/
 /packaging/mix_release_overlay/
 /packaging/mix_release_overlays/

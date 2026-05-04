@@ -5,20 +5,27 @@ defmodule Twelvgaige.Store.ConfigTest do
   alias Twelvgaige.Store.File, as: FileStore
   alias Twelvgaige.Store.Memory
   alias Twelvgaige.Store.SQLite
+  alias Twelvgaige.Store.SQLiteEncrypted
 
   setup do
     previous_config = Application.get_env(:twelvgaige, :store)
     previous_file_env = System.get_env("TWELVGAIGE_STORE_FILE")
     previous_sqlite_env = System.get_env("TWELVGAIGE_STORE_SQLITE")
+    previous_sqlcipher_env = System.get_env("TWELVGAIGE_STORE_SQLCIPHER")
+    previous_sqlcipher_key_env = System.get_env("TWELVGAIGE_STORE_SQLCIPHER_KEY")
 
     Application.delete_env(:twelvgaige, :store)
     System.delete_env("TWELVGAIGE_STORE_FILE")
     System.delete_env("TWELVGAIGE_STORE_SQLITE")
+    System.delete_env("TWELVGAIGE_STORE_SQLCIPHER")
+    System.delete_env("TWELVGAIGE_STORE_SQLCIPHER_KEY")
 
     on_exit(fn ->
       restore_app_config(previous_config)
       restore_env("TWELVGAIGE_STORE_FILE", previous_file_env)
       restore_env("TWELVGAIGE_STORE_SQLITE", previous_sqlite_env)
+      restore_env("TWELVGAIGE_STORE_SQLCIPHER", previous_sqlcipher_env)
+      restore_env("TWELVGAIGE_STORE_SQLCIPHER_KEY", previous_sqlcipher_key_env)
     end)
 
     :ok
@@ -57,6 +64,16 @@ defmodule Twelvgaige.Store.ConfigTest do
     System.put_env("TWELVGAIGE_STORE_SQLITE", "/tmp/twelvgaige-env.db")
 
     assert Config.resolve() == {SQLite, path: "/tmp/twelvgaige-env.db"}
+  end
+
+  test "uses TWELVGAIGE_STORE_SQLCIPHER ahead of plaintext sqlite env" do
+    System.put_env("TWELVGAIGE_STORE_FILE", "/tmp/twelvgaige-env.etf")
+    System.put_env("TWELVGAIGE_STORE_SQLITE", "/tmp/twelvgaige-env.db")
+    System.put_env("TWELVGAIGE_STORE_SQLCIPHER", "/tmp/twelvgaige-env-encrypted.db")
+
+    assert Config.resolve() ==
+             {SQLiteEncrypted,
+              path: "/tmp/twelvgaige-env-encrypted.db", key_env: "TWELVGAIGE_STORE_SQLCIPHER_KEY"}
   end
 
   defp restore_app_config(nil), do: Application.delete_env(:twelvgaige, :store)

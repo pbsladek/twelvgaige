@@ -1,0 +1,20 @@
+kind: shot_template
+namespace: platform
+id: review.summary
+version: 1.0.0
+description: Summarize prior shot outputs for human review.
+shot:
+  kind: slug
+  agent: mock_agent
+  prompt: Summarize the previous shot outputs and call out follow-up risks.
+  output_schema:
+    type: object
+    required: [summary, risks]
+    properties:
+      summary:
+        type: string
+      risks:
+        type: array
+        items:
+          type: string
+

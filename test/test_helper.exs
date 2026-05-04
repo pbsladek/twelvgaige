@@ -4,6 +4,8 @@ ExUnit.configure(
     :daemon,
     :persistence,
     :provider_live,
+    :keychain_live,
+    :sqlcipher_live,
     :k8s_live,
     :slow
   ]

@@ -249,6 +249,28 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
       assert error.details.provider == "openai"
     end
 
+    test "rejects cloud provider HTTP downgrades even with insecure override enabled" do
+      parent = self()
+
+      transport = fn request ->
+        send(parent, {:request, request})
+        {:ok, %{status: 200, headers: [], body: %{}}}
+      end
+
+      assert {:error, error} =
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 api_key: "sk-secret",
+                 base_url: "http://api.openai.com/v1/chat/completions",
+                 allow_insecure_provider_url: true,
+                 transport: transport
+               )
+
+      assert error.class == :policy_error
+      assert error.reason == :policy_denied
+      assert error.message =~ "https"
+      refute_receive {:request, _request}
+    end
+
     test "rejects provider URL userinfo before transport" do
       transport = fn _request ->
         flunk("transport should not be called for denied provider URL")
@@ -299,6 +321,53 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
       assert error.message =~ "private IP"
     end
 
+    test "rejects provider endpoint overrides that resolve to IPv6 link-local addresses" do
+      transport = fn _request ->
+        flunk("transport should not be called for denied provider URL")
+      end
+
+      assert {:error, error} =
+               LLM.complete(:gemini, "gemini-test", [%{role: "user", content: "hi"}],
+                 base_url:
+                   "https://generativelanguage.example.com/v1beta/models/gemini:generateContent",
+                 allow_remote_provider_url: true,
+                 dns_resolver: fn "generativelanguage.example.com" ->
+                   {:ok, [{0xFE80, 0, 0, 0, 0, 0, 0, 1}]}
+                 end,
+                 transport: transport
+               )
+
+      assert error.class == :policy_error
+      assert error.reason == :policy_denied
+      assert error.message =~ "private IP"
+      assert error.details.address == "fe80::1"
+    end
+
+    test "does not follow provider redirects through the adapter" do
+      parent = self()
+
+      transport = fn request ->
+        send(parent, {:request, request})
+
+        {:ok,
+         %{
+           status: 302,
+           headers: [{"location", "http://169.254.169.254/latest/meta-data"}],
+           body: %{"error" => "redirect"}
+         }}
+      end
+
+      assert {:error, error} =
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 api_key: "sk-secret",
+                 transport: transport
+               )
+
+      assert_receive {:request, %{url: "https://api.openai.com/v1/chat/completions"}}
+      refute_receive {:request, %{url: "http://169.254.169.254/latest/meta-data"}}
+      assert error.reason == :llm_unknown
+    end
+
     test "allows opted-in provider endpoint overrides only after public DNS validation" do
       parent = self()
 
@@ -334,6 +403,27 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
                )
 
       assert_receive {:timeout_ms, 60_000}
+    end
+
+    test "default hosted provider transport uses verified TLS and disables redirects" do
+      request =
+        Common.request(
+          %{"messages" => []},
+          "openai",
+          "https://api.openai.com/v1/chat/completions",
+          timeout_ms: 30_000
+        )
+
+      http_opts = Common.default_http_options(request)
+      ssl_opts = Keyword.fetch!(http_opts, :ssl)
+
+      assert Keyword.fetch!(http_opts, :timeout) == 30_000
+      assert Keyword.fetch!(http_opts, :autoredirect) == false
+      assert Keyword.fetch!(ssl_opts, :verify) == :verify_peer
+      assert Keyword.fetch!(ssl_opts, :server_name_indication) == ~c"api.openai.com"
+      assert Keyword.fetch!(ssl_opts, :versions) == [:"tlsv1.3", :"tlsv1.2"]
+      assert Keyword.has_key?(ssl_opts, :cacerts)
+      assert Keyword.has_key?(ssl_opts, :customize_hostname_check)
     end
   end
 

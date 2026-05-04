@@ -11,6 +11,7 @@ defmodule Twelvgaige.Shell.Document do
   alias Twelvgaige.Shell.Agent.Choke, as: AgentChoke
   alias Twelvgaige.Shell.Agent.Memory
   alias Twelvgaige.Shell.Agent.Tools
+  alias Twelvgaige.Shell.Metadata
   alias Twelvgaige.Shell.Schema
   alias Twelvgaige.Shell.Workflow
   alias Twelvgaige.Shell.Workflow.Choke
@@ -30,6 +31,7 @@ defmodule Twelvgaige.Shell.Document do
       "timeout" => duration(shell.timeout_ms),
       "policy" => policy_map(shell.policy),
       "input_schema" => schema_map(shell.input_schema),
+      "metadata" => metadata_map(shell.metadata),
       "shots" => Enum.map(shell.shots, &shot_map/1)
     }
     |> compact()
@@ -104,7 +106,8 @@ defmodule Twelvgaige.Shell.Document do
       "retry" => retry_map(shot.retry),
       "choke" => choke_map(shot.choke),
       "output_schema" => schema_map(shot.output_schema),
-      "prompt" => shot.prompt
+      "prompt" => shot.prompt,
+      "metadata" => metadata_map(shot.metadata)
     }
     |> compact()
   end
@@ -151,6 +154,9 @@ defmodule Twelvgaige.Shell.Document do
 
   defp memory_map(%Memory{type: :none}), do: nil
 
+  defp metadata_map(%Metadata{} = metadata), do: metadata |> Metadata.to_map() |> non_empty_map()
+  defp metadata_map(_metadata), do: nil
+
   defp schema_map(nil), do: nil
   defp schema_map(%Schema{root: root}), do: root
 
@@ -162,6 +168,8 @@ defmodule Twelvgaige.Shell.Document do
   defp non_default_duration(value, _default), do: duration(value)
   defp non_empty([]), do: nil
   defp non_empty(value), do: value
+  defp non_empty_map(map) when map == %{}, do: nil
+  defp non_empty_map(map), do: map
 
   defp stringify_atoms(map) do
     Map.new(map, fn

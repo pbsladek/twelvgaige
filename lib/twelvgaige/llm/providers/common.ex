@@ -72,13 +72,10 @@ defmodule Twelvgaige.LLM.Providers.Common do
          {:ok, body} <- encode_body(request.body) do
       headers = charlist_headers(request.headers)
 
-      http_opts =
-        [timeout: request.timeout_ms, autoredirect: false] ++ tls_http_options(request.url)
-
       body_opts = [body_format: :binary]
       http_request = {String.to_charlist(request.url), headers, ~c"application/json", body}
 
-      case apply(:httpc, :request, [:post, http_request, http_opts, body_opts]) do
+      case apply(:httpc, :request, [:post, http_request, default_http_options(request), body_opts]) do
         {:ok, {{_version, status, _reason}, response_headers, response_body}} ->
           {:ok,
            %{status: status, headers: normalize_headers(response_headers), body: response_body}}
@@ -87,6 +84,12 @@ defmodule Twelvgaige.LLM.Providers.Common do
           {:error, reason}
       end
     end
+  end
+
+  @spec default_http_options(map()) :: keyword()
+  def default_http_options(%{url: url, timeout_ms: timeout_ms})
+      when is_binary(url) and is_integer(timeout_ms) do
+    [timeout: timeout_ms, autoredirect: false] ++ tls_http_options(url)
   end
 
   @spec response_body(map()) :: map()
@@ -384,12 +387,8 @@ defmodule Twelvgaige.LLM.Providers.Common do
 
   defp ensure_scheme(_provider, %URI{scheme: "https"}, _opts), do: :ok
 
-  defp ensure_scheme(provider, %URI{scheme: "http"}, opts) do
-    if Keyword.get(opts, :allow_insecure_provider_url, false) do
-      :ok
-    else
-      provider_policy_error(provider, "provider URL must use https", scheme: "http")
-    end
+  defp ensure_scheme(provider, %URI{scheme: "http"}, _opts) do
+    provider_policy_error(provider, "provider URL must use https", scheme: "http")
   end
 
   defp ensure_scheme(provider, %URI{scheme: scheme}, _opts) do
@@ -597,13 +596,18 @@ defmodule Twelvgaige.LLM.Providers.Common do
   defp private_ip?({10, _, _, _}), do: true
   defp private_ip?({127, _, _, _}), do: true
   defp private_ip?({169, 254, _, _}), do: true
+  defp private_ip?({100, second, _, _}) when second in 64..127, do: true
   defp private_ip?({172, second, _, _}) when second in 16..31, do: true
   defp private_ip?({192, 168, _, _}), do: true
   defp private_ip?({0, _, _, _}), do: true
   defp private_ip?({255, 255, 255, 255}), do: true
   defp private_ip?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
   defp private_ip?({0, 0, 0, 0, 0, 0, 0, 0}), do: true
-  defp private_ip?({first, _, _, _, _, _, _, _}), do: (first &&& 0xFE00) == 0xFC00
+
+  defp private_ip?({first, _, _, _, _, _, _, _}) do
+    (first &&& 0xFFC0) == 0xFE80 or (first &&& 0xFE00) == 0xFC00
+  end
+
   defp private_ip?(_ip), do: false
 
   defp format_ip(address) do

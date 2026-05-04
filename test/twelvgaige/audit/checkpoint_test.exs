@@ -62,6 +62,19 @@ defmodule Twelvgaige.Audit.CheckpointTest do
     assert {:error, :event_count_mismatch} = Checkpoint.verify(mutated)
   end
 
+  test "verification detects reordered events" do
+    checkpoint =
+      Checkpoint.export([
+        %{seq: 1, event_type: :round_created, round_id: "round_1"},
+        %{seq: 2, event_type: :shot_attempt_started, round_id: "round_1"},
+        %{seq: 3, event_type: :round_completed, round_id: "round_1"}
+      ])
+
+    mutated = %{checkpoint | "events" => Enum.reverse(checkpoint["events"])}
+
+    assert {:error, {:previous_hash_mismatch, 3}} = Checkpoint.verify(mutated)
+  end
+
   test "export redacts canary secrets before hashing and output" do
     checkpoint =
       Checkpoint.export([
@@ -78,5 +91,43 @@ defmodule Twelvgaige.Audit.CheckpointTest do
     assert event["payload"]["stdout"] == "Authorization: Bearer [REDACTED]"
     assert :ok = Checkpoint.verify(checkpoint)
     refute inspect(checkpoint) =~ "canary-secret"
+  end
+
+  test "signs checkpoint exports with an optional HMAC block" do
+    checkpoint =
+      Checkpoint.export([
+        %{seq: 1, event_type: :round_created, round_id: "round_1", payload: %{status: :queued}}
+      ])
+
+    assert {:ok, signed} =
+             Checkpoint.sign_hmac(checkpoint, "secret",
+               key_ref: "TWELVGAIGE_AUDIT_HMAC_KEY",
+               now: ~U[2026-05-01 12:02:00Z]
+             )
+
+    assert signed["signature"]["algorithm"] == "hmac-sha256-v1"
+    assert signed["signature"]["key_ref"] == "TWELVGAIGE_AUDIT_HMAC_KEY"
+    assert signed["signature"]["signed_at"] == "2026-05-01T12:02:00Z"
+    assert signed["signature"]["signature"] =~ "base64:"
+    assert :ok = Checkpoint.verify(signed)
+    assert :ok = Checkpoint.verify_hmac(signed, "secret")
+    assert {:error, :hmac_signature_mismatch} = Checkpoint.verify_hmac(signed, "wrong")
+  end
+
+  test "HMAC verification detects signature removal and signed content mutation" do
+    checkpoint =
+      Checkpoint.export([
+        %{seq: 1, event_type: :round_created, round_id: "round_1", payload: %{status: :queued}}
+      ])
+
+    assert {:ok, signed} = Checkpoint.sign_hmac(checkpoint, "secret")
+
+    assert {:error, :missing_signature} =
+             Checkpoint.verify_hmac(Map.delete(signed, "signature"), "secret")
+
+    mutated = %{signed | "generated_at" => "2026-05-01T00:00:00Z"}
+
+    assert :ok = Checkpoint.verify(mutated)
+    assert {:error, :hmac_signature_mismatch} = Checkpoint.verify_hmac(mutated, "secret")
   end
 end

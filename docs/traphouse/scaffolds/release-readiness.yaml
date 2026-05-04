@@ -1,0 +1,42 @@
+kind: scaffold
+namespace: platform
+id: release-readiness
+version: 1.0.0
+description: Release readiness review with analysis and a human approval gate.
+workflow:
+  name: Release Readiness
+  shots:
+    - id: collect
+      kind: slug
+      agent: release_reviewer
+      prompt: Collect release notes, recent CI status, and deployment risk signals from the input.
+      output_schema:
+        type: object
+        required: [summary]
+        properties:
+          summary:
+            type: string
+    - id: assess
+      kind: slug
+      agent: release_reviewer
+      depends_on: [collect]
+      prompt: Assess whether this release is ready and list any blockers.
+      output_schema:
+        type: object
+        required: [summary, ready]
+        properties:
+          summary:
+            type: string
+          ready:
+            type: boolean
+    - id: approval
+      kind: safety
+      depends_on: [assess]
+      description: Approve the release decision before downstream automation.
+agents:
+  - kind: agent
+    id: release_reviewer
+    version: 1.0.0
+    provider: mock
+    model: mock-model
+    system_prompt: Review release readiness and return concise JSON.

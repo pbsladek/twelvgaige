@@ -204,12 +204,13 @@ end
 defmodule Twelvgaige.Shell.Workflow.Shot do
   @moduledoc false
 
+  alias Twelvgaige.Shell.Metadata
   alias Twelvgaige.Shell.Schema
   alias Twelvgaige.Shell.Validation, as: V
   alias Twelvgaige.Shell.Workflow.Choke
   alias Twelvgaige.Shell.Workflow.Retry
 
-  @keys ~w(id kind agent description depends_on condition timeout tools retry choke output_schema prompt)
+  @keys ~w(id kind agent description depends_on condition timeout tools retry choke output_schema prompt metadata)
 
   @type t :: %__MODULE__{
           id: String.t(),
@@ -223,7 +224,8 @@ defmodule Twelvgaige.Shell.Workflow.Shot do
           retry: Retry.t(),
           choke: Choke.t(),
           output_schema: Schema.t() | nil,
-          prompt: String.t() | nil
+          prompt: String.t() | nil,
+          metadata: Metadata.t()
         }
 
   defstruct [
@@ -238,7 +240,8 @@ defmodule Twelvgaige.Shell.Workflow.Shot do
     condition: true,
     tools: [],
     retry: %Retry{},
-    choke: %Choke{}
+    choke: %Choke{},
+    metadata: %Metadata{}
   ]
 
   @spec from_map(term(), [term()]) :: {:ok, t()} | {:error, Twelvgaige.Error.t()}
@@ -257,7 +260,9 @@ defmodule Twelvgaige.Shell.Workflow.Shot do
          {:ok, retry} <- Retry.from_map(V.optional(map, :retry, nil), path ++ ["retry"]),
          {:ok, choke} <- Choke.from_map(V.optional(map, :choke, nil), path ++ ["choke"]),
          {:ok, output_schema} <- optional_schema(map, :output_schema, path),
-         {:ok, prompt} <- V.optional_non_empty_string(map, :prompt, path) do
+         {:ok, prompt} <- V.optional_non_empty_string(map, :prompt, path),
+         {:ok, metadata} <-
+           Metadata.from_map(V.optional(map, :metadata, nil), path ++ ["metadata"], :shot) do
       {:ok,
        %__MODULE__{
          id: id,
@@ -271,7 +276,8 @@ defmodule Twelvgaige.Shell.Workflow.Shot do
          retry: retry,
          choke: choke,
          output_schema: output_schema,
-         prompt: prompt
+         prompt: prompt,
+         metadata: metadata
        }}
     end
   end
@@ -307,12 +313,13 @@ defmodule Twelvgaige.Shell.Workflow do
   Declarative workflow shell loaded from a validated map.
   """
 
+  alias Twelvgaige.Shell.Metadata
   alias Twelvgaige.Shell.Schema
   alias Twelvgaige.Shell.Validation, as: V
   alias Twelvgaige.Shell.Workflow.Policy
   alias Twelvgaige.Shell.Workflow.Shot
 
-  @keys ~w(kind id name version timeout policy input_schema shots)
+  @keys ~w(kind id name version timeout policy input_schema metadata shots)
 
   @type t :: %__MODULE__{
           kind: :workflow,
@@ -322,6 +329,7 @@ defmodule Twelvgaige.Shell.Workflow do
           timeout_ms: pos_integer() | nil,
           policy: Policy.t(),
           input_schema: Schema.t() | nil,
+          metadata: Metadata.t(),
           shots: [Shot.t()]
         }
 
@@ -333,6 +341,7 @@ defmodule Twelvgaige.Shell.Workflow do
     :input_schema,
     kind: :workflow,
     policy: %Policy{},
+    metadata: %Metadata{},
     shots: []
   ]
 
@@ -347,6 +356,8 @@ defmodule Twelvgaige.Shell.Workflow do
          {:ok, timeout_ms} <- V.optional_duration_ms(map, :timeout, nil, []),
          {:ok, policy} <- Policy.from_map(V.optional(map, :policy, nil), ["policy"]),
          {:ok, input_schema} <- optional_schema(map, :input_schema),
+         {:ok, metadata} <-
+           Metadata.from_map(V.optional(map, :metadata, nil), ["metadata"], :workflow),
          {:ok, shots} <- shots(map) do
       {:ok,
        %__MODULE__{
@@ -356,6 +367,7 @@ defmodule Twelvgaige.Shell.Workflow do
          timeout_ms: timeout_ms,
          policy: policy,
          input_schema: input_schema,
+         metadata: metadata,
          shots: shots
        }}
     end

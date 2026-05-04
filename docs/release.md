@@ -52,6 +52,7 @@ Pushing a `v*` tag starts `.github/workflows/release.yml`. That workflow builds:
 - Burrito single-binary artifacts for supported targets.
 - Build metadata.
 - SHA-256 checksums.
+- GitHub artifact attestations for staged release assets.
 
 The workflow then creates or updates the GitHub Release for the tag.
 
@@ -60,3 +61,32 @@ upload. GitHub Release assets share one filename namespace, so per-job metadata
 files such as `BUILD-METADATA.txt` and `SHA256SUMS` are renamed with their
 artifact prefix. The publish job also emits one top-level `RELEASE-SHA256SUMS`
 for the staged assets.
+
+## Verify A Release
+
+Download assets from a release:
+
+```bash
+gh release download v0.0.1 --repo pbsladek/twelvgaige --dir twelvgaige-v0.0.1
+cd twelvgaige-v0.0.1
+```
+
+Verify checksums first:
+
+```bash
+shasum -a 256 -c RELEASE-SHA256SUMS
+```
+
+Then verify the GitHub artifact attestation for the checksum manifest and any
+binary you plan to run:
+
+```bash
+gh attestation verify RELEASE-SHA256SUMS --repo pbsladek/twelvgaige
+gh attestation verify twelvgaige-burrito-0.0.1-macos_silicon --repo pbsladek/twelvgaige
+```
+
+The attestation proves GitHub signed provenance for an artifact produced by this
+repository's release workflow. It does not prove bit-for-bit reproducibility on
+another machine, and it is not a separate project-managed GPG key. Treat it as
+the MVP user-verifiable signing path until explicit release signing keys are
+introduced.

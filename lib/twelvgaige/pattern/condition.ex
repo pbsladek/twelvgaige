@@ -21,6 +21,8 @@ defmodule Twelvgaige.Pattern.Condition do
           | {:or, ast(), ast()}
           | {:compare, [String.t()], atom(), term()}
 
+  @type parse_opt :: {:authoring_aliases?, boolean()}
+
   @spec validate(boolean() | String.t()) :: :ok | {:error, Error.t()}
   def validate(condition) when is_boolean(condition), do: :ok
 
@@ -55,10 +57,12 @@ defmodule Twelvgaige.Pattern.Condition do
      )}
   end
 
-  @spec parse(String.t()) :: {:ok, ast()} | {:error, Error.t()}
-  def parse(condition) when is_binary(condition) do
+  @spec parse(String.t(), [parse_opt()]) :: {:ok, ast()} | {:error, Error.t()}
+  def parse(condition, opts \\ [])
+
+  def parse(condition, opts) when is_binary(condition) and is_list(opts) do
     with {:ok, tokens} <- tokenize(condition),
-         {:ok, ast, []} <- parse_or(tokens) do
+         {:ok, ast, []} <- parse_or(tokens, opts) do
       {:ok, ast}
     else
       {:ok, _ast, rest} ->
@@ -72,44 +76,69 @@ defmodule Twelvgaige.Pattern.Condition do
     end
   end
 
-  defp parse_or(tokens) do
-    with {:ok, left, tokens} <- parse_and(tokens) do
-      parse_or_tail(left, tokens)
+  @spec shot_references(boolean() | String.t(), [parse_opt()]) ::
+          {:ok, [String.t()]} | {:error, Error.t()}
+  def shot_references(condition, opts \\ [])
+  def shot_references(condition, _opts) when is_boolean(condition), do: {:ok, []}
+
+  def shot_references(condition, opts) when is_binary(condition) do
+    with {:ok, ast} <- parse(condition, opts) do
+      {:ok, ast |> collect_shot_references() |> Enum.uniq() |> Enum.sort()}
     end
   end
 
-  defp parse_or_tail(left, [:or | tokens]) do
-    with {:ok, right, tokens} <- parse_and(tokens) do
-      parse_or_tail({:or, left, right}, tokens)
+  @spec rewrite_shot_reference(String.t(), String.t(), String.t(), [parse_opt()]) ::
+          {:ok, String.t()} | {:error, Error.t()}
+  def rewrite_shot_reference(condition, old_id, new_id, opts \\ [])
+
+  def rewrite_shot_reference(condition, old_id, new_id, opts)
+      when is_binary(condition) and is_binary(old_id) and is_binary(new_id) do
+    with {:ok, ast} <- parse(condition, opts) do
+      {:ok, ast |> rewrite_shot_ast(old_id, new_id) |> render()}
     end
   end
 
-  defp parse_or_tail(left, tokens), do: {:ok, left, tokens}
+  @spec render(ast()) :: String.t()
+  def render(ast), do: render(ast, 0)
 
-  defp parse_and(tokens) do
-    with {:ok, left, tokens} <- parse_not(tokens) do
-      parse_and_tail(left, tokens)
+  defp parse_or(tokens, opts) do
+    with {:ok, left, tokens} <- parse_and(tokens, opts) do
+      parse_or_tail(left, tokens, opts)
     end
   end
 
-  defp parse_and_tail(left, [:and | tokens]) do
-    with {:ok, right, tokens} <- parse_not(tokens) do
-      parse_and_tail({:and, left, right}, tokens)
+  defp parse_or_tail(left, [:or | tokens], opts) do
+    with {:ok, right, tokens} <- parse_and(tokens, opts) do
+      parse_or_tail({:or, left, right}, tokens, opts)
     end
   end
 
-  defp parse_and_tail(left, tokens), do: {:ok, left, tokens}
+  defp parse_or_tail(left, tokens, _opts), do: {:ok, left, tokens}
 
-  defp parse_not([:not | tokens]) do
-    with {:ok, expr, tokens} <- parse_not(tokens) do
+  defp parse_and(tokens, opts) do
+    with {:ok, left, tokens} <- parse_not(tokens, opts) do
+      parse_and_tail(left, tokens, opts)
+    end
+  end
+
+  defp parse_and_tail(left, [:and | tokens], opts) do
+    with {:ok, right, tokens} <- parse_not(tokens, opts) do
+      parse_and_tail({:and, left, right}, tokens, opts)
+    end
+  end
+
+  defp parse_and_tail(left, tokens, _opts), do: {:ok, left, tokens}
+
+  defp parse_not([:not | tokens], opts) do
+    with {:ok, expr, tokens} <- parse_not(tokens, opts) do
       {:ok, {:not, expr}, tokens}
     end
   end
 
-  defp parse_not(tokens), do: parse_primary(tokens)
+  defp parse_not(tokens, opts), do: parse_primary(tokens, opts)
 
-  defp parse_primary([:lparen | tokens]) do
-    with {:ok, expr, [:rparen | tokens]} <- parse_or(tokens) do
+  defp parse_primary([:lparen | tokens], opts) do
+    with {:ok, expr, [:rparen | tokens]} <- parse_or(tokens, opts) do
       {:ok, expr, tokens}
     else
       {:ok, _expr, _tokens} ->
@@ -120,11 +149,11 @@ defmodule Twelvgaige.Pattern.Condition do
     end
   end
 
-  defp parse_primary([{:boolean, value} | tokens]), do: {:ok, value, tokens}
-  defp parse_primary(tokens), do: parse_comparison(tokens)
+  defp parse_primary([{:boolean, value} | tokens], _opts), do: {:ok, value, tokens}
+  defp parse_primary(tokens, opts), do: parse_comparison(tokens, opts)
 
-  defp parse_comparison(tokens) do
-    with {:ok, path, tokens} <- parse_path(tokens),
+  defp parse_comparison(tokens, opts) do
+    with {:ok, path, tokens} <- parse_path(tokens, opts),
          {:ok, op, tokens} <- parse_operator(tokens) do
       if op == :exists do
         {:ok, {:compare, path, op, nil}, tokens}
@@ -136,9 +165,9 @@ defmodule Twelvgaige.Pattern.Condition do
     end
   end
 
-  defp parse_path([token | tokens]) do
+  defp parse_path([token | tokens], opts) do
     with {:ok, root} <- segment_value(token),
-         true <- root in ["input", "shots"],
+         {:ok, root} <- normalize_root(root, opts),
          {:ok, segments, tokens} <- parse_path_segments(root, tokens),
          true <- valid_path?(root, segments) do
       {:ok, [root | segments], tokens}
@@ -148,7 +177,20 @@ defmodule Twelvgaige.Pattern.Condition do
     end
   end
 
-  defp parse_path(_tokens), do: parse_error("expected condition path", nil)
+  defp parse_path(_tokens, _opts), do: parse_error("expected condition path", nil)
+
+  defp normalize_root(root, opts) do
+    cond do
+      root in ["input", "shots"] ->
+        {:ok, root}
+
+      root == "steps" and Keyword.get(opts, :authoring_aliases?, false) ->
+        {:ok, "shots"}
+
+      true ->
+        parse_error("invalid condition path", {:identifier, root})
+    end
+  end
 
   defp parse_path_segments(root, [:dot, token | tokens]) do
     with {:ok, segment} <- segment_value(token),
@@ -192,6 +234,90 @@ defmodule Twelvgaige.Pattern.Condition do
       end
     end
   end
+
+  defp collect_shot_references({:not, ast}), do: collect_shot_references(ast)
+
+  defp collect_shot_references({:and, left, right}),
+    do: collect_shot_references(left) ++ collect_shot_references(right)
+
+  defp collect_shot_references({:or, left, right}),
+    do: collect_shot_references(left) ++ collect_shot_references(right)
+
+  defp collect_shot_references({:compare, ["shots", shot_id | _segments], _op, _literal}),
+    do: [shot_id]
+
+  defp collect_shot_references({:compare, _path, _op, _literal}), do: []
+  defp collect_shot_references(_ast), do: []
+
+  defp rewrite_shot_ast({:not, ast}, old_id, new_id),
+    do: {:not, rewrite_shot_ast(ast, old_id, new_id)}
+
+  defp rewrite_shot_ast({:and, left, right}, old_id, new_id) do
+    {:and, rewrite_shot_ast(left, old_id, new_id), rewrite_shot_ast(right, old_id, new_id)}
+  end
+
+  defp rewrite_shot_ast({:or, left, right}, old_id, new_id) do
+    {:or, rewrite_shot_ast(left, old_id, new_id), rewrite_shot_ast(right, old_id, new_id)}
+  end
+
+  defp rewrite_shot_ast({:compare, ["shots", old_id | segments], op, literal}, old_id, new_id) do
+    {:compare, ["shots", new_id | segments], op, literal}
+  end
+
+  defp rewrite_shot_ast(ast, _old_id, _new_id), do: ast
+
+  defp render(true, _parent_precedence), do: "true"
+  defp render(false, _parent_precedence), do: "false"
+
+  defp render({:or, left, right}, parent_precedence) do
+    render_binary(:or, left, right, 1, parent_precedence)
+  end
+
+  defp render({:and, left, right}, parent_precedence) do
+    render_binary(:and, left, right, 2, parent_precedence)
+  end
+
+  defp render({:not, ast}, parent_precedence) do
+    rendered = "not " <> render(ast, 3)
+    maybe_parenthesize(rendered, 3, parent_precedence)
+  end
+
+  defp render({:compare, path, :exists, _literal}, _parent_precedence) do
+    render_path(path) <> " exists"
+  end
+
+  defp render({:compare, path, op, literal}, _parent_precedence) do
+    render_path(path) <> " " <> render_operator(op) <> " " <> render_literal(literal)
+  end
+
+  defp render_binary(op, left, right, precedence, parent_precedence) do
+    rendered =
+      render(left, precedence) <> " " <> Atom.to_string(op) <> " " <> render(right, precedence)
+
+    maybe_parenthesize(rendered, precedence, parent_precedence)
+  end
+
+  defp maybe_parenthesize(rendered, precedence, parent_precedence) do
+    if precedence < parent_precedence, do: "(" <> rendered <> ")", else: rendered
+  end
+
+  defp render_path(path), do: Enum.join(path, ".")
+
+  defp render_operator(:eq), do: "=="
+  defp render_operator(:neq), do: "!="
+  defp render_operator(:gt), do: ">"
+  defp render_operator(:gte), do: ">="
+  defp render_operator(:lt), do: "<"
+  defp render_operator(:lte), do: "<="
+  defp render_operator(:in), do: "in"
+
+  defp render_literal(value) when is_binary(value), do: Jason.encode!(value)
+  defp render_literal(value) when is_number(value), do: to_string(value)
+  defp render_literal(value) when is_boolean(value), do: Atom.to_string(value)
+  defp render_literal(nil), do: "null"
+
+  defp render_literal(values) when is_list(values),
+    do: "[" <> (values |> Enum.map(&render_literal/1) |> Enum.join(", ")) <> "]"
 
   defp eval(value, _context, _source) when is_boolean(value), do: {:ok, value}
 

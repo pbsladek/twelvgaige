@@ -1,0 +1,9 @@
+kind: shot_template
+namespace: platform
+id: safety.approval
+version: 1.0.0
+description: Insert a human approval checkpoint before a write-capable shot.
+shot:
+  kind: safety
+  description: Human approval required before continuing.
+

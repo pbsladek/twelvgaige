@@ -79,13 +79,16 @@ The first implementation slice should stay narrow:
 
 - SAM0a root/command contracts.
 - SAM1 graph inspection.
-- SAM2 workflow-only lint.
-- SAM3 local scaffolding with deterministic mock agents.
+- SAM2a workflow-only lint that does not depend on metadata or contextual
+  agent/tool discovery.
+- SAM3a local scaffolding with deterministic mock agents and no provenance
+  metadata until SAM0b exists.
 
 The following are intentionally later work unless a phase explicitly depends on
-them: variants, lifecycle mutation commands, full lockfile updates, repo-wide
-shared agent loading, remote drafting, write-capable patch application,
-condition AST rewriting, split/merge refactors, and `doctor --apply`.
+them: metadata-bound lifecycle approval, variants, lifecycle mutation commands,
+full lockfile updates, repo-wide shared agent loading, remote drafting,
+write-capable patch application, condition AST rewriting, split/merge
+refactors, and `doctor --apply`.
 
 ## Authoring Model
 
@@ -209,16 +212,17 @@ agent or tool.
 ```bash
 twelvgaige shell draft \
   --from incident-notes.md \
-  --scaffold k8s-triage \
   --provider openai \
   --allow-remote \
-  --output traphouse/workflows/k8s-triage-draft.yaml
+  --output traphouse/workflows/k8s-triage-draft.yaml \
+  --write
 ```
 
-The draft command never runs a workflow. It emits a candidate shell plus lint
-results. Hosted providers always require explicit `--allow-remote`, regardless
-of whether the source is a file, stdin, an inline prompt, or generated inventory.
-Local Ollama or mock providers can be used without that flag.
+The draft command never runs a workflow. It emits a candidate shell to stdout by
+default, or writes a candidate file only when `--output` and `--write` are both
+present. Hosted providers always require explicit `--allow-remote`. Draft input
+is byte-bounded and redacted before provider transport. Local Ollama and mock
+providers can be used without that flag.
 
 ### Flow 6 - Use Twelvgaige To Improve Twelvgaige Shells
 
@@ -287,9 +291,14 @@ them in CI and code review:
 - `--output <path>` declares the intended destination, but does not write by
   itself.
 - `--write` performs the write.
+- `--dry-run` is accepted for clarity on mutating commands, but it is also the
+  default. In JSON output, dry-run commands report `"write": false`.
 - `--force` is required to overwrite an existing destination when the command
   would otherwise create a new file.
 - Invalid `--format` values fail before reading or writing files.
+- When `--format` is omitted, commands infer it from `--output` or the input
+  path. If inference is impossible, YAML is the human-facing default and JSON is
+  used only when `--format json` is explicit.
 - JSON output includes `status`, `exit_code`, `errors`, and command-specific
   payload fields.
 - Human output may be richer, but must not be the only place critical errors are
@@ -349,7 +358,7 @@ Behavior:
 ### Inspect And Explain Shells
 
 ```bash
-twelvgaige shell graph <shell-path> [--format text|dot|json]
+twelvgaige shell graph <shell-path> [--format text|json]
 twelvgaige shell explain <shell-path>
 twelvgaige shell lint <shell-path> [--strict]
 twelvgaige shell doctor <shell-path>
@@ -367,19 +376,24 @@ Behavior:
 ### Generate From Intent
 
 ```bash
-twelvgaige shell draft --from prompt.txt --output workflow.yaml --provider openai
-twelvgaige shell draft --from incident.md --scaffold k8s-triage --dry-run
+twelvgaige shell draft --from prompt.txt
+twelvgaige shell draft --from incident.md --provider ollama --model llama3.1 --format toml
+twelvgaige shell draft --from prompt.txt --provider openai --model gpt-4.1 --allow-remote
+twelvgaige shell draft --from prompt.txt --output workflow.yaml --write
 ```
 
 Behavior:
 
 - Optional. Uses configured providers through the existing provider system.
-- Always emits a candidate file or diff, never directly runs it.
-- Candidate shells are marked with generated metadata.
-- Candidate shells must pass strict validation before use.
-- Generated tools are restricted to known tool IDs. Unknown tool IDs are hard
-  validation errors; suggestions for new tools belong in the draft report or
-  metadata, not in executable shell fields.
+- Defaults to the mock provider for offline development and tests.
+- Always emits a candidate shell, never directly runs it.
+- `--output` is accepted only with `--write`; stdout remains the default dry-run
+  path.
+- Hosted providers are blocked unless `--allow-remote` is present.
+- Source text is redacted before it is sent to any provider.
+- Candidate shells must parse, validate, and pass strict lint before emission.
+- Write-capable shots without a direct safety dependency are rejected by lint.
+- `patch_apply` remains deliberately out of scope until its dedicated RFC lands.
 - Hosted providers always require explicit `--allow-remote`, regardless of
   input source. Draft input is size-bounded and passed through the configured
   redactor before leaving the machine.
@@ -1304,10 +1318,12 @@ Phase dependencies:
 ```text
 SAM0a command/root contracts
   -> SAM1 graph
+      -> SAM2a workflow-only lint
+      -> SAM3a local scaffolding without provenance metadata
       -> SAM0b metadata and approval binding
-          -> SAM2 lint
-          -> SAM3 scaffold
-              -> SAM4 inventory
+          -> SAM2b contextual, lifecycle, and approval lint
+          -> SAM3b scaffold provenance metadata
+          -> SAM4 inventory
               -> SAM5 read-only authoring rounds
                   -> SAM6 refactor
                       -> SAM7 libraries
@@ -1318,10 +1334,12 @@ SAM0a command/root contracts
 The dependency direction is intentional. Graph inspection should land first
 because it is read-only and exercises the same DAG analysis needed by lint,
 scaffolding validation, refactoring, inventory, and future assisted generation.
+Metadata binding is important but should not block the first useful lint and
+scaffold slices; those early slices must simply avoid relying on metadata.
 
 ### Phase SAM0a - Command Contracts And Root Resolution
 
-Status: design.
+Status: implemented for the initial authoring command surface.
 
 - Confirm terminology and command names.
 - Decide whether commands live under `shell`, `shot`, or both.
@@ -1347,8 +1365,11 @@ Acceptance:
 
 ### Phase SAM1 - Graph Foundation
 
+Status: implemented. SAM9 documentation polish adds Mermaid rendering for
+copy/paste diagrams through `shell graph --format mermaid`.
+
 - Add pure graph inspection helpers over `Shell.Workflow`.
-- Add `shell graph --format json|text`.
+- Add `shell graph --format json|text|mermaid`.
 - Include shot IDs, dependencies, reverse dependencies, derived ready groups,
   kind, agent, tools, safety marker, and write-capable marker when known.
 - Keep this phase read-only.
@@ -1362,6 +1383,11 @@ Acceptance:
   required.
 
 ### Phase SAM0b - Metadata Persistence And Approval Binding
+
+Status: metadata persistence, canonical workflow subject digests, digest-bound
+review/approval parsing, stale approval lint, `shell admit`, explicit
+daemon/foreground admission policy, and scheduled-job admission defaults are
+implemented.
 
 - Add canonical metadata fields to the spec.
 - Add metadata fields to workflow/shot schemas, structs, parser validation, and
@@ -1384,10 +1410,17 @@ Acceptance:
 
 ### Phase SAM2 - Lint Foundation
 
+Status: SAM2a implemented for workflow-only lint. SAM2b now includes lifecycle
+metadata warnings, generated-draft warnings, stale/missing approval digest
+errors, initial contextual agent/tool lint for path-based workflows, and
+resource-profile warnings for clamped profiles or excessive shot iterations.
+
 - Add lint rule data structures.
-- Add workflow-only lints.
+- Add SAM2a workflow-only lints.
 - Add contextual lint plumbing for agents, tools, and profile without requiring
   every contextual lint immediately.
+- Add SAM2b lifecycle, approval-digest, and contextual lints after SAM0b
+  metadata exists.
 - Add `shell lint`.
 - Add directory lint support for workflow-only checks.
 
@@ -1401,6 +1434,11 @@ Acceptance:
   error-level findings.
 
 ### Phase SAM3 - Scaffolding
+
+Status: SAM3a implemented for built-in local scaffolds. SAM3b scaffold
+provenance metadata is implemented for `shell new`; repo-local scaffold
+libraries and shared lockfile provenance are implemented through
+`shell scaffold list/show/verify/update/outdated`.
 
 - Add built-in scaffold structs or static scaffold files.
 - Add `shell new`.
@@ -1424,6 +1462,11 @@ Acceptance:
 
 ### Phase SAM4 - Collection Inventory
 
+Status: `shell inventory` and `shell impact` are implemented for deterministic
+read-only workflow/agent/tool/provider/lifecycle summaries, invalid-shell
+reporting, agent/tool/template impact queries, and optional JSON report writing
+with `--output`.
+
 - Add `shell inventory <dir>`.
 - Add `shell impact <dir> --agent/--tool/--template`.
 - Add collection lint output suitable for CI.
@@ -1440,8 +1483,16 @@ Acceptance:
 
 ### Phase SAM5 - Read-Only Agent-Assisted Authoring
 
+Status: implemented for local/mock authoring. The read-only authoring tools,
+catalog entries, safety classifications, mock authoring agents, example review
+shell, and an end-to-end review round fixture that emits graph, lint, and
+patch-plan artifacts are implemented. Hosted-provider authoring remains blocked
+until explicit `--allow-remote` consent and disclosure UX are added in a later
+drafting phase.
+
 - Add read-only authoring tools: `shell_validate`, `shell_graph`,
-  `shell_lint`, `shell_inventory`, `shell_impact`, `shell_diff`.
+  `shell_lint`, `shell_inventory`, `shell_impact`, `shell_diff`,
+  `shell_normalize`, `tool_catalog_read`, and `patch_plan`.
 - Add catalog entries and safety classifications for those read-only tools before
   any authoring round references them.
 - Add example `shell_authoring_review_readonly` workflow under this repository's
@@ -1460,6 +1511,16 @@ Acceptance:
 
 ### Phase SAM6 - Shot Refactoring Commands
 
+Status: implemented for the initial conservative command surface. `shot add`,
+`shot rename`, `shot move`, and `shot remove` are implemented. They dry-run by
+default, emit unified diffs, validate rewritten workflows before returning, and
+use atomic writes when `--write` is supplied. Add supports manual slug and
+safety shot insertion; template insertion remains in SAM7. Rename updates
+dependency edges and refuses matching condition references. Move reorders the
+canonical document only; it does not infer or change dependency edges. Remove
+refuses dependent shots unless `--cascade --yes` is supplied, then removes
+transitive dependents.
+
 - Add `shot add`, `shot rename`, `shot move`, and `shot remove`.
 - Use canonical rewrites only.
 - Require dry-run/diff by default and `--write` for mutation.
@@ -1476,6 +1537,17 @@ Acceptance:
 - Atomic writes are tested by failure injection or temp-file cleanup checks.
 
 ### Phase SAM7 - Libraries
+
+Status: implemented for the initial conservative command surface. Built-in and
+explicit/repo-local shot template discovery, `shot library list/show`, repo-local
+example templates, `shot add --template` insertion, lockfile writing, and
+`shot library verify/update/outdated` are implemented. Inserted templates are
+copied into workflow shells as ordinary shots with generated source metadata and
+source digests. CI should use `shot library verify` without `--write-lock`;
+digest mismatches fail instead of silently using changed template content.
+`shot library update` gives a reviewable lockfile diff and writes only with
+`--write-lock`. Scaffold sources now use the same shared library lockfile
+without overwriting shot-template entries.
 
 - Add local shot template discovery.
 - Add `shot library list/show`.
@@ -1495,22 +1567,28 @@ Acceptance:
 
 ### Phase SAM8 - Assisted Drafting And Patch Application
 
-- Add `shell draft --from <file|->`.
-- Use existing provider config and resource limits.
-- Require strict validation and lint after draft.
-- Emit candidate file or diff only.
-- Require `--allow-remote` for hosted providers and run redaction before remote
-  calls.
-- Add write-capable `patch_apply` only after safety-shot approval, path
-  allowlists, atomic writes, and the dedicated `patch_apply` RFC exist.
+Status: initial draft generation implemented; write-capable patch application is
+still intentionally blocked pending a dedicated RFC.
+
+- Implemented: `shell draft --from <file|->`.
+- Implemented: existing provider config and resource limiter plumbing are used
+  through `Twelvgaige.LLM.complete/4`.
+- Implemented: strict validation and lint after draft.
+- Implemented: candidate shell emission to stdout, or candidate file write with
+  explicit `--output ... --write`.
+- Implemented: `--allow-remote` is required for hosted providers and source text
+  is redacted before provider transport.
+- Deferred: write-capable `patch_apply` only after safety-shot approval, path
+  allowlists, atomic writes, patch hashes, and the dedicated `patch_apply` RFC
+  exist.
 
 Acceptance:
 
-- Mock provider tests cover draft generation.
-- Unknown tools and unsafe write shots are rejected or safety-gated.
-- Generated shells are never executed by the draft command.
-- Hosted-provider drafting is impossible without explicit `--allow-remote`.
-- Draft input is size-bounded and redacted before provider transport.
+- Done: mock provider tests cover draft generation.
+- Done: unsafe write shots are rejected unless safety-gated.
+- Done: generated shells are never executed by the draft command.
+- Done: hosted-provider drafting is impossible without explicit `--allow-remote`.
+- Done: draft input is size-bounded and redacted before provider transport.
 - Agent-assisted patch application records patch hashes and reruns validation
   and lint after writing.
 - `patch_plan` can land before `patch_apply`; write-capable application remains
@@ -1525,26 +1603,47 @@ Acceptance:
 - Add lifecycle commands if the metadata model has proven useful.
 - Add `library outdated` and template drift reports after lockfiles exist.
 
+Status: initial `shell doctor`, `shell fmt`, `shell review`, `shell approve`,
+`shell deprecate`, and `shell retire` implemented. They are daemon-free and
+suitable for CI.
+`shell doctor` turns graph and lint findings into repair-oriented
+recommendations in human or JSON output. `shell fmt` canonicalizes one shell
+file, supports `--check`, emits diffs by default, and uses atomic writes.
+`shell review` and `shell approve` stamp digest-bound authoring metadata, emit
+diffs by default, and write only with `--write`; approval requires
+`metadata.owner` and explicit `--scope`. `shell deprecate` and `shell retire`
+record a lifecycle reason and clear review/approval bindings. Strict lint warns
+on deprecated workflows and fails retired workflows. `shot library outdated`
+scans copied template source metadata in workflow shots and reports
+digest/version drift without rewriting workflows.
+
 Acceptance:
 
 - A repository can run `twelvgaige shell lint traphouse --strict`.
-- Developers can safely review generated and refactored shell diffs.
-- CI can produce inventory, impact, and lint artifacts without daemon startup.
+- Done: developers can safely review generated and refactored shell diffs.
+- Done: CI can produce inventory, impact, lint, and doctor artifacts without
+  daemon startup.
 
-## Open Questions
+## Decisions For First Pass
 
-- Should the primary term for reusable templates be `scaffold`, `wad`, `loadout`,
-  or something else?
-- Should `shot` be a top-level CLI namespace, or should all commands stay under
-  `shell`?
-- When, if ever, is comment-preserving YAML editing worth the dependency and
-  complexity cost?
-- Should scaffolds be plain shell-like YAML or a separate `kind: scaffold`
-  document?
-- Should generated metadata include the exact prompt hash used for assisted
-  drafting?
-- Should `shell graph` support Mermaid output for docs?
-- How much lint should be warning-only versus compile-blocking?
+These decisions are resolved for the first implementation pass:
+
+- Reusable workflow blueprints are called `scaffolds`. `loadout` remains
+  reserved for provider/model/system-prompt resolution.
+- `shot` is a top-level CLI namespace for shot lifecycle commands. Whole-shell
+  commands stay under `shell`.
+- Comment-preserving YAML editing is not a phase-one requirement. Canonical
+  rewrites may drop comments until there is a clear library and UX need.
+- Scaffolds are separate `kind: scaffold` documents. They are authoring inputs,
+  not runtime shell imports.
+- Assisted drafting metadata should include prompt/input digest, provider,
+  model, redaction summary, and source byte count after SAM0b exists. It must
+  not store raw prompt text by default.
+- Mermaid output for `shell graph` is implemented as documentation polish after
+  JSON and text.
+- Lint rules have severities. `--strict` exits non-zero only for error-level
+  findings, while warning-only findings remain review guidance unless promoted
+  by policy.
 
 ## Recommended First Slice
 

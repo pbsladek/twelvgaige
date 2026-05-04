@@ -12,6 +12,7 @@ defmodule Twelvgaige.Audit.Checkpoint do
 
   @schema_version 1
   @algorithm "sha256-chain-v1"
+  @signature_algorithm "hmac-sha256-v1"
   @genesis String.duplicate("0", 64)
 
   @type checkpoint :: map()
@@ -48,6 +49,53 @@ defmodule Twelvgaige.Audit.Checkpoint do
 
   def verify(_checkpoint), do: {:error, :invalid_checkpoint}
 
+  @spec sign_hmac(checkpoint(), binary(), keyword()) :: {:ok, checkpoint()} | {:error, term()}
+  def sign_hmac(checkpoint, key, opts \\ [])
+
+  def sign_hmac(%{} = checkpoint, key, opts) when is_binary(key) and key != "" do
+    with :ok <- verify(checkpoint) do
+      signed_at = DateTime.to_iso8601(Keyword.get(opts, :now, Twelvgaige.Clock.utc_now()))
+      key_ref = Keyword.get(opts, :key_ref)
+
+      signature =
+        checkpoint
+        |> unsigned_checkpoint()
+        |> signature_payload()
+        |> hmac(key)
+
+      {:ok,
+       Map.put(checkpoint, "signature", %{
+         "algorithm" => @signature_algorithm,
+         "signature" => "base64:" <> Base.encode64(signature),
+         "key_ref" => key_ref,
+         "signed_at" => signed_at
+       })}
+    end
+  end
+
+  def sign_hmac(_checkpoint, _key, _opts), do: {:error, :hmac_key_required}
+
+  @spec verify_hmac(checkpoint(), binary()) :: :ok | {:error, term()}
+  def verify_hmac(%{} = checkpoint, key) when is_binary(key) and key != "" do
+    with :ok <- verify(checkpoint),
+         {:ok, signature} <- fetch_signature(checkpoint),
+         {:ok, actual} <- decode_signature(signature["signature"]) do
+      expected =
+        checkpoint
+        |> unsigned_checkpoint()
+        |> signature_payload()
+        |> hmac(key)
+
+      if Twelvgaige.Security.secure_equal?(actual, expected) do
+        :ok
+      else
+        {:error, :hmac_signature_mismatch}
+      end
+    end
+  end
+
+  def verify_hmac(_checkpoint, _key), do: {:error, :hmac_key_required}
+
   @spec verify!(checkpoint()) :: checkpoint()
   def verify!(%{} = checkpoint) do
     case verify(checkpoint) do
@@ -77,6 +125,22 @@ defmodule Twelvgaige.Audit.Checkpoint do
        do: :ok
 
   defp verify_shape(_checkpoint), do: {:error, :invalid_checkpoint_header}
+
+  defp fetch_signature(%{
+         "signature" =>
+           %{
+             "algorithm" => @signature_algorithm,
+             "signature" => signature
+           } = signature_block
+       })
+       when is_binary(signature),
+       do: {:ok, signature_block}
+
+  defp fetch_signature(%{"signature" => _signature}), do: {:error, :invalid_signature_block}
+  defp fetch_signature(_checkpoint), do: {:error, :missing_signature}
+
+  defp decode_signature("base64:" <> encoded), do: Base.decode64(encoded)
+  defp decode_signature(_signature), do: {:error, :invalid_signature}
 
   defp fetch_events(%{"events" => events}) when is_list(events), do: {:ok, events}
   defp fetch_events(_checkpoint), do: {:error, :missing_events}
@@ -161,4 +225,13 @@ defmodule Twelvgaige.Audit.Checkpoint do
   end
 
   defp canonical_json(value), do: Jason.encode!(value)
+
+  defp unsigned_checkpoint(checkpoint), do: Map.delete(checkpoint, "signature")
+
+  defp signature_payload(checkpoint) do
+    ["twelvgaige.audit.checkpoint.signature.v1", "\n", canonical_json(checkpoint)]
+    |> IO.iodata_to_binary()
+  end
+
+  defp hmac(payload, key), do: :crypto.mac(:hmac, :sha256, key, payload)
 end

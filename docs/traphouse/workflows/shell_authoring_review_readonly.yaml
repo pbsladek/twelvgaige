@@ -1,0 +1,99 @@
+kind: workflow
+id: shell_authoring_review_readonly
+name: Shell Authoring Review Readonly
+version: 1.0.0
+metadata:
+  owner: platform
+  lifecycle: draft
+  tags: [authoring, review]
+shots:
+  - id: inspect_shell
+    kind: slug
+    agent: shell_architect
+    timeout: 2m
+    tools: [shell_validate, shell_graph, shell_inventory]
+    prompt: |
+      Inspect the target shell collection structure and summarize workflow shape.
+
+      Return JSON matching this example:
+
+      ```json
+      {"summary":"workflow graph and inventory reviewed","risk_count":0}
+      ```
+    output_schema:
+      type: object
+      required: [summary, risk_count]
+      properties:
+        summary:
+          type: string
+        risk_count:
+          type: integer
+
+  - id: review_safety
+    kind: slug
+    agent: shell_safety_reviewer
+    depends_on: [inspect_shell]
+    timeout: 2m
+    tools: [shell_lint, shell_impact, tool_catalog_read]
+    prompt: |
+      Review safety gates, write-capable tools, ownership metadata, and impact.
+
+      Return JSON matching this example:
+
+      ```json
+      {"summary":"safety and impact reviewed","blocking_findings":0}
+      ```
+    output_schema:
+      type: object
+      required: [summary, blocking_findings]
+      properties:
+        summary:
+          type: string
+        blocking_findings:
+          type: integer
+
+  - id: review_schema
+    kind: slug
+    agent: shell_schema_reviewer
+    depends_on: [inspect_shell]
+    timeout: 2m
+    tools: [shell_normalize, shell_diff]
+    prompt: |
+      Review normalized shell shape, output schemas, and format consistency.
+
+      Return JSON matching this example:
+
+      ```json
+      {"summary":"schema and normalized documents reviewed","recommendation_count":1}
+      ```
+    output_schema:
+      type: object
+      required: [summary, recommendation_count]
+      properties:
+        summary:
+          type: string
+        recommendation_count:
+          type: integer
+
+  - id: draft_patch_plan
+    kind: slug
+    agent: shell_shot_editor
+    depends_on: [review_safety, review_schema]
+    timeout: 2m
+    tools: [patch_plan]
+    prompt: |
+      Draft a read-only patch plan for maintainability improvements. Do not edit files.
+
+      Return JSON matching this example:
+
+      ```json
+      {"summary":"patch plan drafted for human review","patch_plan_ready":true}
+      ```
+    output_schema:
+      type: object
+      required: [summary, patch_plan_ready]
+      properties:
+        summary:
+          type: string
+        patch_plan_ready:
+          type: boolean

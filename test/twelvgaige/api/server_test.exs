@@ -288,7 +288,16 @@ defmodule Twelvgaige.API.ServerTest do
                bearer_token: @token
              )
 
-    assert {:ok, server} =
+    assert {:error, {:http_native_tls_not_implemented, {0, 0, 0, 0}}} =
+             Server.start(
+               ip: {0, 0, 0, 0},
+               port: 0,
+               allow_remote?: true,
+               bearer_token: @token,
+               tls_options: [certfile: "server.crt"]
+             )
+
+    assert {:error, {:http_trusted_proxy_requires_cidrs, {0, 0, 0, 0}}} =
              Server.start(
                ip: {0, 0, 0, 0},
                port: 0,
@@ -297,7 +306,94 @@ defmodule Twelvgaige.API.ServerTest do
                behind_tls_proxy?: true
              )
 
+    assert {:error, {:invalid_trusted_proxy_cidr, "not-a-cidr"}} =
+             Server.start(
+               ip: {0, 0, 0, 0},
+               port: 0,
+               allow_remote?: true,
+               bearer_token: @token,
+               behind_tls_proxy?: true,
+               trusted_proxy_cidrs: ["not-a-cidr"]
+             )
+
+    assert {:ok, server} =
+             Server.start(
+               ip: {0, 0, 0, 0},
+               port: 0,
+               allow_remote?: true,
+               bearer_token: @token,
+               behind_tls_proxy?: true,
+               trusted_proxy_cidrs: ["127.0.0.1/32"]
+             )
+
     GenServer.stop(server)
+  end
+
+  test "rejects forwarded identity headers outside trusted proxy mode", %{port: port} do
+    response =
+      http_request(port, """
+      GET /api/v1/health HTTP/1.1\r
+      host: localhost\r
+      authorization: Bearer #{@token}\r
+      x-forwarded-user: attacker\r
+      \r
+      """)
+
+    assert response.status == 400
+    assert %{"reason" => "untrusted_forwarded_headers"} = Jason.decode!(response.body)
+  end
+
+  test "accepts forwarded identity headers from configured trusted proxy", %{breech: breech} do
+    server =
+      start_supervised!(
+        {Server,
+         port: 0,
+         breech: breech,
+         bearer_token: @token,
+         behind_tls_proxy?: true,
+         trusted_proxy_cidrs: ["127.0.0.1/32"]},
+        id: :trusted_proxy_http_server
+      )
+
+    response =
+      http_request(Server.port(server), """
+      GET /api/v1/health HTTP/1.1\r
+      host: localhost\r
+      authorization: Bearer #{@token}\r
+      x-forwarded-user: platform@example.test\r
+      x-forwarded-for: 203.0.113.10\r
+      \r
+      """)
+
+    assert response.status == 200
+    assert %{"status" => "ok"} = Jason.decode!(response.body)
+  end
+
+  test "rejects forwarded identity headers from peers outside trusted proxy cidrs", %{
+    breech: breech
+  } do
+    server =
+      start_supervised!(
+        {Server,
+         port: 0,
+         breech: breech,
+         bearer_token: @token,
+         behind_tls_proxy?: true,
+         trusted_proxy_cidrs: ["192.0.2.0/24"]},
+        id: :untrusted_proxy_http_server
+      )
+
+    response =
+      http_request(Server.port(server), """
+      GET /api/v1/health HTTP/1.1\r
+      host: localhost\r
+      authorization: Bearer #{@token}\r
+      forwarded: for=203.0.113.10;proto=https\r
+      \r
+      """)
+
+    assert response.status == 400
+    assert %{"reason" => "untrusted_forwarded_headers"} = Jason.decode!(response.body)
   end
 
   defp http_request(port, request) do

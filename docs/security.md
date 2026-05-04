@@ -156,12 +156,18 @@ provenance attestations.
 
 The HTTP API implements bearer-token handling and rejects tokens in query
 strings. Mutating control-plane routes require bearer auth even on loopback.
-Remote bind requires explicit opt-in, bearer auth, and either native TLS options
-or an explicit `behind_tls_proxy?: true` deployment mode.
+Remote bind requires explicit opt-in, bearer auth, and an explicit
+`behind_tls_proxy?: true` deployment mode with configured
+`trusted_proxy_cidrs`. Native TLS/mTLS is not implemented in the current
+listener, so `tls_options` are rejected for non-loopback serving instead of
+being treated as protection. Forwarded identity headers such as
+`Forwarded`, `X-Forwarded-For`, and `X-Forwarded-User` are rejected unless the
+connection comes from a configured trusted proxy CIDR.
 
 Important limitation: the current HTTP server is raw HTTP over `:gen_tcp`. Do
 not expose it to a network without trusted TLS/mTLS termination in front of it.
-Native TLS/mTLS support is tracked in [`security-plan.md`](design/security-plan.md).
+Native TLS/mTLS support is tracked in
+[`crypto-tls-encryption-plan.md`](design/crypto-tls-encryption-plan.md).
 
 Relevant code:
 
@@ -212,15 +218,127 @@ Twelvgaige persists round state, events, audit records, attempts, and tool
 journals for recovery and inspection. This is operational durability, not
 tamper-proof forensics. Audit and event replay can be exported with
 `format=checkpoint`, which adds a deterministic SHA-256 hash chain and root hash
-for post-export mutation detection.
+for post-export mutation detection. Saved checkpoint JSON can be verified with
+`twelvgaige audit verify <checkpoint-path|->`; verification detects mutation,
+deletion, and reordering after export.
 
-Current local stores are not encrypted at rest and audit records are not
-cryptographically signed, and the live store itself is not tamper-proof. Use
+Checkpoint exports can also include optional HMAC-SHA-256 signatures with
+`twelvgaige round audit <round-id> --format checkpoint --sign-hmac-env <env>`.
+Verification with `twelvgaige audit verify <checkpoint-path|-> --hmac-env <env>`
+checks both the hash chain and the shared-secret signature. HMAC signatures are
+not public signatures; any verifier needs the same secret.
+
+Current local stores are not encrypted at rest and live audit records are not
+cryptographically signed as they are written. The live store itself is not
+tamper-proof. Use
 full-disk encryption, encrypted home directories, or OS-managed encrypted
 volumes for local secret protection until a SQLCipher/keychain/KMS design is
 implemented. File and SQLite stores plus JSON log files use private POSIX modes
 where supported; Windows ACL verification remains tracked in
 [`security-plan.md`](design/security-plan.md).
+
+`twelvgaige crypto sqlcipher-spike` probes the current `ecto_sqlite3`/`exqlite`
+driver for SQLCipher support. It first checks `PRAGMA cipher_version`; if the
+packaged driver is normal SQLite, the probe reports `unavailable` and does not
+claim encryption. When a SQLCipher-built driver is present and a key is supplied
+through `TWELVGAIGE_SQLCIPHER_SPIKE_KEY` or `--key-env`, the probe creates a
+keyed test database, runs migrations, closes it, reopens it with the key, and
+checks that opening without the key is rejected. This is still a feasibility
+probe, not the production encrypted store.
+
+The current key-manager abstraction includes a test backend plus explicit env
+and file backends for CI/headless development. Env and file key backends are not
+OS keychains and require `allow_insecure_key_backend?: true`; `crypto status`
+reports that posture. Raw key material and wrapped data-encryption keys use
+redacted inspect implementations. The file backend creates private key files and
+rejects group/world-readable key files where POSIX modes are exposed.
+
+The macOS keychain backend is implemented as a narrow wrapper around
+`/usr/bin/security` generic password items. It stores a JSON payload with key
+metadata and base64 key material in the user's Keychain. Locked keychains may
+prompt or fail depending on the session, keychain policy, and release packaging
+context. Unit tests use an injected command runner; real login-keychain and
+Burrito verification remain tracked before encrypted SQLite can depend on this
+backend.
+
+Run the opt-in live verification on macOS with:
+
+```bash
+make keychain-smoke-macos KEYCHAIN_LIVE=1
+```
+
+That target runs an ExUnit test tagged `:keychain_live`. It creates a unique
+temporary generic password item in the login Keychain, fetches it, rotates it,
+and deletes it. The tag is excluded from normal `mix test` so unattended unit
+tests never prompt or mutate Keychain state.
+
+The Windows key backend decision is DPAPI protected files, not Credential
+Manager. Windows Credential Manager command-line tooling can write credentials
+but does not provide the narrow read/rotate contract this local encrypted-store
+design needs. `WindowsDPAPIBackend` writes a JSON file whose payload is protected
+with current-user DPAPI. The file can be backed up, but it cannot be decrypted
+without the same Windows user profile material. The backend uses a PowerShell
+wrapper and passes plaintext over stdin instead of argv. Unit tests use an
+injected runner; real Windows ACL, user-profile, and release-package
+verification remain pending before encrypted-store support depends on it.
+
+The Linux key backend decision is FreeDesktop Secret Service for desktop Linux,
+not a blanket Linux-server promise. `LinuxSecretServiceBackend` wraps
+`secret-tool`, which requires a user D-Bus session and an unlocked secret
+collection. That is reasonable for developer laptops and desktops, but it is
+not reliable in WSL, containers, SSH-only sessions, or headless servers. Unit
+tests use an injected runner. Headless Linux should use the explicit env/file
+backends only with `allow_insecure_key_backend?: true` until a passphrase,
+external-command, Vault, or KMS backend is implemented.
+
+Backup and rotation semantics are now defined before encrypted SQLite is wired
+in. `BackupPolicy` makes encrypted backup the default, marks redacted exports as
+non-restorable, and rejects plaintext export unless the caller explicitly opts
+in with a plaintext-export allowance. `EnvelopeCipher` wraps store DEKs with
+AES-256-GCM and supports rewrap rotation: decrypt the wrapped DEK with the old
+active key, wrap the same DEK with the new active key, and replace only the
+envelope. A failed rewrap leaves the old envelope valid. Full SQLite backup,
+restore verification, and backup-before-rotation enforcement remain future
+encrypted-store work.
+
+`Store.SQLiteEncrypted` is now a separate fail-closed SQLCipher store surface.
+It requires a key through `:key` or `:key_env`, probes `PRAGMA cipher_version`
+before creating the target database, and refuses to start on bundled plain
+SQLite with `:sqlcipher_unavailable`. `TWELVGAIGE_STORE_SQLCIPHER` selects this
+store and `TWELVGAIGE_STORE_SQLCIPHER_KEY` is the default key environment
+variable. `make sqlcipher-store-system` is the opt-in live verification path for
+developer machines with system SQLCipher. It runs the shared store contract
+against `Store.SQLiteEncrypted` and checks that a raw canary is absent from
+DB/WAL/SHM files. `make sqlcipher-escript-smoke-system` and
+`make burrito-sqlcipher-smoke-system` are opt-in package smoke checks for
+SQLCipher open, backup, migration, restore, and reopen. This still does not make
+SQLCipher a default release dependency.
+
+SQLite backup now has an implementation-level and CLI-level safety gate.
+`Store.SQLite.backup/2` uses SQLite `VACUUM INTO`; because a plaintext SQLite
+backup is itself plaintext, it returns `:plaintext_export_not_allowed` unless
+the caller passes `allow_plaintext_export?: true`. The CLI mirrors that as
+`twelvgaige store backup <destination> --allow-plaintext-export`.
+`Store.SQLiteEncrypted.backup/2` exposes the same API for SQLCipher-enabled
+builds, where the backup remains encrypted under the open database key and does
+not require plaintext-export consent. `twelvgaige store restore <source>
+<destination>` is an offline file restore and refuses to overwrite an existing
+target unless `--replace` is supplied.
+
+Plaintext SQLite to SQLCipher migration is also explicit and offline:
+`twelvgaige store migrate-sqlcipher --source <plain.db> --destination
+<encrypted.db> --key-env <env>`. The command requires the source, destination,
+and key environment variable; leaves the source untouched; refuses overwrite
+unless `--replace` is supplied; and checks `PRAGMA cipher_version` before
+creating the encrypted target. The key is read from the named environment
+variable so operators do not pass encryption material directly in argv.
+
+DEK envelope rewrap is explicit and backup-gated:
+`twelvgaige store rewrap-envelope <envelope.json> --backup <backup.json>
+--old-key-env <env> --new-key-env <env>`. This rotates only the wrapped DEK
+envelope and metadata. It does not rekey SQLCipher database pages. Failed unwrap
+or rewrap leaves the original envelope in place, and the pre-rotation backup is
+kept for recovery.
 
 ## Current High-Risk Gaps
 
@@ -296,6 +414,8 @@ For HTTP/API:
 - Do not expose raw HTTP remotely.
 - Put any remote access behind a trusted TLS/mTLS reverse proxy until native
   TLS/mTLS support is implemented.
+- Configure `trusted_proxy_cidrs` for the concrete reverse-proxy source
+  addresses before accepting forwarded identity headers.
 
 For storage/logs:
 

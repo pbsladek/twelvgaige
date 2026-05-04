@@ -26,6 +26,7 @@ defmodule Twelvgaige.Store.SQLite do
   @terminal_statuses MapSet.new([:complete, :failed, :halted, :cancelled])
   @max_event_wait_ms 30_000
   @retention_batch_size 32
+  @default_sqlcipher_kdf_iter 256_000
   @external_term_modules [
     Calendar.ISO,
     DateTime,
@@ -176,6 +177,7 @@ defmodule Twelvgaige.Store.SQLite do
     :repo_pid,
     :max_retained_bytes,
     :sensitive_retention,
+    encrypted?: false,
     evicted_rounds: 0,
     event_watchers: %{},
     event_watcher_refs: %{}
@@ -196,8 +198,10 @@ defmodule Twelvgaige.Store.SQLite do
     path = opts |> Keyword.fetch!(:path) |> Path.expand()
 
     with :ok <- preload_external_term_atoms(),
+         :ok <- prepare_encrypted_store(path, opts),
          :ok <- FileMode.ensure_private_parent_dir(path),
          {:ok, repo_pid} <- start_repo(path, opts),
+         :ok <- configure_encrypted_connection(opts),
          :ok <- configure_connection(opts),
          :ok <- ensure_schema(),
          :ok <- protect_sqlite_files(path) do
@@ -206,6 +210,7 @@ defmodule Twelvgaige.Store.SQLite do
       state = %__MODULE__{
         path: path,
         repo_pid: repo_pid,
+        encrypted?: encrypted?(opts),
         max_retained_bytes: Map.get(retention, :max_retained_bytes),
         sensitive_retention: Map.get(retention, :sensitive_retention)
       }
@@ -623,6 +628,10 @@ defmodule Twelvgaige.Store.SQLite do
     {:reply, stats_query(state), state}
   end
 
+  def handle_call({:backup, destination, opts}, _from, state) do
+    {:reply, backup_to(state, destination, opts), state}
+  end
+
   @impl true
   def handle_info({:event_wait_timeout, watcher_ref}, state) do
     case Map.fetch(state.event_watchers, watcher_ref) do
@@ -642,16 +651,102 @@ defmodule Twelvgaige.Store.SQLite do
 
   def handle_info(_message, state), do: {:noreply, state}
 
+  @spec backup(Path.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def backup(destination, opts \\ []) when is_binary(destination) do
+    server = Keyword.get(opts, :server, __MODULE__)
+    timeout = Keyword.get(opts, :timeout, 30_000)
+    GenServer.call(server, {:backup, destination, opts}, timeout)
+  end
+
+  @spec restore_backup(Path.t(), Path.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def restore_backup(source, destination, opts \\ [])
+      when is_binary(source) and is_binary(destination) do
+    source = Path.expand(source)
+    destination = Path.expand(destination)
+
+    with :ok <- ensure_restore_source(source),
+         :ok <- ensure_restore_destination(destination, opts),
+         :ok <- FileMode.ensure_private_parent_dir(destination),
+         {:ok, bytes} <- File.copy(source, destination),
+         :ok <- FileMode.chmod_if_supported(destination, 0o600) do
+      {:ok,
+       %{
+         "status" => "ok",
+         "source" => source,
+         "destination" => destination,
+         "bytes" => bytes,
+         "replaced" => Keyword.get(opts, :replace?, false) == true
+       }}
+    else
+      {:error, _reason} = error -> error
+    end
+  end
+
   defp start_repo(path, opts) do
-    repo_opts = [
-      database: path,
-      pool_size: Keyword.get(opts, :pool_size, 1),
-      busy_timeout: Keyword.get(opts, :busy_timeout, 5_000),
-      journal_mode: Keyword.get(opts, :journal_mode, :wal),
-      log: Keyword.get(opts, :log, false)
-    ]
+    repo_opts =
+      [
+        database: path,
+        pool_size: Keyword.get(opts, :pool_size, 1),
+        busy_timeout: Keyword.get(opts, :busy_timeout, 5_000),
+        journal_mode: Keyword.get(opts, :journal_mode, :wal),
+        log: Keyword.get(opts, :log, false)
+      ]
+      |> maybe_put_sqlcipher_key(opts)
 
     Repo.start_link(repo_opts)
+  end
+
+  defp stop_repo(pid) when is_pid(pid), do: Supervisor.stop(pid)
+
+  defp prepare_encrypted_store(_path, opts) do
+    if encrypted?(opts) do
+      with {:ok, _key} <- sqlcipher_key(opts),
+           {:ok, repo_pid} <- start_repo(":memory:", opts) do
+        try do
+          configure_encrypted_connection(opts)
+        after
+          stop_repo(repo_pid)
+        end
+      end
+    else
+      :ok
+    end
+  end
+
+  defp configure_encrypted_connection(opts) do
+    if encrypted?(opts) do
+      with {:ok, _key} <- sqlcipher_key(opts),
+           {:ok, _version} <- sqlcipher_version(),
+           :ok <- configure_sqlcipher_pragmas(opts) do
+        :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  defp sqlcipher_version do
+    case query("PRAGMA cipher_version", []) do
+      {:ok, %{rows: [[version] | _]}} when is_binary(version) and version != "" ->
+        {:ok, version}
+
+      {:ok, _result} ->
+        {:error, :sqlcipher_unavailable}
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp configure_sqlcipher_pragmas(opts) do
+    kdf_iter = opts |> Keyword.get(:cipher_kdf_iter, @default_sqlcipher_kdf_iter) |> max(1)
+
+    with :ok <- query_ok("PRAGMA kdf_iter = #{kdf_iter}", []),
+         :ok <- query_ok("PRAGMA cipher_memory_security = ON", []) do
+      :ok
+    else
+      {:error, _reason} = error -> error
+    end
   end
 
   defp configure_connection(opts) do
@@ -666,6 +761,114 @@ defmodule Twelvgaige.Store.SQLite do
 
   defp protect_sqlite_files(path) do
     FileMode.ensure_private_existing_files([path, path <> "-wal", path <> "-shm"])
+  end
+
+  defp backup_to(%__MODULE__{} = state, destination, opts) when is_binary(destination) do
+    destination = Path.expand(destination)
+
+    with {:ok, policy} <- backup_policy(state, opts),
+         :ok <- ensure_backup_destination(destination),
+         :ok <- FileMode.ensure_private_parent_dir(destination),
+         :ok <- vacuum_into(destination),
+         :ok <- FileMode.chmod_if_supported(destination, 0o600) do
+      {:ok,
+       %{
+         "status" => "ok",
+         "source" => state.path,
+         "destination" => destination,
+         "mode" => Atom.to_string(policy.mode),
+         "encrypted" => state.encrypted?,
+         "plaintext" => policy.plaintext?,
+         "warnings" => policy.warnings
+       }}
+    else
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp backup_to(%__MODULE__{}, _destination, _opts), do: {:error, :invalid_backup_destination}
+
+  defp backup_policy(%__MODULE__{encrypted?: encrypted?}, opts) do
+    mode = Keyword.get(opts, :mode, if(encrypted?, do: :encrypted, else: :plaintext))
+
+    Twelvgaige.Crypto.BackupPolicy.plan(
+      mode: mode,
+      allow_plaintext_export?: Keyword.get(opts, :allow_plaintext_export?, false)
+    )
+    |> case do
+      {:ok, %{mode: :redacted}} -> {:error, :redacted_sqlite_backup_not_supported}
+      other -> other
+    end
+  end
+
+  defp ensure_backup_destination(path) do
+    if File.exists?(path) do
+      {:error, :backup_destination_exists}
+    else
+      :ok
+    end
+  end
+
+  defp ensure_restore_source(path) do
+    if File.regular?(path) do
+      :ok
+    else
+      {:error, :backup_source_not_found}
+    end
+  end
+
+  defp ensure_restore_destination(path, opts) do
+    if File.exists?(path) do
+      if Keyword.get(opts, :replace?, false) == true do
+        File.rm(path)
+      else
+        {:error, :restore_destination_exists}
+      end
+    else
+      :ok
+    end
+  end
+
+  defp vacuum_into(destination) do
+    query_ok("VACUUM INTO #{sql_string_literal(destination)}", [])
+  end
+
+  defp maybe_put_sqlcipher_key(repo_opts, opts) do
+    if encrypted?(opts) do
+      case sqlcipher_key(opts) do
+        {:ok, key} -> Keyword.put(repo_opts, :key, sql_string_literal(key))
+        {:error, _reason} -> repo_opts
+      end
+    else
+      repo_opts
+    end
+  end
+
+  defp sqlcipher_key(opts) do
+    key = Keyword.get(opts, :key) || key_from_env(Keyword.get(opts, :key_env))
+
+    case key do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _missing -> {:error, :sqlcipher_key_required}
+    end
+  end
+
+  defp key_from_env(nil), do: nil
+  defp key_from_env(""), do: nil
+
+  defp key_from_env(env) when is_binary(env) do
+    case System.get_env(env) do
+      value when is_binary(value) and value != "" -> value
+      _missing -> nil
+    end
+  end
+
+  defp encrypted?(opts), do: Keyword.get(opts, :encrypted?, false) == true
+
+  defp sql_string_literal(value) do
+    escaped = String.replace(value, "'", "''")
+    "'#{escaped}'"
   end
 
   defp ensure_schema do

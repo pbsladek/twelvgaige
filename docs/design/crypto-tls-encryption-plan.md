@@ -20,7 +20,12 @@ The current security posture is intentionally conservative:
 
 ## Goals
 
-- Provide a clear path to application-level encryption at rest for local stores.
+- Report the active security posture truthfully before adding new crypto
+  features.
+- Prioritize transport security, data minimization, audit/export integrity, and
+  release integrity ahead of application-level store encryption.
+- Provide a clear path to optional application-level encryption at rest for
+  SQLite stores.
 - Keep laptop usage simple on macOS, Windows, and Linux.
 - Use OS-native secret storage for encryption keys wherever practical.
 - Add native TLS/mTLS for the Twelvgaige HTTP API without weakening the current
@@ -37,6 +42,9 @@ The current security posture is intentionally conservative:
 - Do not make bearer auth alone acceptable for remote HTTP exposure.
 - Do not make encryption-at-rest a hidden default before key recovery, backup,
   rotation, and support implications are understood.
+- Do not position Twelvgaige-managed encryption as a replacement for OS full-disk
+  or volume encryption on laptops.
+- Do not block the local-first product on SQLCipher or OS keychain support.
 - Do not require a cloud KMS for local laptop usage.
 - Do not claim tamper-proof audit unless append-only storage, signing keys, and
   verification tooling are implemented.
@@ -148,8 +156,10 @@ Twelvgaige HTTP API:
 
 - loopback is the default,
 - mutating control-plane routes require bearer auth,
-- non-loopback bind requires explicit remote opt-in, bearer auth, and either
-  native TLS options or `behind_tls_proxy?: true`,
+- non-loopback bind requires explicit remote opt-in, bearer auth, and
+  `behind_tls_proxy?: true`,
+- non-loopback `tls_options` are rejected until a real native TLS listener is
+  implemented,
 - native TLS/mTLS listener support is not implemented yet.
 
 IPC:
@@ -183,7 +193,7 @@ covered by tests yet, the status should say so.
 
 | Claim | Evidence | Status |
 | --- | --- | --- |
-| Provider default transport configures TLS verification. | `lib/twelvgaige/llm/providers/common.ex` | Implemented; invalid CA/hostname tests pending. |
+| Provider default transport configures TLS verification. | `lib/twelvgaige/llm/providers/common.ex` | Implemented; policy tests present, certificate fixture tests pending. |
 | Constant-time token comparison exists. | `lib/twelvgaige/security.ex` | Implemented. |
 | Webhooks use HMAC, timestamp, and nonce handling. | `lib/twelvgaige/api/webhook.ex` and API tests. | Implemented. |
 | Mutating HTTP routes require bearer auth. | `lib/twelvgaige/api/router.ex`, `test/twelvgaige/standards_contract_test.exs`. | Implemented. |
@@ -207,15 +217,38 @@ covered by tests yet, the status should say so.
 
 ## Target Architecture
 
-The roadmap is split into four subtracks so implementation can proceed without
-turning one security plan into one oversized feature:
+The roadmap is split into subtracks so implementation can proceed without
+turning one security plan into one oversized feature. The order is intentional:
+truthful status, provider/API transport safety, audit and release integrity, and
+only then optional encrypted SQLite.
 
 | Subtrack | Scope | First Useful Slice |
 | --- | --- | --- |
-| At Rest | SQLite encryption, key management, backup/restore, rotation. | Key model plus SQLCipher packaging spike. |
-| Transport | Provider TLS, API TLS/mTLS, trusted proxy mode. | Provider TLS regression tests. |
+| Status And Claims | CLI status, config truth, docs, guarantee language. | `crypto status` with no behavior change. |
+| Provider Transport | Hosted provider TLS, URL policy, auth-header suppression, DNS policy. | Provider TLS and URL-policy regression tests. |
+| API Transport | Fail-closed remote bind, trusted-proxy mode, later native TLS/mTLS. | Reject raw non-loopback HTTP and unsupported native TLS claims. |
 | Audit Integrity | Hash chains, HMAC chains, signed exports, verification. | Clarify hash/HMAC/signature semantics and add `audit verify`. |
 | Release Integrity | Checksums, signed checksums, attestations, SBOM later. | Signed `SHA256SUMS` plus GitHub artifact attestations. |
+| At Rest | Optional SQLite encryption, key management, backup/restore, rotation. | SQLCipher packaging spike after higher-priority controls. |
+
+### Product Stance On Encryption At Rest
+
+Twelvgaige-managed encryption at rest is useful defense in depth, not the
+default security boundary for ordinary laptop usage. The recommended default is:
+
+- use OS full-disk encryption or encrypted home directories,
+- keep local stores private with restrictive filesystem permissions,
+- prefer `sensitive_retention: :summary` when prompts, tool outputs, or provider
+  responses may be sensitive,
+- redact before persistence,
+- avoid storing raw secrets in workflow inputs, shell files, logs, and tool
+  outputs.
+
+Encrypted SQLite should be opt-in until key storage, backup, restore, and
+rotation are reliable across supported release targets. It protects a copied
+database without key material. It does not protect a running daemon, an unlocked
+user session, same-user malware, process memory, terminal output, JSON logs,
+file stores, exports, crash dumps, or external tool side effects.
 
 ### Encryption At Rest
 
@@ -437,7 +470,7 @@ twelvgaige crypto status
 twelvgaige crypto key init --store sqlite --backend os
 twelvgaige crypto key rotate --store ~/.local/share/twelvgaige/twelvgaige.sqlite3
 twelvgaige crypto verify-store ~/.local/share/twelvgaige/twelvgaige.sqlite3
-twelvgaige audit verify checkpoint.ndjson
+twelvgaige audit verify checkpoint.json
 twelvgaige daemon serve --tls-cert server.crt --tls-key server.key --client-ca clients-ca.crt
 ```
 
@@ -462,7 +495,7 @@ twelvgaige daemon serve --tls-cert server.crt --tls-key server.key --client-ca c
   },
   "providers": {
     "hosted_tls_verification": "configured",
-    "tls_regression_tests": "pending"
+    "tls_regression_tests": "policy_tests_present"
   },
   "audit": {
     "checkpoint_hash_chain": true,
@@ -506,26 +539,29 @@ Phase dependencies:
 ```text
 CTE0 claims/config/status
   -> CTE1 provider TLS tests
-  -> CTE1.5 SQLCipher/Burrito feasibility spike
-  -> CTE2 native API TLS/mTLS
-  -> CTE3a KeyManager behaviour and test backends
-      -> CTE3b macOS keychain
-      -> CTE3c Windows key backend
-      -> CTE3d Linux key backend decision
-      -> CTE3.5 backup, restore, and rotation semantics
-          -> CTE4 encrypted SQLite store
-              -> CTE5 audit signing and verification
-  -> CTE6 release signing and attestation
+  -> CTE2 API transport enforcement and trusted-proxy hardening
+  -> CTE3 audit export verification
+  -> CTE4 release signing and attestation
+  -> CTE5 SQLCipher/Burrito feasibility spike
+      -> CTE6a KeyManager behaviour and test backends
+      -> CTE6b macOS keychain
+      -> CTE6c Windows key backend
+      -> CTE6d Linux key backend decision
+      -> CTE6.5 backup, restore, and rotation semantics
+          -> CTE7 encrypted SQLite store
+              -> CTE8 live audit signing
 ```
 
 The sequence is intentionally cautious. Provider TLS tests and config truth can
-land early. Encrypted SQLite should not become a committed product feature until
-SQLCipher packaging, key management, backup/restore, and rotation behavior are
-proven across the release targets.
+land early. Encrypted SQLite is intentionally late because it should not become
+a committed product feature until SQLCipher packaging, key management,
+backup/restore, and rotation behavior are proven across the release targets.
 
 ### Phase CTE0 - Claims And Config Boundary
 
-Status: design.
+Status: in progress. `crypto status` is implemented as a truthful current-state
+report. API transport validation rejects unsupported native TLS claims and
+requires trusted proxy CIDRs for non-loopback trusted-proxy mode.
 
 - Keep docs clear that local stores are not encrypted at rest.
 - Add a dedicated crypto status surface to report what is enabled and what is
@@ -543,11 +579,16 @@ Acceptance:
 - `crypto status --format json` reports store encryption, key backend, HTTP TLS
   mode, provider TLS test status, audit signing, and release signing status.
 - Config validation rejects impossible combinations, such as non-loopback HTTP
-  without TLS or explicit trusted-proxy mode.
+  without explicit trusted-proxy mode while native TLS is not implemented.
 - Env/file key backend config is rejected unless explicit insecure-backend risk
   acceptance is present.
 
 ### Phase CTE1 - Provider TLS Regression Tests
+
+Status: in progress. Hosted-provider HTTPS downgrade rejection, URL-policy
+denial before transport, redirect-disable policy, DNS/private-address policy,
+and default TLS option coverage are implemented. Local invalid-certificate and
+hostname-mismatch fixture tests remain.
 
 - Add deterministic TLS test fixtures or fake TLS transport tests.
 - Prove invalid CA and hostname mismatch fail.
@@ -565,175 +606,344 @@ Acceptance:
 - Security docs can say provider TLS verification is tested, not just
   configured.
 
-### Phase CTE1.5 - SQLCipher And Burrito Feasibility Spike
+### Phase CTE2 - API Transport Enforcement And Trusted-Proxy Hardening
 
-- Prove whether `ecto_sqlite3`/`exqlite` can use SQLCipher without destabilizing
-  the existing SQLite store.
-- Prove migrations can run against an encrypted database.
-- Decide whether `Store.SQLiteEncrypted` is feasible as a separate backend.
-- Test Mix and Burrito execution for supported release targets.
-- Document native library, OpenSSL/LibreSSL, NIF, and Zig/Burrito constraints.
+Status: mostly complete for the current raw HTTP listener. Non-loopback raw
+HTTP is rejected, non-loopback `tls_options` are rejected until native TLS
+lands, trusted-proxy mode requires explicit remote opt-in, bearer auth, and
+trusted proxy CIDRs, and forwarded identity headers are rejected unless the peer
+is trusted. Remaining work is deeper trusted-proxy source-address coverage on
+real non-loopback interfaces and eventual native TLS/mTLS in CTE2.5.
 
-Acceptance:
-
-- A spike command can create, open, migrate, close, and reopen an encrypted DB.
-- The same spike works from a Burrito-built binary on macOS Silicon and Linux.
-- Windows feasibility is documented before claiming Windows encrypted-store
-  support.
-- If SQLCipher packaging is too brittle, the plan is revised before CTE4.
-
-### Phase CTE2 - Native API TLS Design And Listener
-
-- Add TLS options to `API.Server`.
 - Keep loopback HTTP allowed.
-- Require TLS or explicit `behind_tls_proxy?: true` for non-loopback bind.
-- Add mTLS peer verification options.
-- Map mTLS client identity to audit actor metadata when present.
-- Require daemon restart for certificate changes in the first implementation;
-  hot reload is future work.
+- Reject raw non-loopback HTTP.
+- Reject non-loopback `tls_options` until native TLS is actually implemented.
+- Require explicit `behind_tls_proxy?: true` for current non-loopback serving.
+- Require bearer auth for mutating routes in all current remote modes.
 - Enforce trusted-proxy CIDR/bind requirements when `behind_tls_proxy?: true` is
   used.
 - Reject untrusted forwarded identity headers.
 
 Acceptance:
 
-- Non-loopback HTTP without TLS/proxy still fails.
+- Non-loopback HTTP without trusted-proxy mode fails.
+- Non-loopback `tls_options` fail with an explicit unsupported-native-TLS error.
+- Trusted-proxy mode starts only with explicit remote opt-in and bearer auth.
+- Mutating routes still require bearer auth.
+- Security docs say native TLS/mTLS is future work, not active protection.
+
+### Phase CTE2.5 - Native API TLS/mTLS Design And Listener
+
+- Add real TLS socket support to `API.Server` or replace the listener with a TLS
+  capable adapter.
+- Add mTLS peer verification options.
+- Map mTLS client identity to audit actor metadata when present.
+- Require daemon restart for certificate changes in the first implementation;
+  hot reload is future work.
+
+Acceptance:
+
 - TLS listener starts with test cert fixtures.
 - mTLS rejects missing or untrusted client certs.
 - mTLS validates CA chain, expiry, EKU `clientAuth`, and configured SAN policy.
-- Mutating routes still require bearer auth.
 - Audit records include certificate fingerprint/SAN metadata when mTLS is
   present.
 
-### Phase CTE3a - Key Manager Behaviour And Explicit Backends
+### Phase CTE3 - Audit Export Verification
 
-- Add `Twelvgaige.Crypto.KeyManager` behaviour.
-- Add test backend.
-- Add env/file backend for explicit CI/headless/dev use.
-- Add key metadata and key ID resolution.
-- Add envelope-encryption metadata structs for wrapped DEK records.
-
-Acceptance:
-
-- Tests can create, fetch, rotate, and retire keys through the behaviour.
-- Raw key material is redacted from logs, inspect output, audit, and errors.
-- Missing key errors are actionable and do not leak backend details.
-- Env/file backend requires explicit insecure-backend acceptance.
-- File key backend rejects group/world-readable files where the OS exposes modes.
-
-### Phase CTE3b - macOS Keychain Backend
-
-- Add macOS Keychain backend or a narrow command-wrapper integration.
-- Verify behavior in Burrito builds on macOS Silicon.
-- Document prompts, locked keychain behavior, and headless limitations.
-
-Acceptance:
-
-- Key create/fetch/delete flows work on macOS.
-- Burrito smoke test can open an encrypted test DB with a keychain-backed key.
-- `crypto status` reports macOS keychain backend without exposing key material.
-
-### Phase CTE3c - Windows Key Backend
-
-- Decide between DPAPI, Credential Manager, or a supported wrapper approach.
-- Verify ACL and user binding behavior.
-- Verify behavior in Windows release packaging before documenting support.
-
-Acceptance:
-
-- Key create/fetch/delete flows work on Windows.
-- Lost Windows user profile/key material produces a clear recovery error.
-- Docs explain backup and recovery limitations.
-
-### Phase CTE3d - Linux Key Backend Decision
-
-- Evaluate Secret Service/libsecret for desktop Linux.
-- Define a supported non-desktop/headless Linux mode, such as passphrase-based
-  wrapping, external command, or future Vault/KMS.
-- Document WSL/container/server limitations.
-
-Acceptance:
-
-- The selected Linux path has tests or documented manual verification.
-- Secret Service is not presented as universal Linux server support.
-- Headless fallback requires explicit operator acceptance.
-
-### Phase CTE3.5 - Backup, Restore, And Rotation Semantics
-
-- Add encrypted backup and restore design before default encrypted-store
-  recommendations.
-- Add explicit redacted export and plaintext export behavior.
-- Define rewrap rotation first.
-- Define rekey rotation as later/higher-risk work.
-- Require backup before rotation.
-- Define crash behavior and verification after rotation.
-
-Acceptance:
-
-- Encrypted backup never emits plaintext by default.
-- Plaintext export requires `--allow-plaintext-export`.
-- Rewrap rotation can be tested without database re-encryption.
-- Rotation failures leave either the old key state valid or a clear recovery
-  path.
-
-### Phase CTE4 - SQLCipher Local Store
-
-- Evaluate `ecto_sqlite3` plus SQLCipher support or a dedicated SQLCipher
-  adapter path.
-- Add encrypted SQLite open/migration path.
-- Ensure WAL/SHM sidecars remain private.
-- Define SQLCipher cipher/KDF PRAGMAs and migration behavior.
-- Verify encrypted WAL/temp behavior or document required SQLite settings.
-- Add encrypted backup/restore commands.
-- Add migration path from plaintext SQLite to encrypted SQLite with explicit
-  operator command.
-- Add rewrap rotation integration after CTE3.5.
-
-Acceptance:
-
-- `Store.SQLiteEncrypted` is separate from `Store.SQLite` unless the spike proves
-  an option-based implementation is safer.
-- Encrypted SQLite store passes the shared store contract.
-- Opening encrypted DB without the key fails.
-- Plaintext canary values do not appear in the DB/WAL/temp files with normal raw
-  retention.
-- Redacted/summary retention separately prevents sensitive values from entering
-  logical records where configured.
-- Migration command requires explicit source, destination, and key ref.
-- Burrito smoke tests cover encrypted open/migrate/verify on supported release
-  targets.
-- Rekey/rotation crash-safety tests exist before rekey is exposed.
-
-### Phase CTE5 - Audit Signing And Verification
-
-- Extend checkpoint export with optional signature metadata.
-- Add live audit HMAC design only after key management exists.
-- Add `audit verify`.
-- Add key rotation behavior for signed audit chains.
+- Add `audit verify` for JSON checkpoint exports. `[x]`
 - Keep hash chain, HMAC chain, and public signature modes separate in command
-  output and docs.
+  output and docs. `[x]`
+- Verify deletion, mutation, and reordering of exported checkpoint records. `[x]`
+- Defer live audit HMAC/signing until key management exists.
 
 Acceptance:
 
-- Export verification detects mutation, deletion, and reordering.
-- Signed exports can be verified with the public/verification material or key ref
-  appropriate to the chosen algorithm.
-- Docs avoid calling the live local store tamper-proof.
+- Export verification detects mutation, deletion, and reordering. `[x]`
+- Docs avoid calling the live local store tamper-proof. `[x]`
 
-### Phase CTE6 - Release Signing And Attestation
+### Phase CTE4 - Release Signing And Attestation
 
-- Sign `SHA256SUMS`.
-- Add GitHub provenance attestations for release artifacts.
-- Pick one MVP user-verifiable signing path before adding alternatives.
-- Document verification.
+- Sign `SHA256SUMS` through the GitHub artifact attestation path. `[x]`
+- Add GitHub provenance attestations for release artifacts. `[x]`
+- Pick one MVP user-verifiable signing path before adding alternatives. `[x]`
+- Document verification. `[x]`
 - Defer SBOM generation until release signing is stable.
 
 Acceptance:
 
-- Release workflow publishes checksums plus signature/attestation artifacts.
-- `docs/release.md` explains verification.
+- Release workflow publishes checksums plus signature/attestation artifacts. `[x]`
+- `docs/release.md` explains verification. `[x]`
 - README install section links to verification docs without overstating
-  reproducibility.
+  reproducibility. `[x]`
+
+### Phase CTE5 - SQLCipher And Burrito Feasibility Spike
+
+- Add a standalone `crypto sqlcipher-spike` command that does not modify
+  `Store.SQLite`. `[x]`
+- Add Make targets for a deliberate system-SQLCipher `exqlite` rebuild and
+  spike run. `[x]`
+- Prove whether `ecto_sqlite3`/`exqlite` can use SQLCipher without destabilizing
+  the existing SQLite store. `[~]`
+- Prove migrations can run against an encrypted database. `[~]`
+- Decide whether `Store.SQLiteEncrypted` is feasible as a separate backend. `[ ]`
+- Test Mix and Burrito execution for supported release targets. `[~]`
+- Document native library, OpenSSL/LibreSSL, NIF, and Zig/Burrito constraints. `[~]`
+
+Acceptance:
+
+- A spike command detects bundled SQLite versus SQLCipher before creating a
+  target store. `[x]`
+- A spike command can create, open, migrate, close, and reopen an encrypted DB
+  when the loaded NIF is SQLCipher-backed. `[~]`
+- The same spike command is included in escript, native release, and Burrito
+  smoke flows. `[x]`
+- The same spike works from a Burrito-built binary on macOS Silicon and Linux
+  with SQLCipher-backed `exqlite`. `[~]`
+- Windows feasibility is documented before claiming Windows encrypted-store
+  support. `[ ]`
+- If SQLCipher packaging is too brittle, the plan is revised before CTE7. `[ ]`
+
+Current finding: the default bundled `exqlite` NIF reports no
+`PRAGMA cipher_version`, so the shipped development build is normal SQLite. The
+opt-in `sqlcipher-escript-smoke-system` and `burrito-sqlcipher-smoke-system`
+targets now rebuild `exqlite` against system SQLCipher and exercise CLI-level
+open, backup, plaintext-to-encrypted migration, encrypted open, encrypted
+backup, restore, and restored encrypted open. These targets are still manual
+host checks; they do not make SQLCipher a default release dependency.
+The spike returns `status=unavailable` and does not create a target database in
+that case. To test the encrypted path, rebuild `exqlite` against SQLCipher using
+the adapter-supported system flags, then run:
+
+```bash
+make sqlcipher-env SQLCIPHER_PREFIX=/path/to/sqlcipher
+make sqlcipher-spike-system SQLCIPHER_PREFIX=/path/to/sqlcipher
+make sqlcipher-escript-smoke-system SQLCIPHER_PREFIX=/path/to/sqlcipher
+make burrito-sqlcipher-smoke-system SQLCIPHER_PREFIX=/path/to/sqlcipher BURRITO_TARGET=macos_silicon
+```
+
+The Make target only rebuilds the local `exqlite` build artifact; it does not
+change `mix.exs`, `mix.lock`, or the default release path. Re-run normal
+dependency compilation without `EXQLITE_USE_SYSTEM=1` when returning to the
+default bundled SQLite build.
+
+Packaging constraint: Burrito and Mix releases must carry the same
+SQLCipher-linked NIF and any required native SQLCipher/OpenSSL/LibreSSL runtime
+libraries for the target OS/architecture. Do not claim encrypted-store support
+for macOS, Linux, or Windows until the spike has passed from the packaged
+artifact on that platform.
+
+### Phase CTE6a - Key Manager Behaviour And Explicit Backends
+
+- Add `Twelvgaige.Crypto.KeyManager` behaviour. `[x]`
+- Add test backend. `[x]`
+- Add env/file backend for explicit CI/headless/dev use. `[x]`
+- Add key metadata and key ID resolution. `[x]`
+- Add envelope-encryption metadata structs for wrapped DEK records. `[x]`
+
+Acceptance:
+
+- Tests can create, fetch, rotate, and retire keys through the behaviour. `[x]`
+- Raw key material is redacted from logs, inspect output, audit, and errors. `[x]`
+- Missing key errors are actionable and do not leak backend details. `[x]`
+- Env/file backend requires explicit insecure-backend acceptance. `[x]`
+- File key backend rejects group/world-readable files where the OS exposes modes. `[x]`
+
+Current implementation note: `EnvBackend` and `FileBackend` are explicit
+CI/headless/dev backends, not OS keychains. They require
+`allow_insecure_key_backend?: true` and `crypto status` reports them as not
+OS-protected. `TestBackend` is process-local and exists for unit tests. None of
+these backends are wired into encrypted store behavior until CTE7.
+
+### Phase CTE6b - macOS Keychain Backend
+
+- Add macOS Keychain backend or a narrow command-wrapper integration. `[x]`
+- Add excluded-by-default live verification for real macOS Keychain behavior. `[x]`
+- Verify behavior in Burrito builds on macOS Silicon. `[ ]`
+- Document prompts, locked keychain behavior, and headless limitations. `[x]`
+
+Acceptance:
+
+- Key create/fetch/delete flows work through the backend contract. `[x]`
+- Real macOS Keychain manual verification is documented before claiming release
+  support. `[x]`
+- Burrito smoke test can open an encrypted test DB with a keychain-backed key. `[ ]`
+- `crypto status` reports macOS keychain backend without exposing key material. `[x]`
+
+Current implementation note: `MacOSKeychainBackend` wraps `/usr/bin/security`
+generic password items. The stored item password is a JSON payload containing
+key version metadata and base64 key material. Unit tests use an injected runner
+to verify create/fetch/rotate/retire command behavior without touching the
+developer's login keychain. The backend returns
+`:unsupported_key_backend_platform` outside macOS. This backend is not wired into
+encrypted SQLite until CTE7. Live verification is available with
+`make keychain-smoke-macos KEYCHAIN_LIVE=1`; it creates, rotates, and deletes a
+unique temporary generic password item in the user's login keychain and is
+excluded from normal tests.
+
+### Phase CTE6c - Windows Key Backend
+
+- Decide between DPAPI, Credential Manager, or a supported wrapper approach. `[x]`
+- Add Windows DPAPI protected-file backend with injected-runner tests. `[x]`
+- Verify ACL and user binding behavior. `[ ]`
+- Verify behavior in Windows release packaging before documenting support. `[ ]`
+
+Acceptance:
+
+- Key create/fetch/delete flows work through the backend contract. `[x]`
+- Key create/fetch/delete flows work on real Windows. `[ ]`
+- Lost Windows user profile/key material produces a clear recovery error. `[ ]`
+- Docs explain backup and recovery limitations. `[x]`
+
+Current implementation note: `WindowsDPAPIBackend` stores a DPAPI-protected JSON
+key payload in a local file. DPAPI is scoped to the current Windows user profile,
+so copied files are not useful without that user's profile material. The backend
+uses a PowerShell command wrapper and passes plaintext over stdin rather than
+argv. Unit tests use an injected runner; real Windows, ACL, and Burrito release
+verification remain pending before encrypted SQLite can depend on this backend.
+
+### Phase CTE6d - Linux Key Backend Decision
+
+- Evaluate Secret Service/libsecret for desktop Linux. `[x]`
+- Add desktop Linux Secret Service backend with injected-runner tests. `[x]`
+- Define a supported non-desktop/headless Linux mode, such as passphrase-based
+  wrapping, external command, or future Vault/KMS. `[x]`
+- Document WSL/container/server limitations. `[x]`
+
+Acceptance:
+
+- The selected Linux path has tests or documented manual verification. `[x]`
+- Secret Service is not presented as universal Linux server support. `[x]`
+- Headless fallback requires explicit operator acceptance. `[x]`
+
+Current implementation note: `LinuxSecretServiceBackend` wraps `secret-tool`
+for FreeDesktop Secret Service. It is a desktop Linux backend that requires
+`secret-tool`, a user D-Bus session, and an unlocked collection. Unit tests use
+an injected runner; real Linux desktop and Burrito verification remain pending.
+It is not a WSL/container/headless-server guarantee. For headless Linux today,
+the supported fallback is still explicit env/file key backends with
+`allow_insecure_key_backend?: true`; future passphrase wrapping, external KMS,
+or Vault-style integrations are tracked separately before encrypted SQLite
+defaults depend on Linux server key management.
+
+### Phase CTE6.5 - Backup, Restore, And Rotation Semantics
+
+- Add encrypted backup and restore design before default encrypted-store
+  recommendations. `[x]`
+- Add explicit redacted export and plaintext export behavior. `[x]`
+- Define rewrap rotation first. `[x]`
+- Define rekey rotation as later/higher-risk work. `[x]`
+- Require backup before rotation. `[~]`
+- Define crash behavior and verification after rotation. `[x]`
+
+Acceptance:
+
+- Encrypted backup never emits plaintext by default. `[x]`
+- Plaintext export requires `--allow-plaintext-export`. `[x]`
+- Rewrap rotation can be tested without database re-encryption. `[x]`
+- Rotation failures leave either the old key state valid or a clear recovery
+  path. `[x]`
+
+Current implementation note: `BackupPolicy` defines the export safety contract:
+`:encrypted` is the default, `:redacted` is allowed but marked non-restorable,
+and `:plaintext` requires explicit opt-in. `EnvelopeCipher` implements
+AES-256-GCM wrapping for a store DEK plus rewrap rotation from an old active key
+to a new active key. Rewrap decrypts only the wrapped DEK and emits a new
+envelope; it does not re-encrypt database pages. Failed rewrap returns a clear
+error and leaves the old envelope decryptable with the old key. Actual SQLite
+backup commands, restore verification, and enforcing "backup before rotation" in
+the encrypted store remain CTE7 work because no encrypted SQLite store exists
+yet.
+
+### Phase CTE7 - SQLCipher Local Store
+
+Status: tabled. The exploratory fail-closed code and manual smoke targets may
+remain available for local investigation, but encrypted SQLite is not on the
+active implementation path. Do not spend more implementation effort here until
+provider/API transport, audit/release integrity, and authoring-management work
+are stable. Product docs must continue to recommend OS or volume encryption as
+the default laptop at-rest boundary.
+
+- Evaluate `ecto_sqlite3` plus SQLCipher support or a dedicated SQLCipher
+  adapter path. `[x]`
+- Add encrypted SQLite open/migration path. `[~]`
+- Ensure WAL/SHM sidecars remain private. `[~]`
+- Define SQLCipher cipher/KDF PRAGMAs and migration behavior. `[~]`
+- Add opt-in SQLCipher live shared store contract and raw canary scan. `[x]`
+- Verify encrypted WAL/temp behavior or document required SQLite settings. `[~]`
+- Add encrypted backup/restore commands. `[x]`
+- Add migration path from plaintext SQLite to encrypted SQLite with explicit
+  operator command. `[x]`
+- Add rewrap rotation integration after CTE6.5. `[x]`
+
+Acceptance:
+
+- `Store.SQLiteEncrypted` is separate from `Store.SQLite` unless the spike proves
+  an option-based implementation is safer. `[x]`
+- Encrypted SQLite store passes the shared store contract. `[~]`
+- Opening encrypted DB without the key fails. `[~]`
+- Plaintext canary values do not appear in the DB/WAL/temp files with normal raw
+  retention. `[~]`
+- Redacted/summary retention separately prevents sensitive values from entering
+  logical records where configured.
+- Migration command requires explicit source, destination, and key ref. `[x]`
+- Burrito smoke tests cover encrypted open/migrate/verify on supported release
+  targets. `[~]`
+- Rewrap crash-safety tests exist before rekey is exposed. `[x]`
+
+Current implementation note: `Twelvgaige.Store.SQLiteEncrypted` now exists as a
+separate store module that delegates to the SQLite implementation with
+`encrypted?: true`. Startup requires a key through `:key` or `:key_env` and
+probes `PRAGMA cipher_version` before creating the target database. On bundled
+plain SQLite it fails closed with `:sqlcipher_unavailable` and does not create
+the target store. `TWELVGAIGE_STORE_SQLCIPHER` selects this backend and
+`TWELVGAIGE_STORE_SQLCIPHER_KEY` supplies the default key env. The plaintext
+`Store.SQLite` path is unchanged. `make sqlcipher-store-system` rebuilds
+`exqlite` against system SQLCipher and runs an excluded-by-default
+`:sqlcipher_live` test file. That live suite applies the shared store contract to
+`Store.SQLiteEncrypted` and verifies a raw canary does not appear in DB/WAL/SHM
+files. `Store.SQLite.backup/2` now uses SQLite `VACUUM INTO` through the live
+store process and blocks plaintext backups unless `allow_plaintext_export?: true`
+is supplied. `Store.SQLite.restore_backup/3` performs an offline private-file
+restore and refuses overwrite unless `replace?: true`. `Store.SQLiteEncrypted`
+exposes the same backup/restore API for SQLCipher-enabled builds. CLI wrappers
+are now exposed as `twelvgaige store backup <destination>` and
+`twelvgaige store restore <source> <destination>`. Plaintext SQLite backup still
+requires `--allow-plaintext-export`; encrypted SQLite backup does not. Restore is
+offline and writes a destination file that the operator can later select through
+the normal store environment variables. Plaintext-to-encrypted migration is now
+exposed as `twelvgaige store migrate-sqlcipher --source <plain.db>
+--destination <encrypted.db> --key-env <env>`. The migration uses SQLCipher's
+attach/export path, leaves the source in place, refuses overwrite unless
+`--replace` is supplied, and fails before creating the target when the loaded
+driver does not expose `PRAGMA cipher_version`. Rewrap integration is exposed as
+`twelvgaige store rewrap-envelope <envelope.json> --backup <backup.json>
+--old-key-env <env> --new-key-env <env>`. It requires a backup before writing,
+rewraps only the DEK envelope, leaves database page rekeying for a later phase,
+and has failure tests proving an unwrap error leaves the original envelope and
+backup intact. Burrito smoke coverage is still pending.
+
+### Phase CTE8 - Live Audit Signing And Verification
+
+- Extend checkpoint export with optional signature metadata. `[x]`
+- Add live audit HMAC design only after key management exists.
+- Add key rotation behavior for signed audit chains.
+- Keep hash chain, HMAC chain, and public signature modes separate in command
+  output and docs. `[x]`
+
+Acceptance:
+
+- Export verification detects mutation, deletion, and reordering. `[x]`
+- Signed exports can be verified with the public/verification material or key ref
+  appropriate to the chosen algorithm. `[~]`
+- Docs avoid calling the live local store tamper-proof. `[x]`
+
+Current implementation note: checkpoint exports remain SHA-256 hash chains by
+default. CLI `round audit --format checkpoint --sign-hmac-env <env>` can add an
+HMAC-SHA-256 signature block, and `audit verify --hmac-env <env>` verifies both
+the hash chain and shared-secret signature. This is intentionally distinct from
+future public-signature mode; the HMAC verifier must hold the same secret. Live
+audit records are still not signed as they are written.
 
 ## Testing Strategy
 
@@ -782,23 +992,25 @@ Update these files as phases land:
 
 Required language:
 
-- Before CTE4: "Local stores are not encrypted by Twelvgaige; use OS or volume
+- Before CTE7: "Local stores are not encrypted by Twelvgaige; use OS or volume
   encryption."
-- After CTE4: "Encrypted SQLite is available when configured with a supported
+- After CTE7: "Encrypted SQLite is available when configured with a supported
   key backend."
-- Before CTE2: "Use a trusted TLS/mTLS proxy for remote API exposure."
-- After CTE2: "Native TLS/mTLS is available when configured; loopback HTTP
+- Before CTE2.5: "Use a trusted TLS/mTLS proxy for remote API exposure."
+- After CTE2.5: "Native TLS/mTLS is available when configured; loopback HTTP
   remains the default local mode."
 
 ## Recommended First Slice
 
-Start with CTE0, CTE1, and the CTE1.5 spike:
+Start with CTE0, CTE1, and CTE2:
 
 1. Add crypto status/config terminology without changing store behavior.
 2. Add provider TLS regression tests.
 3. Update docs to clarify exactly what is and is not encrypted.
-4. Prove or reject SQLCipher plus Burrito feasibility before implementing
-   encrypted SQLite.
+4. Reject unsupported native TLS config instead of treating `tls_options` as
+   protection before the listener implements TLS.
+5. Harden trusted-proxy validation.
 
 This creates immediate security value without taking on SQLCipher, OS keychain,
-or native mTLS as product commitments first.
+or native mTLS as product commitments first. The SQLCipher/Burrito feasibility
+spike starts later at CTE5, after transport and integrity basics are in place.

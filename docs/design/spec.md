@@ -2084,8 +2084,30 @@ Retention:
 
 Backup and corruption handling:
 
-- The daemon should expose `twelvgaige store backup <path>` after persistence exists.
-- Backup uses SQLite's backup API or a transactionally safe equivalent.
+- The CLI exposes `twelvgaige store backup <path>` for durable SQLite stores.
+- SQLite backup uses `VACUUM INTO` through the live store process. Plaintext SQLite
+  backup requires `--allow-plaintext-export`. Encrypted SQLite uses the same API
+  once SQLCipher is linked and remains encrypted under the open database key.
+- Offline restore copies a backup into a private destination and refuses overwrite
+  unless replacement is explicit through `twelvgaige store restore <source>
+  <destination> --replace`.
+- Plaintext SQLite to SQLCipher migration is an offline command:
+  `twelvgaige store migrate-sqlcipher --source <plain.db> --destination
+  <encrypted.db> --key-env <env>`. It requires all three arguments, leaves the
+  source unchanged, refuses overwrite unless `--replace` is supplied, and fails
+  before creating the destination if the loaded SQLite driver is not
+  SQLCipher-backed.
+- DEK envelope rewrap is an offline command:
+  `twelvgaige store rewrap-envelope <envelope.json> --backup <backup.json>
+  --old-key-env <env> --new-key-env <env>`. It requires a pre-rotation backup,
+  writes envelope files atomically, and rotates only the wrapped DEK envelope.
+  It does not rekey SQLCipher database pages.
+- SQLCipher package verification is opt-in through
+  `make sqlcipher-escript-smoke-system` and
+  `make burrito-sqlcipher-smoke-system`. These targets rebuild `exqlite` against
+  system SQLCipher, then exercise plaintext store creation, plaintext backup,
+  plaintext-to-encrypted migration, encrypted open, encrypted backup, restore,
+  and restored encrypted open.
 - On database corruption, the daemon starts in read-only diagnostic mode if possible and refuses new rounds.
 
 ### 17.6 Durable Event Stream Contract
@@ -2420,14 +2442,19 @@ Current listener implementation:
 - It starts only when `:http_listener` application config is supplied.
 - Loopback bind is allowed by default, but mutating control-plane routes still
   require bearer auth. Non-loopback bind requires `allow_remote?: true`, a
-  configured bearer token, and either native TLS options or explicit
-  `behind_tls_proxy?: true` deployment mode.
+  configured bearer token, and explicit `behind_tls_proxy?: true` deployment
+  mode with configured `trusted_proxy_cidrs`. Native TLS/mTLS is not implemented
+  in the current `:gen_tcp` listener; non-loopback `tls_options` are rejected
+  until a real TLS listener exists.
+- Forwarded identity headers are rejected unless `behind_tls_proxy?: true` is
+  set and the socket peer is inside `trusted_proxy_cidrs`.
 
 Authentication:
 
 - mutating loopback HTTP control routes require bearer token auth.
-- any non-loopback HTTP listener requires bearer token auth plus native TLS or
-  an explicitly configured trusted TLS/mTLS proxy.
+- any non-loopback HTTP listener requires bearer token auth plus an explicitly
+  configured trusted TLS/mTLS proxy and trusted proxy CIDR until native TLS/mTLS
+  support lands.
 - tokens are loaded from secret sources or generated into the user data directory with owner-only permissions.
 - auth failures are logged without token values.
 - The Phase 5 pure router accepts configured bearer tokens only through the
@@ -2501,8 +2528,14 @@ JSON with `format=cloudevents`, and SHA-256 hash-chain checkpoint export with
 response line is one complete RFC 8259 JSON object terminated by LF. Each SSE
 event uses `id:`, `event:`, and `data:` fields; idle bounded-follow responses
 return a heartbeat comment. CloudEvents use `specversion: "1.0"`, stable event
-IDs, `/twelvgaige/rounds/<round_id>` sources, and `dev.twelvgaige.<kind>.*`
-types. `GET /api/v1/rounds/:id/events` also supports
+IDs, `/twelvgaige/rounds/<round_id>` sources, `dev.twelvgaige.<kind>.*`
+types, and JSON payloads. CLI `twelvgaige audit verify <checkpoint-path|->`
+verifies saved checkpoint JSON and reports post-export mutation, deletion, or
+reordering without claiming live-store immutability. CLI `round audit --format
+checkpoint --sign-hmac-env <env>` can add an HMAC-SHA-256 signature block to a
+checkpoint export, and `audit verify --hmac-env <env>` verifies both the hash
+chain and HMAC signature. HMAC mode is shared-secret verification, not public
+signing. `GET /api/v1/rounds/:id/events` also supports
 `follow=true&timeout_ms=<ms>`, which waits for the next event only when replay
 is empty, and `until_terminal=true`, which advances the event cursor across
 bounded follow batches until the round reaches a terminal state, the idle
@@ -3165,6 +3198,7 @@ ExUnit.configure(exclude: [
   :daemon,
   :persistence,
   :provider_live,
+  :keychain_live,
   :k8s_live,
   :slow
 ])
@@ -3178,6 +3212,8 @@ Tag meanings:
 | `:daemon` | Tests that start Breech daemon/IPC. | excluded |
 | `:persistence` | Tests using SQLite or durable store migrations. | excluded |
 | `:provider_live` | Live Anthropic/OpenAI/Gemini/Ollama provider calls. | excluded |
+| `:keychain_live` | Live OS keychain tests that may prompt or mutate user keychain state. | excluded |
+| `:sqlcipher_live` | Live SQLCipher store tests requiring a SQLCipher-linked SQLite driver. | excluded |
 | `:k8s_live` | Tests against a real local Kubernetes cluster. | excluded |
 | `:slow` | Tests expected to exceed normal unit-test timing. | excluded |
 
@@ -3454,7 +3490,7 @@ Behaviour implementations must share contract tests where practical:
 | `[x]` | Awaiting-safety restart resume | An awaiting-safety round stored in `Store.File` remains inspectable after Breech/store restart and resumes to completion after approval. |
 | `[x]` | SQLite store | `Store.SQLite` persists snapshots, manifests, attempt/tool journals, committed transition IDs, audit records, and round events in SQLite with WAL, foreign keys, bounded busy timeout, transactional transition commits, retained-byte cleanup, and queryable round columns for shell identity, timing, and error reason. |
 | `[x]` | Ecto schemas and migrations | SQLite table creation is owned by versioned Ecto migrations, persisted in `schema_migrations`; table schema modules exist for rounds, manifests, shot runs, events, audit events, transitions, and journals. |
-| `[x]` | Audit store | Attempt/tool journal writes and Breech state transitions append durable audit records after audit-event redaction; `list_audit_events/2`, IPC `round.audit`, and CLI `round audit` expose cursor-based replay plus SHA-256 checkpoint export. |
+| `[x]` | Audit store | Attempt/tool journal writes and Breech state transitions append durable audit records after audit-event redaction; `list_audit_events/2`, IPC `round.audit`, and CLI `round audit` expose cursor-based replay plus SHA-256 checkpoint export; CLI `audit verify` validates saved checkpoint exports for post-export mutation, deletion, and reordering. |
 | `[x]` | Run manifest | `Round.Manifest` snapshots the accepted workflow with schema version, workflow source metadata/content hash, normalized workflow hash, accepted agent source metadata, and agent shell hashes; Breech recovery and safety resume use the stored manifest, not current shell files. |
 | `[x]` | Durable snapshot | `Round.Snapshot` excludes runtime-only OTP fields; file and SQLite stores persist snapshots through the store contract; `Round.ShotRun` and SQLite `shot_runs` provide typed shot-level projection with startup backfill. |
 | `[x]` | Attempt and tool journal | Attempt start, attempt outcome, tool intent, and tool observed result are recorded when a store is configured; store failures stop execution before side effects where applicable; Runner, ToolExecutor, Breech, and Round.Server paths are covered. |
@@ -3523,7 +3559,7 @@ Resolved implementation decisions:
 - Provider live smoke tests, when added, should use ExUnit tags plus environment opt-in rather than a separate Mix task.
 - k3d is the preferred disposable local Kubernetes target for live smoke tests. Existing kind, minikube, or dev-cluster contexts can still be used by setting `TWELVGAIGE_K8S_CONTEXT`.
 - ReAct tool calls execute serially inside one shot attempt. Parallel read-only tool calls are a future optimization, not a correctness requirement.
-- Durable persistence keeps redacted snapshots, events, audit records, attempt journals, and tool journals by default. File-backed stores, SQLite stores, SQLite WAL/SHM sidecars, and JSON log files use private POSIX modes where supported. Stores accept `sensitive_retention: :summary` for high-sensitivity local runs; that mode retains journal metadata while summarizing prompt/message/tool input/output payload fields by type and size. Audit/event checkpoint exports are tamper-evident after export but do not make the live local store cryptographically immutable. Local stores are not encrypted at rest; use OS or volume encryption until a SQLCipher/keychain/KMS design is implemented.
+- Durable persistence keeps redacted snapshots, events, audit records, attempt journals, and tool journals by default. File-backed stores, SQLite stores, SQLite WAL/SHM sidecars, and JSON log files use private POSIX modes where supported. Stores accept `sensitive_retention: :summary` for high-sensitivity local runs; that mode retains journal metadata while summarizing prompt/message/tool input/output payload fields by type and size. Audit/event checkpoint exports are tamper-evident after export but do not make the live local store cryptographically immutable. Local stores are not encrypted at rest; use OS or volume encryption until a SQLCipher/keychain/KMS design is implemented. `crypto sqlcipher-spike` detects driver support through `PRAGMA cipher_version`, runs migrations and reopen checks only when SQLCipher is present, and stays a feasibility probe. `Store.SQLiteEncrypted` is now a separate fail-closed store surface: it requires `:key` or `:key_env`, checks SQLCipher before creating the target file, and is selected by `TWELVGAIGE_STORE_SQLCIPHER` plus `TWELVGAIGE_STORE_SQLCIPHER_KEY`. Key-management backends currently provide a contract for future encrypted-store wiring: test, env, file, macOS Keychain, Windows DPAPI, and Linux Secret Service. Env/file are explicit insecure dev/CI/headless backends; macOS Keychain, Windows DPAPI, and Linux Secret Service are OS-protected command-wrapper integrations with live/release verification still tracked before encrypted-store support depends on them. Linux Secret Service is desktop Linux only and requires `secret-tool`, a user D-Bus session, and an unlocked collection. Backup/export policy defaults to encrypted mode, marks redacted exports as non-restorable, and rejects plaintext export without explicit plaintext allowance. Store DEKs use AES-256-GCM envelopes; rewrap rotation changes only the DEK envelope and leaves database re-encryption for later rekey work.
 - Arbitrary shell execution remains deferred. Structured tools construct argv internally.
 
 Remaining release follow-ups:

@@ -54,7 +54,9 @@ make burrito BURRITO_TARGET=linux
 
 `make release` builds the native Mix release for the current OS and
 architecture. Burrito builds single-file executables for release targets.
-Released binaries are produced by the GitHub release workflow.
+Released binaries are produced by the GitHub release workflow. See
+[Release flow](docs/release.md) for checksum and GitHub artifact attestation
+verification.
 
 ## Usage
 
@@ -103,6 +105,9 @@ Anthropic, OpenAI, Gemini, and Ollama setup.
 
 - [Usage](USAGE.md)
 - [Core concepts](docs/concepts.md)
+- [Authoring workflows](docs/authoring.md)
+- [Scaffolds](docs/scaffolds.md)
+- [Patch artifacts](docs/patches.md)
 - [Shell formats](docs/shell-formats.md)
 - [Secrets and providers](docs/secrets-and-providers.md)
 - [Security](docs/security.md)

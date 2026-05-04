@@ -41,6 +41,7 @@ defmodule Twelvgaige.SchedulerTest do
     assert_receive {:scheduled_round, @workflow, %{"cluster" => "dev"}, opts}, 100
     assert opts[:provider] == :mock
     assert opts[:server] == :test_breech
+    assert opts[:admission_policy] == :scheduled
     assert opts[:scheduler?]
 
     assert %{status: "running", jobs: [job]} = Scheduler.status(scheduler)
@@ -79,6 +80,7 @@ defmodule Twelvgaige.SchedulerTest do
 
     assert_receive {:cron_round, @workflow, %{"cluster" => "prod"}, opts}, 150
     assert opts[:server] == :cron_breech
+    assert opts[:admission_policy] == :scheduled
     assert opts[:scheduler?]
 
     assert %{status: "running", jobs: [job]} = Scheduler.status(scheduler)

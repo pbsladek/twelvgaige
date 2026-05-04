@@ -35,6 +35,17 @@ make ci
 normal tests, and persistence tests. GitHub Actions uses the same Make target.
 All reusable workflow actions must stay pinned to full commit SHAs.
 
+Run the authoring gate when workflow/scaffold/patch behavior or docs change:
+
+```bash
+make authoring-check
+```
+
+This verifies lowercase docs naming, builds the CLI, runs strict lint and
+inventory against a temporary traphouse copy, verifies shot and scaffold
+libraries, runs read-only author review, and verifies/applies a generated patch
+artifact in dry-run mode.
+
 Run `make typecheck` during local type-warning cleanup. It uses Dialyxir/Dialyzer
 and is not a release gate until the Dialyzer backlog has a clean baseline.
 

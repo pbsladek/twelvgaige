@@ -3,6 +3,8 @@ defmodule Twelvgaige.Shell.WorkflowTest do
 
   alias Twelvgaige.Shell.Workflow
 
+  @digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
   test "builds a workflow shell from a map" do
     assert {:ok, workflow} =
              Workflow.from_map(%{
@@ -12,6 +14,16 @@ defmodule Twelvgaige.Shell.WorkflowTest do
                "version" => "1.0.0",
                "timeout" => "30m",
                "policy" => %{"resource_profile" => "laptop"},
+               "metadata" => %{
+                 "owner" => "platform",
+                 "tags" => ["kubernetes", "incident"],
+                 "lifecycle" => "reviewed",
+                 "review" => %{
+                   "workflow_digest" => @digest,
+                   "reviewer" => "human:sre",
+                   "reviewed_at" => "2026-05-03T00:00:00Z"
+                 }
+               },
                "input_schema" => %{
                  "type" => "object",
                  "required" => ["cluster"],
@@ -22,6 +34,11 @@ defmodule Twelvgaige.Shell.WorkflowTest do
                    "id" => "gather",
                    "kind" => "slug",
                    "agent" => "k8s_inspector",
+                   "metadata" => %{
+                     "purpose" => "Collect cluster evidence",
+                     "owner" => "sre",
+                     "last_reviewed" => "2026-05-03"
+                   },
                    "timeout" => "2m",
                    "tools" => ["kubectl_get"],
                    "output_schema" => %{
@@ -41,8 +58,12 @@ defmodule Twelvgaige.Shell.WorkflowTest do
     assert workflow.id == "k8s_incident_response"
     assert workflow.timeout_ms == 1_800_000
     assert workflow.policy.resource_profile == :laptop
+    assert workflow.metadata.owner == "platform"
+    assert workflow.metadata.lifecycle == :reviewed
+    assert workflow.metadata.review["workflow_digest"] == @digest
     assert Enum.map(workflow.shots, & &1.id) == ["gather", "approval"]
     assert hd(workflow.shots).tools == ["kubectl_get"]
+    assert hd(workflow.shots).metadata.purpose == "Collect cluster evidence"
   end
 
   test "rejects missing required fields" do
@@ -92,5 +113,40 @@ defmodule Twelvgaige.Shell.WorkflowTest do
 
     assert error.reason == :invalid_shell
     assert error.details.path == ["shots", 0, "tools"]
+  end
+
+  test "rejects unknown metadata fields" do
+    assert {:error, error} =
+             Workflow.from_map(%{
+               kind: :workflow,
+               id: "metadata_unknown",
+               version: "1.0.0",
+               metadata: %{owner: "platform", arbitrary: "nope"},
+               shots: [%{id: "only", kind: :slug, agent: "agent"}]
+             })
+
+    assert error.reason == :invalid_shell
+    assert error.details.path == ["metadata", "arbitrary"]
+  end
+
+  test "requires digest-bound approval metadata" do
+    assert {:error, error} =
+             Workflow.from_map(%{
+               kind: :workflow,
+               id: "bad_approval",
+               version: "1.0.0",
+               metadata: %{
+                 approval: %{
+                   workflow_digest: "not-a-digest",
+                   approver: "human:sre",
+                   approved_at: "2026-05-03T00:00:00Z",
+                   scope: "prod"
+                 }
+               },
+               shots: [%{id: "only", kind: :slug, agent: "agent"}]
+             })
+
+    assert error.reason == :invalid_shell
+    assert error.details.path == ["metadata", "approval", "workflow_digest"]
   end
 end

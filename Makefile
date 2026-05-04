@@ -6,6 +6,19 @@ ARTIFACT_SUFFIX ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname 
 NATIVE_RELEASE := twelvgaige_native
 BUMP ?= patch
 RELEASE_VERSION ?=
+ERL_CRASH_DUMP_DIR ?= .crash_dumps
+ERL_CRASH_DUMP ?= $(ERL_CRASH_DUMP_DIR)/erl_crash.dump
+export ERL_CRASH_DUMP
+SQLCIPHER_PREFIX ?= $(shell prefix="$$(brew --prefix sqlcipher 2>/dev/null || true)"; if [ -n "$$prefix" ] && [ -d "$$prefix" ]; then printf "%s" "$$prefix"; fi)
+SQLCIPHER_CFLAGS ?= -I$(SQLCIPHER_PREFIX)/include/sqlcipher
+SQLCIPHER_LDFLAGS ?= -L$(SQLCIPHER_PREFIX)/lib -lsqlcipher
+SQLCIPHER_KEY ?= dev-only-sqlcipher-spike-key
+SQLCIPHER_SPIKE_PATH ?= /tmp/$(APP)-sqlcipher-spike-$(ARTIFACT_SUFFIX).db
+SQLCIPHER_SMOKE_TMP ?= /tmp/$(APP)-sqlcipher-smoke-$(ARTIFACT_SUFFIX)
+SQLCIPHER_STORE_KEY_ENV ?= TWELVGAIGE_SQLCIPHER_SMOKE_KEY
+KEYCHAIN_LIVE ?= 0
+
+$(shell mkdir -p "$(ERL_CRASH_DUMP_DIR)")
 
 UNAME_S := $(shell uname -s 2>/dev/null || echo unknown)
 UNAME_M := $(shell uname -m 2>/dev/null || echo unknown)
@@ -30,6 +43,9 @@ SMOKE_WORKFLOW_TOML := docs/traphouse/workflows/simple.toml
 SMOKE_BIN ?= ./$(APP)
 SMOKE_TMP ?= /tmp/$(APP)-smoke-$(ARTIFACT_SUFFIX)
 SMOKE_ENV ?=
+AUTHORING_ROOT ?= docs/traphouse
+AUTHORING_TMP ?= /tmp/$(APP)-authoring-$(ARTIFACT_SUFFIX)
+AUTHORING_BIN ?= ./$(APP)
 
 NATIVE_BIN := _build/prod/rel/$(NATIVE_RELEASE)/bin/$(APP)
 NATIVE_TARBALL := _build/prod/$(NATIVE_RELEASE)-$(VERSION).tar.gz
@@ -53,6 +69,17 @@ help:
 	@printf "%s\n" "  make typecheck         Run Dialyzer via Dialyxir"
 	@printf "%s\n" "  make test-local        Run default local test suite"
 	@printf "%s\n" "  make smoke             Build escript and run CLI smoke checks"
+	@printf "%s\n" "  make authoring-check   Run traphouse authoring docs/drift checks"
+	@printf "%s\n" "  make authoring-drift   Run authoring CLI checks against a temp traphouse"
+	@printf "%s\n" "  make authoring-docs    Verify authoring docs conventions"
+	@printf "%s\n" "  make sqlcipher-spike-system"
+	@printf "%s\n" "                         Rebuild exqlite against system SQLCipher and run the spike"
+	@printf "%s\n" "  make sqlcipher-escript-smoke-system"
+	@printf "%s\n" "                         Run opt-in SQLCipher CLI smoke checks with system SQLCipher"
+	@printf "%s\n" "  make burrito-sqlcipher-smoke-system BURRITO_TARGET=$(BURRITO_TARGET)"
+	@printf "%s\n" "                         Run opt-in SQLCipher Burrito smoke checks for a host target"
+	@printf "%s\n" "  make keychain-smoke-macos KEYCHAIN_LIVE=1"
+	@printf "%s\n" "                         Run opt-in live macOS Keychain backend verification"
 	@printf "%s\n" ""
 	@printf "%s\n" "Builds:"
 	@printf "%s\n" "  make build             Build escript and native Mix release"
@@ -111,10 +138,99 @@ test-persistence:
 	MIX_ENV=test mix test --include persistence
 
 .PHONY: check
-check: format-check compile test
+check: format-check compile test authoring-docs
 
 .PHONY: ci
 ci: deps format-check compile test test-persistence
+
+.PHONY: authoring-check
+authoring-check: authoring-docs authoring-drift
+
+.PHONY: authoring-docs
+authoring-docs:
+	@test -f docs/authoring.md
+	@test -f docs/scaffolds.md
+	@test -f docs/patches.md
+	@bad="$$(find docs -type f -name '*.md' | awk '/[A-Z]/ {print}')"; \
+	if [ -n "$$bad" ]; then \
+		printf "%s\n" "docs markdown filenames must be lowercase:" >&2; \
+		printf "%s\n" "$$bad" >&2; \
+		exit 1; \
+	fi
+
+.PHONY: authoring-drift
+authoring-drift: escript
+	rm -rf $(AUTHORING_TMP)
+	mkdir -p $(AUTHORING_TMP)
+	MIX_ENV=test mix run scripts/authoring_fixture.exs $(AUTHORING_TMP)
+	$(AUTHORING_BIN) shell lint $(AUTHORING_TMP)/traphouse/workflows/shell_authoring_review_readonly.yaml --root $(AUTHORING_TMP)/traphouse --strict --format json > $(AUTHORING_TMP)/lint.json
+	$(AUTHORING_BIN) shell inventory $(AUTHORING_TMP)/traphouse --root $(AUTHORING_TMP)/traphouse --format json > $(AUTHORING_TMP)/inventory.json
+	$(AUTHORING_BIN) shot library verify --root $(AUTHORING_TMP)/traphouse --format json > $(AUTHORING_TMP)/shot-library.json
+	$(AUTHORING_BIN) shell scaffold verify --root $(AUTHORING_TMP)/traphouse --format json > $(AUTHORING_TMP)/scaffold-library.json
+	$(AUTHORING_BIN) shell author review $(AUTHORING_TMP)/traphouse/workflows/simple.yaml --root $(AUTHORING_TMP)/traphouse --format json > $(AUTHORING_TMP)/author-review.json
+	$(AUTHORING_BIN) shell patch inspect $(AUTHORING_TMP)/patch.json --root $(AUTHORING_TMP)/traphouse --format json > $(AUTHORING_TMP)/patch-inspect.json
+	$(AUTHORING_BIN) shell patch verify $(AUTHORING_TMP)/patch.json --root $(AUTHORING_TMP)/traphouse --approval $(AUTHORING_TMP)/approval.json --format json > $(AUTHORING_TMP)/patch-verify.json
+	$(AUTHORING_BIN) shell patch apply $(AUTHORING_TMP)/patch.json --root $(AUTHORING_TMP)/traphouse --approval $(AUTHORING_TMP)/approval.json --format json > $(AUTHORING_TMP)/patch-apply-dry-run.json
+
+.PHONY: require-sqlcipher
+require-sqlcipher:
+	@test -n "$(SQLCIPHER_PREFIX)" || { printf "%s\n" "SQLCIPHER_PREFIX is not set and no Homebrew sqlcipher keg was found." >&2; exit 1; }
+	@test -f "$(SQLCIPHER_PREFIX)/include/sqlcipher/sqlite3.h" || { printf "%s\n" "missing $(SQLCIPHER_PREFIX)/include/sqlcipher/sqlite3.h" >&2; exit 1; }
+	@test -d "$(SQLCIPHER_PREFIX)/lib" || { printf "%s\n" "missing $(SQLCIPHER_PREFIX)/lib" >&2; exit 1; }
+
+.PHONY: sqlcipher-env
+sqlcipher-env: require-sqlcipher
+	@printf "%s\n" "export EXQLITE_USE_SYSTEM=1"
+	@printf "%s\n" "export EXQLITE_SYSTEM_CFLAGS='$(SQLCIPHER_CFLAGS)'"
+	@printf "%s\n" "export EXQLITE_SYSTEM_LDFLAGS='$(SQLCIPHER_LDFLAGS)'"
+	@printf "%s\n" "export TWELVGAIGE_SQLCIPHER_SPIKE_KEY='$(SQLCIPHER_KEY)'"
+
+.PHONY: sqlcipher-compile
+sqlcipher-compile: require-sqlcipher deps
+	EXQLITE_USE_SYSTEM=1 EXQLITE_SYSTEM_CFLAGS='$(SQLCIPHER_CFLAGS)' EXQLITE_SYSTEM_LDFLAGS='$(SQLCIPHER_LDFLAGS)' mix deps.clean exqlite --build
+	EXQLITE_USE_SYSTEM=1 EXQLITE_SYSTEM_CFLAGS='$(SQLCIPHER_CFLAGS)' EXQLITE_SYSTEM_LDFLAGS='$(SQLCIPHER_LDFLAGS)' mix deps.compile exqlite
+
+.PHONY: sqlcipher-compile-prod
+sqlcipher-compile-prod: require-sqlcipher deps
+	MIX_ENV=prod EXQLITE_USE_SYSTEM=1 EXQLITE_SYSTEM_CFLAGS='$(SQLCIPHER_CFLAGS)' EXQLITE_SYSTEM_LDFLAGS='$(SQLCIPHER_LDFLAGS)' mix deps.clean exqlite --build
+	MIX_ENV=prod EXQLITE_USE_SYSTEM=1 EXQLITE_SYSTEM_CFLAGS='$(SQLCIPHER_CFLAGS)' EXQLITE_SYSTEM_LDFLAGS='$(SQLCIPHER_LDFLAGS)' mix deps.compile exqlite
+
+.PHONY: sqlcipher-spike-system
+sqlcipher-spike-system: sqlcipher-compile
+	rm -f $(SQLCIPHER_SPIKE_PATH) $(SQLCIPHER_SPIKE_PATH)-wal $(SQLCIPHER_SPIKE_PATH)-shm
+	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' TWELVGAIGE_SQLCIPHER_SPIKE_KEY='$(SQLCIPHER_KEY)' mix run -e 'IO.puts(Jason.encode!(elem(Twelvgaige.sqlcipher_spike(path: "$(SQLCIPHER_SPIKE_PATH)"), 1), pretty: true))'
+
+.PHONY: sqlcipher-store-system
+sqlcipher-store-system: sqlcipher-compile
+	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' TWELVGAIGE_SQLCIPHER_LIVE=1 TWELVGAIGE_SQLCIPHER_LIVE_KEY='$(SQLCIPHER_KEY)' MIX_ENV=test mix test --include persistence --include sqlcipher_live test/twelvgaige/store/sqlite_encrypted_live_test.exs
+
+.PHONY: sqlcipher-escript-smoke-system
+sqlcipher-escript-smoke-system: sqlcipher-compile escript
+	$(MAKE) sqlcipher-smoke-commands SMOKE_BIN=./$(APP)
+
+.PHONY: burrito-sqlcipher-smoke-system
+burrito-sqlcipher-smoke-system: sqlcipher-compile-prod
+	EXQLITE_USE_SYSTEM=1 EXQLITE_SYSTEM_CFLAGS='$(SQLCIPHER_CFLAGS)' EXQLITE_SYSTEM_LDFLAGS='$(SQLCIPHER_LDFLAGS)' MIX_ENV=prod BURRITO_TARGET=$(BURRITO_TARGET) mix release $(APP) --overwrite
+	$(MAKE) sqlcipher-smoke-commands SMOKE_BIN=$(BURRITO_BIN) SQLCIPHER_SMOKE_TMP=/tmp/$(APP)-burrito-sqlcipher-smoke-$(BURRITO_TARGET) SMOKE_ENV='TWELVGAIGE_INSTALL_DIR=/tmp/$(APP)-burrito-sqlcipher-smoke-$(BURRITO_TARGET)/install'
+
+.PHONY: sqlcipher-smoke-commands
+sqlcipher-smoke-commands: require-sqlcipher
+	rm -rf $(SQLCIPHER_SMOKE_TMP)
+	mkdir -p $(SQLCIPHER_SMOKE_TMP)
+	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' TWELVGAIGE_SQLCIPHER_SPIKE_KEY='$(SQLCIPHER_KEY)' $(SMOKE_ENV) $(SMOKE_BIN) crypto sqlcipher-spike --path $(SQLCIPHER_SMOKE_TMP)/probe.db --format json > $(SQLCIPHER_SMOKE_TMP)/probe.json
+	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' TWELVGAIGE_STORE_SQLITE=$(SQLCIPHER_SMOKE_TMP)/plain.db $(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_TOML)
+	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' TWELVGAIGE_STORE_SQLITE=$(SQLCIPHER_SMOKE_TMP)/plain.db $(SMOKE_ENV) $(SMOKE_BIN) store backup $(SQLCIPHER_SMOKE_TMP)/plain-backup.db --allow-plaintext-export --format json > $(SQLCIPHER_SMOKE_TMP)/plain-backup.json
+	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' $(SQLCIPHER_STORE_KEY_ENV)='$(SQLCIPHER_KEY)' $(SMOKE_ENV) $(SMOKE_BIN) store migrate-sqlcipher --source $(SQLCIPHER_SMOKE_TMP)/plain.db --destination $(SQLCIPHER_SMOKE_TMP)/encrypted.db --key-env $(SQLCIPHER_STORE_KEY_ENV) --format json > $(SQLCIPHER_SMOKE_TMP)/migration.json
+	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' TWELVGAIGE_STORE_SQLCIPHER=$(SQLCIPHER_SMOKE_TMP)/encrypted.db TWELVGAIGE_STORE_SQLCIPHER_KEY='$(SQLCIPHER_KEY)' $(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_TOML)
+	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' TWELVGAIGE_STORE_SQLCIPHER=$(SQLCIPHER_SMOKE_TMP)/encrypted.db TWELVGAIGE_STORE_SQLCIPHER_KEY='$(SQLCIPHER_KEY)' $(SMOKE_ENV) $(SMOKE_BIN) store backup $(SQLCIPHER_SMOKE_TMP)/encrypted-backup.db --format json > $(SQLCIPHER_SMOKE_TMP)/encrypted-backup.json
+	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' $(SMOKE_ENV) $(SMOKE_BIN) store restore $(SQLCIPHER_SMOKE_TMP)/encrypted-backup.db $(SQLCIPHER_SMOKE_TMP)/encrypted-restored.db --format json > $(SQLCIPHER_SMOKE_TMP)/encrypted-restore.json
+	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' TWELVGAIGE_STORE_SQLCIPHER=$(SQLCIPHER_SMOKE_TMP)/encrypted-restored.db TWELVGAIGE_STORE_SQLCIPHER_KEY='$(SQLCIPHER_KEY)' $(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_TOML)
+
+.PHONY: keychain-smoke-macos
+keychain-smoke-macos:
+	@test "$$(uname -s)" = "Darwin" || { printf "%s\n" "keychain-smoke-macos requires macOS." >&2; exit 1; }
+	@test "$(KEYCHAIN_LIVE)" = "1" || { printf "%s\n" "set KEYCHAIN_LIVE=1 to create and delete a temporary Twelvgaige Keychain item." >&2; exit 1; }
+	TWELVGAIGE_KEYCHAIN_LIVE=1 MIX_ENV=test mix test --include keychain_live test/twelvgaige/crypto/macos_keychain_live_test.exs
 
 .PHONY: build
 build: escript release
@@ -144,6 +260,7 @@ smoke-shell-formats:
 	$(SMOKE_ENV) $(SMOKE_BIN) shell validate $(SMOKE_TMP)/converted.toml
 	$(SMOKE_ENV) $(SMOKE_BIN) shell convert $(SMOKE_WORKFLOW_TOML) --to yaml > $(SMOKE_TMP)/converted.yaml
 	$(SMOKE_ENV) $(SMOKE_BIN) shell validate $(SMOKE_TMP)/converted.yaml
+	TWELVGAIGE_SQLCIPHER_SPIKE_KEY=smoke $(SMOKE_ENV) $(SMOKE_BIN) crypto sqlcipher-spike --path $(SMOKE_TMP)/sqlcipher-spike.db --format json > $(SMOKE_TMP)/sqlcipher-spike.json
 	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_YAML)
 	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_JSON)
 	$(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_TOML)

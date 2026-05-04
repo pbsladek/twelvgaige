@@ -8,6 +8,15 @@ defmodule Twelvgaige.Tool.Catalog do
   """
 
   alias Twelvgaige.Error
+  alias Twelvgaige.Tool.Builtins.Authoring.PatchPlan
+  alias Twelvgaige.Tool.Builtins.Authoring.ShellDiff
+  alias Twelvgaige.Tool.Builtins.Authoring.ShellGraph
+  alias Twelvgaige.Tool.Builtins.Authoring.ShellImpact
+  alias Twelvgaige.Tool.Builtins.Authoring.ShellInventory
+  alias Twelvgaige.Tool.Builtins.Authoring.ShellLint
+  alias Twelvgaige.Tool.Builtins.Authoring.ShellNormalize
+  alias Twelvgaige.Tool.Builtins.Authoring.ShellValidate
+  alias Twelvgaige.Tool.Builtins.Authoring.ToolCatalogRead
   alias Twelvgaige.Tool.Builtins.GitCommit
   alias Twelvgaige.Tool.Builtins.HTTPGet
   alias Twelvgaige.Tool.Builtins.HTTPPost
@@ -35,7 +44,16 @@ defmodule Twelvgaige.Tool.Catalog do
     "kubectl_logs" => KubectlLogs,
     "kubectl_rollout_restart" => KubectlRolloutRestart,
     "kubectl_scale" => KubectlScale,
-    "shell_read" => ShellRead
+    "patch_plan" => PatchPlan,
+    "shell_diff" => ShellDiff,
+    "shell_graph" => ShellGraph,
+    "shell_impact" => ShellImpact,
+    "shell_inventory" => ShellInventory,
+    "shell_lint" => ShellLint,
+    "shell_normalize" => ShellNormalize,
+    "shell_read" => ShellRead,
+    "shell_validate" => ShellValidate,
+    "tool_catalog_read" => ToolCatalogRead
   }
 
   @spec all() :: %{String.t() => module()}

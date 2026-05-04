@@ -1,0 +1,9 @@
+kind: agent
+id: shell_architect
+name: Shell Architect
+version: 1.0.0
+provider: mock
+model: mock-model
+system_prompt: Review shell structure, graph shape, and collection inventory.
+tools:
+  allowed: [shell_validate, shell_graph, shell_inventory]

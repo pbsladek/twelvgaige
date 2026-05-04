@@ -307,6 +307,19 @@ defmodule Twelvgaige.BreechTest do
     assert Enum.any?(rounds, &(&1.id == round_id))
   end
 
+  test "daemon-owned rounds honor explicit admission policy before queueing" do
+    round_id = "round_breech_admission_#{System.unique_integer([:positive])}"
+
+    assert {:error, error} =
+             Breech.start_round(@workflow, %{},
+               round_id: round_id,
+               admission_policy: :approved
+             )
+
+    assert error.reason == :policy_denied
+    assert {:error, :not_found} = Breech.get_round(round_id)
+  end
+
   test "starts daemon-owned rounds by workflow id from the configured shell cache" do
     parent = self()
     name = :"breech_cache_#{System.unique_integer([:positive])}"

@@ -643,7 +643,7 @@ defmodule Twelvgaige.Round.ServerTest do
             kind: :slug,
             agent: "agent",
             prompt: "hello",
-            timeout: "1ms",
+            timeout: "25ms",
             retry: %{
               max_attempts: 2,
               base_delay: "0ms",

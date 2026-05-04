@@ -164,6 +164,61 @@ defmodule Twelvgaige.Store.SQLiteTest do
              GenServer.call(name, {:list_shot_runs, "round_1"})
   end
 
+  test "backs up plaintext sqlite only with explicit plaintext allowance", %{
+    name: name,
+    path: path
+  } do
+    backup_path = Path.join(Path.dirname(path), "backup.db")
+    restored_path = Path.join(Path.dirname(path), "restored.db")
+    restored_name = :"sqlite_restored_#{System.unique_integer([:positive])}"
+
+    start_supervised!({SQLiteStore, name: name, path: path})
+
+    snapshot = %{
+      id: "backup_round",
+      status: :firing,
+      version: 0,
+      shots: [%{id: "shot_a", kind: :slug, status: :pending, attempt: 0}]
+    }
+
+    manifest = %{round_id: "backup_round", shell_id: "workflow", workflow: %{id: "workflow"}}
+    assert :ok = GenServer.call(name, {:create_round, snapshot, manifest, []})
+
+    assert {:error, :plaintext_export_not_allowed} =
+             SQLiteStore.backup(backup_path, server: name)
+
+    assert {:ok,
+            %{
+              "status" => "ok",
+              "mode" => "plaintext",
+              "plaintext" => true,
+              "destination" => ^backup_path
+            }} =
+             SQLiteStore.backup(backup_path,
+               server: name,
+               allow_plaintext_export?: true
+             )
+
+    assert File.exists?(backup_path)
+
+    assert {:error, :backup_destination_exists} =
+             SQLiteStore.backup(backup_path, server: name, allow_plaintext_export?: true)
+
+    assert {:ok, %{"status" => "ok", "destination" => ^restored_path}} =
+             SQLiteStore.restore_backup(backup_path, restored_path)
+
+    stop_supervised!(SQLiteStore)
+
+    start_supervised!(
+      Supervisor.child_spec({SQLiteStore, name: restored_name, path: restored_path},
+        id: restored_name
+      )
+    )
+
+    assert {:ok, ^snapshot} = GenServer.call(restored_name, {:get_round, "backup_round"})
+    assert {:ok, ^manifest} = GenServer.call(restored_name, {:get_manifest, "backup_round"})
+  end
+
   test "applies the versioned schema migration", %{name: name, path: path} do
     start_supervised!({SQLiteStore, name: name, path: path})
 

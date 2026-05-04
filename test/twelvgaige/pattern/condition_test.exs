@@ -50,4 +50,18 @@ defmodule Twelvgaige.Pattern.ConditionTest do
     assert {:error, syntax_error} = Condition.validate("input.cluster ==")
     assert syntax_error.reason == :unsupported_condition
   end
+
+  test "extracts and rewrites shot references for authoring" do
+    condition =
+      "steps.inspect.ok == true and (shots.verify.score >= 0.9 or input.force == true)"
+
+    assert Condition.shot_references(condition, authoring_aliases?: true) ==
+             {:ok, ["inspect", "verify"]}
+
+    assert Condition.rewrite_shot_reference(condition, "inspect", "collect",
+             authoring_aliases?: true
+           ) ==
+             {:ok,
+              "shots.collect.ok == true and (shots.verify.score >= 0.9 or input.force == true)"}
+  end
 end

@@ -10,9 +10,12 @@ defmodule Twelvgaige.Store.Config do
   alias Twelvgaige.Store.File, as: FileStore
   alias Twelvgaige.Store.Memory
   alias Twelvgaige.Store.SQLite
+  alias Twelvgaige.Store.SQLiteEncrypted
 
   @env_store_file "TWELVGAIGE_STORE_FILE"
   @env_store_sqlite "TWELVGAIGE_STORE_SQLITE"
+  @env_store_sqlcipher "TWELVGAIGE_STORE_SQLCIPHER"
+  @env_store_sqlcipher_key "TWELVGAIGE_STORE_SQLCIPHER_KEY"
 
   @type config :: module() | {module(), keyword()}
 
@@ -36,7 +39,15 @@ defmodule Twelvgaige.Store.Config do
   defp fallback(value, _fallback), do: value
 
   defp env_store do
-    env_sqlite_store() || env_file_store()
+    env_sqlcipher_store() || env_sqlite_store() || env_file_store()
+  end
+
+  defp env_sqlcipher_store do
+    case System.get_env(@env_store_sqlcipher) do
+      nil -> nil
+      "" -> nil
+      path -> {SQLiteEncrypted, path: path, key_env: @env_store_sqlcipher_key}
+    end
   end
 
   defp env_sqlite_store do

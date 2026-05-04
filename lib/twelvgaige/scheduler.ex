@@ -201,6 +201,7 @@ defmodule Twelvgaige.Scheduler do
     opts =
       job.opts
       |> Keyword.put_new(:server, state.breech)
+      |> Keyword.put_new(:admission_policy, :scheduled)
       |> Keyword.put(:scheduler?, true)
 
     case state.runner.(job.workflow, job.input, opts) do

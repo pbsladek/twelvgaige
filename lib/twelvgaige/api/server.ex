@@ -9,6 +9,7 @@ defmodule Twelvgaige.API.Server do
   """
 
   use GenServer
+  import Bitwise
 
   alias Twelvgaige.API.Response
   alias Twelvgaige.API.Router
@@ -29,6 +30,18 @@ defmodule Twelvgaige.API.Server do
   @default_stream_event_limit 1_000
   @default_stream_batch_limit 100
   @default_stream_fetches 10_000
+  @forwarded_identity_headers MapSet.new([
+                                "forwarded",
+                                "x-forwarded-for",
+                                "x-forwarded-host",
+                                "x-forwarded-proto",
+                                "x-forwarded-user",
+                                "x-forwarded-email",
+                                "x-forwarded-client-cert",
+                                "x-real-ip",
+                                "x-envoy-external-address",
+                                "x-client-cert"
+                              ])
 
   defstruct [
     :listen_socket,
@@ -39,6 +52,8 @@ defmodule Twelvgaige.API.Server do
     :bearer_token,
     :router_opts,
     :acceptor_ref,
+    behind_tls_proxy?: false,
+    trusted_proxy_cidrs: [],
     max_header_bytes: @default_header_bytes,
     max_body_bytes: @default_body_bytes,
     request_timeout_ms: @default_timeout_ms,
@@ -59,6 +74,7 @@ defmodule Twelvgaige.API.Server do
           | {:bearer_token, String.t()}
           | {:allow_remote?, boolean()}
           | {:behind_tls_proxy?, boolean()}
+          | {:trusted_proxy_cidrs, [String.t()]}
           | {:max_header_bytes, pos_integer()}
           | {:max_body_bytes, pos_integer()}
           | {:request_timeout_ms, pos_integer()}
@@ -103,7 +119,8 @@ defmodule Twelvgaige.API.Server do
     ip = Keyword.get(opts, :ip, @default_ip)
     port = Keyword.get(opts, :port, @default_port)
 
-    with :ok <- validate_bind_policy(ip, opts),
+    with {:ok, trusted_proxy_cidrs} <- parse_trusted_proxy_cidrs(opts),
+         :ok <- validate_bind_policy(ip, opts, trusted_proxy_cidrs),
          {:ok, listen_socket} <- listen(ip, port),
          {:ok, {bound_ip, bound_port}} <- :inet.sockname(listen_socket) do
       state = %__MODULE__{
@@ -113,6 +130,8 @@ defmodule Twelvgaige.API.Server do
         breech: Keyword.get(opts, :breech, Twelvgaige.Breech),
         bearer_token: Keyword.get(opts, :bearer_token, Keyword.get(opts, :auth_token)),
         router_opts: Keyword.get(opts, :router_opts, []),
+        behind_tls_proxy?: Keyword.get(opts, :behind_tls_proxy?, false),
+        trusted_proxy_cidrs: trusted_proxy_cidrs,
         max_header_bytes: Keyword.get(opts, :max_header_bytes, @default_header_bytes),
         max_body_bytes: Keyword.get(opts, :max_body_bytes, @default_body_bytes),
         request_timeout_ms: Keyword.get(opts, :request_timeout_ms, @default_timeout_ms),
@@ -192,7 +211,8 @@ defmodule Twelvgaige.API.Server do
     :ok
   end
 
-  defp validate_bind_policy(ip, opts) do
+  @spec validate_bind_policy(:inet.ip_address(), keyword(), list()) :: :ok | {:error, term()}
+  defp validate_bind_policy(ip, opts, trusted_proxy_cidrs) do
     cond do
       local_ip?(ip) ->
         :ok
@@ -203,8 +223,15 @@ defmodule Twelvgaige.API.Server do
       is_nil(Keyword.get(opts, :bearer_token, Keyword.get(opts, :auth_token))) ->
         {:error, {:http_remote_bind_requires_auth, ip}}
 
+      Keyword.has_key?(opts, :tls_options) and
+          not Keyword.get(opts, :behind_tls_proxy?, false) ->
+        {:error, {:http_native_tls_not_implemented, ip}}
+
       not remote_bind_has_transport_protection?(opts) ->
         {:error, {:http_remote_bind_requires_tls_or_proxy, ip}}
+
+      trusted_proxy_cidrs == [] ->
+        {:error, {:http_trusted_proxy_requires_cidrs, ip}}
 
       true ->
         :ok
@@ -212,7 +239,7 @@ defmodule Twelvgaige.API.Server do
   end
 
   defp remote_bind_has_transport_protection?(opts) do
-    Keyword.get(opts, :behind_tls_proxy?, false) or Keyword.has_key?(opts, :tls_options)
+    Keyword.get(opts, :behind_tls_proxy?, false)
   end
 
   defp listen(ip, port) do
@@ -240,7 +267,8 @@ defmodule Twelvgaige.API.Server do
 
   defp handle_socket(parent, socket, state) do
     result =
-      with {:ok, method, target, headers, body} <- read_request(socket, state) do
+      with {:ok, method, target, headers, body} <- read_request(socket, state),
+           :ok <- validate_forwarded_headers(socket, state, headers) do
         router_opts =
           state.router_opts
           |> Keyword.put(:server, state.breech)
@@ -665,6 +693,30 @@ defmodule Twelvgaige.API.Server do
     end
   end
 
+  defp validate_forwarded_headers(socket, state, headers) do
+    if forwarded_identity_headers?(headers) do
+      if state.behind_tls_proxy? and trusted_proxy_peer?(socket, state.trusted_proxy_cidrs) do
+        :ok
+      else
+        {:error, :untrusted_forwarded_headers}
+      end
+    else
+      :ok
+    end
+  end
+
+  defp forwarded_identity_headers?(headers) do
+    Enum.any?(headers, fn {name, _value} -> MapSet.member?(@forwarded_identity_headers, name) end)
+  end
+
+  defp trusted_proxy_peer?(socket, trusted_proxy_cidrs) do
+    with {:ok, {peer_ip, _peer_port}} <- :inet.peername(socket) do
+      Enum.any?(trusted_proxy_cidrs, &ip_in_cidr?(peer_ip, &1))
+    else
+      _error -> false
+    end
+  end
+
   defp reject_transfer_encoding(headers) do
     if header(headers, "transfer-encoding") do
       {:error, :transfer_encoding_unsupported}
@@ -752,6 +804,15 @@ defmodule Twelvgaige.API.Server do
     )
   end
 
+  defp request_error_response(:untrusted_forwarded_headers) do
+    problem(
+      400,
+      "Bad Request",
+      "untrusted_forwarded_headers",
+      "forwarded identity headers are only accepted from configured trusted proxies"
+    )
+  end
+
   defp request_error_response(reason) do
     problem(400, "Bad Request", "bad_request", inspect(reason))
   end
@@ -826,6 +887,82 @@ defmodule Twelvgaige.API.Server do
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
+  defp parse_trusted_proxy_cidrs(opts) do
+    opts
+    |> Keyword.get(:trusted_proxy_cidrs, [])
+    |> List.wrap()
+    |> Enum.reduce_while({:ok, []}, fn cidr, {:ok, cidrs} ->
+      case parse_cidr(cidr) do
+        {:ok, parsed} -> {:cont, {:ok, [parsed | cidrs]}}
+        {:error, _reason} -> {:halt, {:error, {:invalid_trusted_proxy_cidr, cidr}}}
+      end
+    end)
+    |> case do
+      {:ok, cidrs} -> {:ok, Enum.reverse(cidrs)}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp parse_cidr({ip, prefix}) when is_tuple(ip) and is_integer(prefix) do
+    if valid_prefix?(ip, prefix), do: {:ok, {ip, prefix}}, else: {:error, :invalid_prefix}
+  end
+
+  defp parse_cidr(cidr) when is_binary(cidr) do
+    case String.split(cidr, "/", parts: 2) do
+      [ip_text] ->
+        with {:ok, ip} <- parse_ip(ip_text) do
+          {:ok, {ip, ip_bits(ip)}}
+        end
+
+      [ip_text, prefix_text] ->
+        case {parse_ip(ip_text), Integer.parse(prefix_text)} do
+          {{:ok, ip}, {prefix, ""}} ->
+            if valid_prefix?(ip, prefix), do: {:ok, {ip, prefix}}, else: {:error, :invalid_cidr}
+
+          _invalid ->
+            {:error, :invalid_cidr}
+        end
+    end
+  end
+
+  defp parse_cidr(_cidr), do: {:error, :invalid_cidr}
+
+  defp parse_ip(ip_text) do
+    ip_text
+    |> String.to_charlist()
+    |> :inet.parse_address()
+  end
+
+  defp valid_prefix?({_, _, _, _}, prefix) when prefix in 0..32, do: true
+  defp valid_prefix?({_, _, _, _, _, _, _, _}, prefix) when prefix in 0..128, do: true
+  defp valid_prefix?(_ip, _prefix), do: false
+
+  defp ip_bits({_, _, _, _}), do: 32
+  defp ip_bits({_, _, _, _, _, _, _, _}), do: 128
+
+  defp ip_in_cidr?({_, _, _, _} = ip, {{_, _, _, _} = network, prefix}) do
+    ip_to_integer(ip) >>> (32 - prefix) == ip_to_integer(network) >>> (32 - prefix)
+  end
+
+  defp ip_in_cidr?(
+         {_, _, _, _, _, _, _, _} = ip,
+         {{_, _, _, _, _, _, _, _} = network, prefix}
+       ) do
+    ip_to_integer(ip) >>> (128 - prefix) == ip_to_integer(network) >>> (128 - prefix)
+  end
+
+  defp ip_in_cidr?(_ip, _cidr), do: false
+
+  defp ip_to_integer(ip) do
+    ip
+    |> Tuple.to_list()
+    |> Enum.reduce(0, fn part, acc -> (acc <<< ip_part_bits(ip)) + part end)
+  end
+
+  defp ip_part_bits({_, _, _, _}), do: 8
+  defp ip_part_bits({_, _, _, _, _, _, _, _}), do: 16
+
+  @spec local_ip?(:inet.ip_address()) :: boolean()
   defp local_ip?({127, _a, _b, _c}), do: true
   defp local_ip?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
   defp local_ip?(_ip), do: false

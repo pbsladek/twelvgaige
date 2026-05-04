@@ -14,10 +14,15 @@ defmodule Twelvgaige do
   alias Twelvgaige.Breech.Daemon
   alias Twelvgaige.Breech.IPC.Client, as: IPCClient
   alias Twelvgaige.Breech.IPC.Endpoint, as: IPCEndpoint
+  alias Twelvgaige.Crypto.SQLCipherSpike
+  alias Twelvgaige.Crypto.Status, as: CryptoStatus
+  alias Twelvgaige.Crypto.EnvelopeRotation
   alias Twelvgaige.Audit.Event, as: AuditEvent
   alias Twelvgaige.Round.Event
   alias Twelvgaige.Round.Server
   alias Twelvgaige.Shell
+  alias Twelvgaige.Store.Config, as: StoreConfig
+  alias Twelvgaige.Store.SQLite.Migration, as: SQLiteMigration
 
   @doc """
   Runs a workflow shell synchronously in the current BEAM.
@@ -30,12 +35,14 @@ defmodule Twelvgaige do
   def run_round_sync(shell_or_path, input, opts \\ [])
 
   def run_round_sync(%Shell.Workflow{} = workflow, input, opts) when is_map(input) do
-    Server.run_sync(workflow, input, opts)
+    with :ok <- Shell.Admission.check(workflow, policy: Keyword.get(opts, :admission_policy)) do
+      Server.run_sync(workflow, input, opts)
+    end
   end
 
   def run_round_sync(%{} = workflow_map, input, opts) when is_map(input) do
     with {:ok, workflow} <- Shell.Workflow.from_map(workflow_map) do
-      Server.run_sync(workflow, input, opts)
+      run_round_sync(workflow, input, opts)
     end
   end
 
@@ -54,7 +61,7 @@ defmodule Twelvgaige do
         |> put_discovered_agents(agents)
         |> put_manifest_provenance(path, agent_paths, agents)
 
-      Server.run_sync(workflow, input, opts)
+      run_round_sync(workflow, input, opts)
     end
   end
 
@@ -108,6 +115,69 @@ defmodule Twelvgaige do
   @spec list_agents(keyword()) :: {:ok, [Shell.Agent.t()]} | {:error, term()}
   def list_agents(opts \\ []) do
     Shell.Cache.list_agents(shell_cache_opts(opts))
+  end
+
+  @doc """
+  Backs up the configured durable store when the active backend supports it.
+
+  Plaintext SQLite backups must opt in with `allow_plaintext_export?: true`.
+  SQLCipher-backed backups remain encrypted and do not require plaintext export
+  consent.
+  """
+  @spec store_backup(Path.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def store_backup(destination, opts \\ []) when is_binary(destination) do
+    module = opts |> StoreConfig.resolve() |> StoreConfig.module()
+
+    if Code.ensure_loaded?(module) and function_exported?(module, :backup, 2) do
+      apply(module, :backup, [destination, opts])
+    else
+      {:error, {:store_backup_unsupported, module}}
+    end
+  end
+
+  @doc """
+  Restores a store backup file into a destination path.
+
+  Restore is offline by design: it writes a database file that can later be used
+  by setting `TWELVGAIGE_STORE_SQLITE` or `TWELVGAIGE_STORE_SQLCIPHER`.
+  Existing destinations require `replace?: true`.
+  """
+  @spec store_restore_backup(Path.t(), Path.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def store_restore_backup(source, destination, opts \\ [])
+      when is_binary(source) and is_binary(destination) do
+    module = opts |> StoreConfig.resolve() |> StoreConfig.module()
+
+    if Code.ensure_loaded?(module) and function_exported?(module, :restore_backup, 3) do
+      apply(module, :restore_backup, [source, destination, opts])
+    else
+      {:error, {:store_restore_unsupported, module}}
+    end
+  end
+
+  @doc """
+  Migrates an offline plaintext SQLite store into a SQLCipher-encrypted store.
+
+  The source and destination paths are explicit. The destination is not
+  overwritten unless `replace?: true` is passed. The encryption key must be
+  supplied through `:key` or `:key_env`; CLI users should prefer `:key_env` so
+  key material is not placed in shell history.
+  """
+  @spec store_migrate_plaintext_to_encrypted(Path.t(), Path.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def store_migrate_plaintext_to_encrypted(source, destination, opts \\ [])
+      when is_binary(source) and is_binary(destination) do
+    SQLiteMigration.plaintext_to_encrypted(source, destination, opts)
+  end
+
+  @doc """
+  Rewraps an offline DEK envelope file with new key material.
+
+  This rotates only the envelope around an existing DEK. It does not rekey or
+  re-encrypt SQLCipher database pages. A backup path is required.
+  """
+  @spec store_rewrap_envelope(Path.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def store_rewrap_envelope(path, opts \\ []) when is_binary(path) do
+    EnvelopeRotation.rewrap_file(path, opts)
   end
 
   @doc """
@@ -290,6 +360,18 @@ defmodule Twelvgaige do
         error
     end
   end
+
+  @doc """
+  Returns a local cryptography, transport, audit, and release-integrity posture report.
+  """
+  @spec crypto_status(keyword()) :: map()
+  def crypto_status(opts \\ []), do: CryptoStatus.report(opts)
+
+  @doc """
+  Runs the SQLCipher feasibility spike for the current SQLite driver.
+  """
+  @spec sqlcipher_spike(keyword()) :: {:ok, map()} | {:error, term()}
+  def sqlcipher_spike(opts \\ []), do: SQLCipherSpike.run(opts)
 
   @doc """
   Requests the discovered Breech daemon IPC listener to stop.
