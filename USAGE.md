@@ -42,8 +42,8 @@ make package-burrito-smoke BURRITO_TARGET=linux
 ```
 
 `make ci` runs dependency fetch, formatter check, warnings-as-errors compile,
-normal tests, and persistence tests. GitHub Actions calls the same targets for
-CI, packaging, and release jobs.
+normal tests, and persistence tests. GitHub Actions also runs
+`make authoring-check` in a separate CI job.
 
 Run Dialyzer locally when working through ElixirLS type warnings:
 
@@ -52,7 +52,7 @@ make typecheck
 ```
 
 This uses Dialyxir over the normal app build. It is intentionally separate from
-`make ci` until the current Dialyzer warning backlog is cleaned up.
+`make ci` because it is slower, but it is part of the local release gate.
 
 For a native Elixir release bundle:
 

@@ -351,7 +351,7 @@ release-tag:
 	elixir scripts/release.exs $(RELEASE_ARGS)
 
 .PHONY: release-github
-release-github: check
+release-github: ci authoring-check typecheck
 	elixir scripts/release.exs $(RELEASE_ARGS) --push
 
 .PHONY: clean

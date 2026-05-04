@@ -419,7 +419,6 @@ defmodule Twelvgaige.Authoring.Scaffold do
     end
   end
 
-  defp namespace_for(:builtin), do: "builtin"
   defp namespace_for(:local), do: "local"
 
   defp shell_paths_in_dir(dir) do

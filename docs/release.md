@@ -29,6 +29,9 @@ make release-github BUMP=patch
 `BUMP` accepts `patch`, `minor`, or `major`. `RELEASE_VERSION=X.Y.Z` can be used
 instead when the exact version is known.
 
+`make release-github` runs `make ci`, `make authoring-check`, and
+`make typecheck` before it invokes the release helper.
+
 ## What Gets Updated
 
 The release helper updates the application version in `mix.exs`. It does not
@@ -67,8 +70,8 @@ for the staged assets.
 Download assets from a release:
 
 ```bash
-gh release download v0.0.1 --repo pbsladek/twelvgaige --dir twelvgaige-v0.0.1
-cd twelvgaige-v0.0.1
+gh release download vX.Y.Z --repo pbsladek/twelvgaige --dir twelvgaige-vX.Y.Z
+cd twelvgaige-vX.Y.Z
 ```
 
 Verify checksums first:
@@ -82,7 +85,7 @@ binary you plan to run:
 
 ```bash
 gh attestation verify RELEASE-SHA256SUMS --repo pbsladek/twelvgaige
-gh attestation verify twelvgaige-burrito-0.0.1-macos_silicon --repo pbsladek/twelvgaige
+gh attestation verify twelvgaige-burrito-X.Y.Z-macos_silicon --repo pbsladek/twelvgaige
 ```
 
 The attestation proves GitHub signed provenance for an artifact produced by this
