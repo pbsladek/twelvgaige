@@ -158,11 +158,11 @@ test-persistence:
 	MIX_ENV=test mix test --include persistence
 
 .PHONY: coverage
-coverage:
+coverage: deps
 	MIX_ENV=test mix test --cover
 
 .PHONY: coverage-export
-coverage-export:
+coverage-export: deps
 	rm -rf cover
 	mkdir -p $(ARTIFACT_DIR)
 	MIX_ENV=test mix test --cover --export-coverage default > $(COVERAGE_SUMMARY) 2>&1 || { cat $(COVERAGE_SUMMARY); exit 1; }
@@ -170,7 +170,7 @@ coverage-export:
 	@printf "%s\n" "coverage summary written to $(COVERAGE_SUMMARY)"
 
 .PHONY: coverage-persistence
-coverage-persistence:
+coverage-persistence: deps
 	rm -rf cover
 	mkdir -p $(ARTIFACT_DIR)
 	MIX_ENV=test mix test --cover --include persistence --export-coverage persistence > $(ARTIFACT_DIR)/coverage-persistence-summary.txt 2>&1 || { cat $(ARTIFACT_DIR)/coverage-persistence-summary.txt; exit 1; }
