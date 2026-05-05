@@ -286,6 +286,58 @@ defmodule Twelvgaige.ResourceLimiterTest do
     refute_receive {:resource_available, _waiter_id, _resource_kind}, 20
   end
 
+  test "owner process down releases held permits, drops its waiters, and notifies next owner" do
+    limiter = start_limiter(limits: %{active_shot: 1, active_shot_per_round: 1})
+    parent = self()
+
+    owner =
+      spawn(fn ->
+        held =
+          ResourceLimiter.acquire(:active_shot, %{round_id: "owner-1", shot_id: "held"},
+            server: limiter
+          )
+
+        queued =
+          ResourceLimiter.acquire(:active_shot, %{round_id: "owner-1", shot_id: "queued"},
+            server: limiter,
+            queue?: true
+          )
+
+        send(parent, {:owner_state, held, queued})
+
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    ref = Process.monitor(owner)
+
+    assert_receive {:owner_state, {:ok, %Permit{}}, {:queued, owner_waiter}}
+
+    assert {:queued, next_waiter} =
+             ResourceLimiter.acquire(:active_shot, %{round_id: "owner-2", shot_id: "next"},
+               server: limiter,
+               queue?: true
+             )
+
+    assert ResourceLimiter.snapshot(limiter).used.active_shot == 1
+    assert ResourceLimiter.snapshot(limiter).queue_depth.active_shot == 2
+
+    send(owner, :stop)
+    assert_receive {:DOWN, ^ref, :process, ^owner, :normal}
+
+    assert eventually(fn ->
+             snapshot = ResourceLimiter.snapshot(limiter)
+             snapshot.used.active_shot == 0 and snapshot.queue_depth.active_shot == 0
+           end)
+
+    assert_receive {:resource_available, waiter_id, :active_shot}, 100
+    assert waiter_id == next_waiter.id
+
+    owner_waiter_id = owner_waiter.id
+    refute_receive {:resource_available, ^owner_waiter_id, :active_shot}, 20
+  end
+
   test "active shot queue notifications are round-robin across rounds and FIFO within a round" do
     limiter = start_limiter(limits: %{active_shot: 1, active_shot_per_round: 1})
 

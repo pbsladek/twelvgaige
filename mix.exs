@@ -10,6 +10,7 @@ defmodule Twelvgaige.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       dialyzer: dialyzer(),
+      test_coverage: test_coverage(),
       escript: [main_module: Twelvgaige.CLI.Main, app: nil, include_priv_for: [:exqlite]],
       default_release: :twelvgaige_native,
       releases: releases()
@@ -39,6 +40,15 @@ defmodule Twelvgaige.MixProject do
     [
       plt_add_apps: [:inets, :mix, :public_key, :ssl],
       flags: [:error_handling]
+    ]
+  end
+
+  defp test_coverage do
+    [
+      summary: [threshold: 70],
+      ignore_modules: [
+        ~r/^Twelvgaige\.TestSupport\./
+      ]
     ]
   end
 

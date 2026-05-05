@@ -1,0 +1,110 @@
+name: E2E
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MIX_ENV: test
+
+jobs:
+  offline-cli:
+    name: offline cli (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
+        with:
+          otp-version: "28"
+          elixir-version: "1.19.5"
+
+      - name: Cache Mix
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-e2e-mix-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-e2e-mix-
+
+      - name: Offline E2E
+        env:
+          TWELVGAIGE_E2E_TMP: ${{ runner.temp }}
+        run: make e2e
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: twelvgaige-e2e-${{ runner.os }}
+          path: ${{ runner.temp }}/twelvgaige-*
+          if-no-files-found: warn
+          retention-days: 7
+
+  windows-cli-contract:
+    name: windows cli contract
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
+        with:
+          otp-version: "28"
+          elixir-version: "1.19.5"
+
+      - name: Cache Mix
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            deps
+            _build
+          key: Windows-e2e-mix-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            Windows-e2e-mix-
+
+      - name: Build source CLI
+        shell: pwsh
+        run: |
+          mix deps.get
+          mix escript.build
+
+      - name: Windows CLI contract
+        shell: pwsh
+        env:
+          TWELVGAIGE_E2E_TMP: ${{ runner.temp }}
+        run: pwsh -NoLogo -NoProfile -File test/e2e/windows_cli.ps1
+
+      - name: Upload Windows E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: twelvgaige-e2e-Windows
+          path: ${{ runner.temp }}/twelvgaige-*
+          if-no-files-found: warn
+          retention-days: 7

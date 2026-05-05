@@ -20,6 +20,7 @@ jobs:
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -53,6 +54,7 @@ jobs:
   authoring:
     name: authoring checks
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -76,3 +78,42 @@ jobs:
 
       - name: Authoring docs and drift checks
         run: make authoring-check
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
+        with:
+          otp-version: "28"
+          elixir-version: "1.19.5"
+
+      - name: Cache Mix
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-coverage-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-coverage-
+
+      - name: Coverage gate
+        run: make coverage-export
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: twelvgaige-coverage
+          path: |
+            cover/**
+            artifacts/coverage-summary.txt
+          if-no-files-found: warn
+          retention-days: 7

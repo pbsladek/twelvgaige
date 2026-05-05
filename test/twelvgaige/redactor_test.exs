@@ -1,6 +1,7 @@
 defmodule Twelvgaige.RedactorTest do
   use ExUnit.Case, async: true
 
+  alias Twelvgaige.Error
   alias Twelvgaige.Redactor
 
   test "redacts common secret text and structured keys" do
@@ -52,5 +53,36 @@ defmodule Twelvgaige.RedactorTest do
 
     assert summarized.metadata == %{safe: true}
     refute inspect(summarized) =~ "canary-secret"
+  end
+
+  test "redacts error details while preserving non-secret structs and token counters" do
+    now = DateTime.utc_now()
+
+    redacted =
+      Error.new(:tool_error, :tool_non_retryable, "token=raw-secret",
+        details: %{
+          "authorization" => "Bearer raw-secret",
+          "usage" => %{"tokens" => 10, "token_budget" => 50},
+          "occurred_at" => now
+        }
+      )
+      |> Redactor.redact_json()
+
+    assert redacted.message == "token=[REDACTED]"
+    assert redacted.details["authorization"] == "[REDACTED]"
+    assert redacted.details["usage"] == %{"tokens" => 10, "token_budget" => 50}
+    assert redacted.details["occurred_at"] == now
+  end
+
+  test "summarizes arrays and scalar payload fields with stable type metadata" do
+    assert Redactor.summarize_sensitive_payloads(%{messages: [%{role: "user"}]}) == %{
+             messages: %{"summary" => "omitted", "type" => "array", "items" => 1}
+           }
+
+    assert Redactor.summarize_sensitive_payloads(%{"raw" => 123}) == %{
+             "raw" => %{"summary" => "omitted", "type" => "integer"}
+           }
+
+    assert Redactor.summarize_sensitive_payloads(%{stdout: nil}) == %{stdout: nil}
   end
 end

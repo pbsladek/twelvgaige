@@ -184,7 +184,7 @@ defmodule Twelvgaige.Error do
   def safety_required?(%__MODULE__{safety_required: safety_required}), do: safety_required
 
   @doc "Converts an error to the stable JSON-safe map shape."
-  @spec to_map(t() | nil) :: map() | nil
+  @spec to_map(t() | map() | nil) :: map() | nil
   def to_map(nil), do: nil
 
   def to_map(%__MODULE__{} = error) do
@@ -197,6 +197,25 @@ defmodule Twelvgaige.Error do
       details: error.details || %{}
     }
   end
+
+  def to_map(error) when is_map(error) do
+    %{
+      class: error |> value(:class) |> stringify(),
+      reason: error |> value(:reason) |> stringify(),
+      message: value(error, :message),
+      retryable: value(error, :retryable, false),
+      safety_required: value(error, :safety_required, false),
+      details: value(error, :details, %{})
+    }
+  end
+
+  defp value(map, key, default \\ nil) do
+    Map.get(map, key, Map.get(map, Atom.to_string(key), default))
+  end
+
+  defp stringify(nil), do: nil
+  defp stringify(value) when is_atom(value), do: Atom.to_string(value)
+  defp stringify(value), do: value
 
   defp validate_class!(class) do
     unless valid_class?(class) do

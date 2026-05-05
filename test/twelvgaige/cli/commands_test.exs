@@ -147,6 +147,42 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert File.read!(destination) == "replacement"
   end
 
+  test "store commands render restore and unsupported-backend failures as JSON" do
+    root = tmp_dir!("twelvgaige_cli_store_json_errors")
+    missing_source = Path.join(root, "missing.db")
+    destination = Path.join(root, "restored.db")
+    previous_store = Application.get_env(:twelvgaige, :store)
+    Application.put_env(:twelvgaige, :store, {SQLiteStore, path: Path.join(root, "store.db")})
+
+    on_exit(fn ->
+      restore_store_config(previous_store)
+    end)
+
+    assert {:ok, output, 6} =
+             Main.run(["store", "restore", missing_source, destination, "--format", "json"])
+
+    assert %{
+             "error" => %{
+               "reason" => "backup_source_not_found",
+               "message" => "backup source does not exist"
+             }
+           } = Jason.decode!(output)
+
+    Application.put_env(:twelvgaige, :store, Twelvgaige.Store.Memory)
+
+    assert {:ok, output, 4} =
+             Main.run(["store", "backup", Path.join(root, "backup.db"), "--format", "json"])
+
+    assert %{
+             "error" => %{
+               "reason" => "store_backup_unsupported",
+               "message" => message
+             }
+           } = Jason.decode!(output)
+
+    assert message =~ "does not support backup"
+  end
+
   test "store migrate-sqlcipher requires explicit source, destination, and key env" do
     root = tmp_dir!("twelvgaige_cli_store_migration")
     source = Path.join(root, "source.db")
@@ -186,6 +222,62 @@ defmodule Twelvgaige.CLI.CommandsTest do
 
     assert output =~ "SQLCipher migration requires --key-env"
     refute File.exists?(destination)
+  end
+
+  test "store migrate-sqlcipher reports source and destination errors as JSON" do
+    root = tmp_dir!("twelvgaige_cli_store_migration_json")
+    missing_source = Path.join(root, "missing.db")
+    destination = Path.join(root, "encrypted.db")
+    key_env = "TWELVGAIGE_CLI_SQLCIPHER_KEY_#{System.unique_integer([:positive])}"
+    System.put_env(key_env, "test-sqlcipher-key")
+
+    on_exit(fn ->
+      System.delete_env(key_env)
+    end)
+
+    assert {:ok, output, 6} =
+             Main.run([
+               "store",
+               "migrate-sqlcipher",
+               "--source",
+               missing_source,
+               "--destination",
+               destination,
+               "--key-env",
+               key_env,
+               "--format",
+               "json"
+             ])
+
+    assert %{
+             "error" => %{
+               "reason" => "migration_source_not_found",
+               "message" => "migration source does not exist"
+             }
+           } = Jason.decode!(output)
+
+    File.write!(destination, "already exists")
+
+    assert {:ok, output, 4} =
+             Main.run([
+               "store",
+               "migrate-sqlcipher",
+               "--source",
+               destination,
+               "--destination",
+               destination,
+               "--key-env",
+               key_env,
+               "--format",
+               "json"
+             ])
+
+    assert %{
+             "error" => %{
+               "reason" => "migration_same_path",
+               "message" => "migration source and destination must differ"
+             }
+           } = Jason.decode!(output)
   end
 
   test "store rewrap-envelope requires a backup and rotates envelope metadata" do
@@ -582,6 +674,58 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert output =~ "Status: OK"
     assert output =~ "Mode: write"
     assert output =~ "Changed: true"
+    assert File.read!(workflow_path) == updated_patch_workflow_yaml()
+  end
+
+  test "shell patch apply --write reports post-write validation failures as JSON" do
+    root = tmp_dir!("twelvgaige_cli_patch_apply_write_validation_json")
+    workflow_path = Path.join(root, "workflows/review.yaml")
+    patch_path = Path.join(root, "patch.json")
+    approval_path = Path.join(root, "approval.json")
+    File.mkdir_p!(Path.dirname(workflow_path))
+    File.write!(workflow_path, workflow_yaml())
+
+    patch =
+      cli_patch_artifact("workflows/review.yaml", workflow_yaml(), updated_patch_workflow_yaml())
+      |> Map.put("validations", [
+        %{"command" => "shell validate", "path" => "workflows/review.yaml"},
+        %{"command" => "shell validate", "path" => "workflows/missing.yaml"}
+      ])
+
+    patch = Map.put(patch, "patch_digest", Twelvgaige.Authoring.Patch.canonical_digest(patch))
+    File.write!(patch_path, Jason.encode!(patch, pretty: true))
+
+    File.write!(
+      approval_path,
+      Jason.encode!(cli_patch_approval(patch["patch_digest"]), pretty: true)
+    )
+
+    assert {:ok, output, 1} =
+             Main.run([
+               "shell",
+               "patch",
+               "apply",
+               patch_path,
+               "--root",
+               root,
+               "--approval",
+               approval_path,
+               "--write",
+               "--format",
+               "json"
+             ])
+
+    assert %{
+             "kind" => "twelvgaige.patch.apply",
+             "status" => "failed",
+             "changed" => true,
+             "mode" => "write",
+             "post_write_validations" => [_ok_validation, failed_validation],
+             "findings" => findings
+           } = Jason.decode!(output)
+
+    assert failed_validation["status"] == "failed"
+    assert Enum.any?(findings, &(&1["status"] == "post_write_validation_target_unknown"))
     assert File.read!(workflow_path) == updated_patch_workflow_yaml()
   end
 

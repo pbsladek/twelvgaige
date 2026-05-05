@@ -45,6 +45,14 @@ Run the local smoke flow:
 make escript-smoke
 ```
 
+Run the main local validation gates:
+
+```bash
+make check
+make coverage
+make e2e-cli
+```
+
 Build release artifacts:
 
 ```bash
@@ -112,6 +120,7 @@ Anthropic, OpenAI, Gemini, and Ollama setup.
 - [Secrets and providers](docs/secrets-and-providers.md)
 - [Security](docs/security.md)
 - [Use cases](docs/use-cases.md)
+- [CI and local validation](docs/ci.md)
 - [Release flow](docs/release.md)
 - [Design spec](docs/design/spec.md)
 - [Shot authoring and management plan](docs/design/shot-authoring-management-plan.md)

@@ -114,6 +114,7 @@ defmodule Twelvgaige.Breech.IPC.Endpoint do
       ip
       |> :inet.ntoa()
       |> to_string()
+      |> bracket_ipv6_host(ip)
 
     "tcp://#{host}:#{port}"
   end
@@ -142,14 +143,18 @@ defmodule Twelvgaige.Breech.IPC.Endpoint do
   end
 
   defp do_cleanup_stale(opts) do
-    with {:ok, endpoint} <- read(opts),
-         {:error, _reason} <- probe(endpoint, opts) do
-      remove(opts)
-    else
-      :none -> :ok
-      {:ok, _status} -> {:error, :daemon_running}
-      {:error, :enoent} -> :ok
-      {:error, _reason} = error -> error
+    case read(opts) do
+      {:ok, endpoint} ->
+        case probe(endpoint, opts) do
+          {:error, _reason} -> remove(opts)
+          {:ok, _status} -> {:error, :daemon_running}
+        end
+
+      {:error, :enoent} ->
+        :ok
+
+      {:error, reason} ->
+        if corrupt_endpoint?(reason), do: remove(opts), else: {:error, reason}
     end
   end
 
@@ -237,6 +242,14 @@ defmodule Twelvgaige.Breech.IPC.Endpoint do
       {:error, _reason} = error -> error
     end
   end
+
+  defp bracket_ipv6_host(host, {_a, _b, _c, _d}), do: host
+  defp bracket_ipv6_host(host, {_a, _b, _c, _d, _e, _f, _g, _h}), do: "[#{host}]"
+
+  defp corrupt_endpoint?(:invalid_endpoint), do: true
+  defp corrupt_endpoint?(:invalid_ipc_address), do: true
+  defp corrupt_endpoint?(%Jason.DecodeError{}), do: true
+  defp corrupt_endpoint?(_reason), do: false
 
   defp pipe_name(@windows_pipe_prefix <> name), do: name
   defp pipe_name(path), do: path

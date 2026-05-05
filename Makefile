@@ -3,6 +3,7 @@ VERSION := $(shell awk -F'"' '/version:/ {print $$2; exit}' mix.exs)
 
 ARTIFACT_DIR ?= artifacts
 ARTIFACT_SUFFIX ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)
+COVERAGE_SUMMARY ?= $(ARTIFACT_DIR)/coverage-summary.txt
 NATIVE_RELEASE := twelvgaige_native
 BUMP ?= patch
 RELEASE_VERSION ?=
@@ -17,6 +18,11 @@ SQLCIPHER_SPIKE_PATH ?= /tmp/$(APP)-sqlcipher-spike-$(ARTIFACT_SUFFIX).db
 SQLCIPHER_SMOKE_TMP ?= /tmp/$(APP)-sqlcipher-smoke-$(ARTIFACT_SUFFIX)
 SQLCIPHER_STORE_KEY_ENV ?= TWELVGAIGE_SQLCIPHER_SMOKE_KEY
 KEYCHAIN_LIVE ?= 0
+PROVIDER_LIVE ?= 0
+PROVIDER_LIVE_PROVIDERS ?=
+K3D_LIVE ?= 0
+K3D_CLUSTER_PREFIX ?= twelvgaige-live
+K3D_NAMESPACE ?= default
 
 $(shell mkdir -p "$(ERL_CRASH_DUMP_DIR)")
 
@@ -46,6 +52,8 @@ SMOKE_ENV ?=
 AUTHORING_ROOT ?= docs/traphouse
 AUTHORING_TMP ?= /tmp/$(APP)-authoring-$(ARTIFACT_SUFFIX)
 AUTHORING_BIN ?= ./$(APP)
+E2E_BIN ?= ./$(APP)
+E2E_TMP ?= /tmp
 
 NATIVE_BIN := _build/prod/rel/$(NATIVE_RELEASE)/bin/$(APP)
 NATIVE_TARBALL := _build/prod/$(NATIVE_RELEASE)-$(VERSION).tar.gz
@@ -68,6 +76,12 @@ help:
 	@printf "%s\n" "  make check             Format check, compile, unit tests"
 	@printf "%s\n" "  make typecheck         Run Dialyzer via Dialyxir"
 	@printf "%s\n" "  make test-local        Run default local test suite"
+	@printf "%s\n" "  make coverage          Run default offline tests with 70% coverage gate"
+	@printf "%s\n" "  make coverage-export   Generate coverage report and summary artifact"
+	@printf "%s\n" "  make e2e               Build escript and run offline CLI E2E"
+	@printf "%s\n" "  make e2e-cli           Run CLI E2E with E2E_BIN=$(E2E_BIN)"
+	@printf "%s\n" "  make e2e-package       Run package-level E2E against escript/native/Burrito"
+	@printf "%s\n" "  make e2e-windows       Run Windows CLI contract E2E with PowerShell"
 	@printf "%s\n" "  make smoke             Build escript and run CLI smoke checks"
 	@printf "%s\n" "  make authoring-check   Run traphouse authoring docs/drift checks"
 	@printf "%s\n" "  make authoring-drift   Run authoring CLI checks against a temp traphouse"
@@ -80,6 +94,12 @@ help:
 	@printf "%s\n" "                         Run opt-in SQLCipher Burrito smoke checks for a host target"
 	@printf "%s\n" "  make keychain-smoke-macos KEYCHAIN_LIVE=1"
 	@printf "%s\n" "                         Run opt-in live macOS Keychain backend verification"
+	@printf "%s\n" "  make e2e-k3d K3D_LIVE=1"
+	@printf "%s\n" "                         Run opt-in live Kubernetes E2E against disposable k3d"
+	@printf "%s\n" "  make e2e-provider-live PROVIDER_LIVE=1"
+	@printf "%s\n" "                         Run opt-in live LLM provider smoke tests"
+	@printf "%s\n" "  make e2e-sqlcipher-live"
+	@printf "%s\n" "                         Run opt-in SQLCipher live store tests"
 	@printf "%s\n" ""
 	@printf "%s\n" "Builds:"
 	@printf "%s\n" "  make build             Build escript and native Mix release"
@@ -136,6 +156,90 @@ test-all:
 .PHONY: test-persistence
 test-persistence:
 	MIX_ENV=test mix test --include persistence
+
+.PHONY: coverage
+coverage:
+	MIX_ENV=test mix test --cover
+
+.PHONY: coverage-export
+coverage-export:
+	rm -rf cover
+	mkdir -p $(ARTIFACT_DIR)
+	MIX_ENV=test mix test --cover --export-coverage default > $(COVERAGE_SUMMARY) 2>&1 || { cat $(COVERAGE_SUMMARY); exit 1; }
+	MIX_ENV=test mix test.coverage >> $(COVERAGE_SUMMARY) 2>&1 || { cat $(COVERAGE_SUMMARY); exit 1; }
+	@printf "%s\n" "coverage summary written to $(COVERAGE_SUMMARY)"
+
+.PHONY: coverage-persistence
+coverage-persistence:
+	rm -rf cover
+	mkdir -p $(ARTIFACT_DIR)
+	MIX_ENV=test mix test --cover --include persistence --export-coverage persistence > $(ARTIFACT_DIR)/coverage-persistence-summary.txt 2>&1 || { cat $(ARTIFACT_DIR)/coverage-persistence-summary.txt; exit 1; }
+	MIX_ENV=test mix test.coverage >> $(ARTIFACT_DIR)/coverage-persistence-summary.txt 2>&1 || { cat $(ARTIFACT_DIR)/coverage-persistence-summary.txt; exit 1; }
+	@printf "%s\n" "coverage summary written to $(ARTIFACT_DIR)/coverage-persistence-summary.txt"
+
+.PHONY: unit-focus
+unit-focus:
+	MIX_ENV=test mix test \
+		test/twelvgaige/cli \
+		test/twelvgaige/breech \
+		test/twelvgaige/crypto/key_test.exs \
+		test/twelvgaige/crypto/sqlcipher_spike_test.exs \
+		test/twelvgaige/llm/provider_config_test.exs \
+		test/twelvgaige/llm/providers/provider_adapters_test.exs \
+		test/twelvgaige/redactor_test.exs \
+		test/twelvgaige/round/snapshot_test.exs \
+		test/twelvgaige/resource_limiter_test.exs \
+		test/twelvgaige/scheduler_test.exs \
+		test/twelvgaige/security_test.exs \
+		test/twelvgaige/tool/command_runner_test.exs
+
+.PHONY: e2e
+e2e: e2e-cli e2e-daemon e2e-safety e2e-authoring e2e-store
+
+.PHONY: e2e-local-mac
+e2e-local-mac: e2e
+
+.PHONY: e2e-cli
+e2e-cli: escript
+	TWELVGAIGE_E2E_BIN=$(E2E_BIN) TWELVGAIGE_E2E_TMP=$(E2E_TMP) test/e2e/cli_basic.sh
+
+.PHONY: e2e-daemon
+e2e-daemon: escript
+	TWELVGAIGE_E2E_BIN=$(E2E_BIN) TWELVGAIGE_E2E_TMP=$(E2E_TMP) test/e2e/daemon_lifecycle.sh
+
+.PHONY: e2e-safety
+e2e-safety: escript
+	TWELVGAIGE_E2E_BIN=$(E2E_BIN) TWELVGAIGE_E2E_TMP=$(E2E_TMP) test/e2e/safety_gate.sh
+
+.PHONY: e2e-authoring
+e2e-authoring: escript
+	TWELVGAIGE_E2E_BIN=$(E2E_BIN) TWELVGAIGE_E2E_TMP=$(E2E_TMP) test/e2e/authoring_patch.sh
+
+.PHONY: e2e-store
+e2e-store: escript
+	TWELVGAIGE_E2E_BIN=$(E2E_BIN) TWELVGAIGE_E2E_TMP=$(E2E_TMP) test/e2e/store_backup_restore.sh
+
+.PHONY: e2e-windows
+e2e-windows: escript
+	pwsh -NoLogo -NoProfile -File test/e2e/windows_cli.ps1
+
+.PHONY: e2e-package
+e2e-package: e2e-package-escript e2e-package-release e2e-package-burrito
+
+.PHONY: e2e-package-escript
+e2e-package-escript: escript
+	TWELVGAIGE_E2E_BIN=./$(APP) TWELVGAIGE_E2E_TMP=$(E2E_TMP) test/e2e/cli_basic.sh
+
+.PHONY: e2e-package-release
+e2e-package-release: release
+	TWELVGAIGE_E2E_BIN=$(NATIVE_BIN) TWELVGAIGE_E2E_TMP=$(E2E_TMP) test/e2e/cli_basic.sh
+
+.PHONY: e2e-package-burrito
+e2e-package-burrito: burrito e2e-package-burrito-only
+
+.PHONY: e2e-package-burrito-only
+e2e-package-burrito-only:
+	TWELVGAIGE_E2E_BIN=$(BURRITO_BIN) TWELVGAIGE_E2E_TMP=$(E2E_TMP) test/e2e/cli_basic.sh
 
 .PHONY: check
 check: format-check compile test authoring-docs
@@ -227,10 +331,23 @@ sqlcipher-smoke-commands: require-sqlcipher
 	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' TWELVGAIGE_STORE_SQLCIPHER=$(SQLCIPHER_SMOKE_TMP)/encrypted-restored.db TWELVGAIGE_STORE_SQLCIPHER_KEY='$(SQLCIPHER_KEY)' $(SMOKE_ENV) $(SMOKE_BIN) round run $(SMOKE_WORKFLOW_TOML)
 
 .PHONY: keychain-smoke-macos
-keychain-smoke-macos:
+keychain-smoke-macos: deps
 	@test "$$(uname -s)" = "Darwin" || { printf "%s\n" "keychain-smoke-macos requires macOS." >&2; exit 1; }
 	@test "$(KEYCHAIN_LIVE)" = "1" || { printf "%s\n" "set KEYCHAIN_LIVE=1 to create and delete a temporary Twelvgaige Keychain item." >&2; exit 1; }
 	TWELVGAIGE_KEYCHAIN_LIVE=1 MIX_ENV=test mix test --include keychain_live test/twelvgaige/crypto/macos_keychain_live_test.exs
+
+.PHONY: e2e-k3d
+e2e-k3d: deps
+	@test "$(K3D_LIVE)" = "1" || { printf "%s\n" "set K3D_LIVE=1 to create and delete a disposable k3d cluster." >&2; exit 1; }
+	K3D_CLUSTER_PREFIX=$(K3D_CLUSTER_PREFIX) K3D_NAMESPACE=$(K3D_NAMESPACE) test/e2e/k3d_live.sh
+
+.PHONY: e2e-provider-live
+e2e-provider-live: deps
+	@test "$(PROVIDER_LIVE)" = "1" || { printf "%s\n" "set PROVIDER_LIVE=1 to call live LLM provider APIs." >&2; exit 1; }
+	TWELVGAIGE_PROVIDER_LIVE=1 TWELVGAIGE_PROVIDER_LIVE_PROVIDERS='$(PROVIDER_LIVE_PROVIDERS)' MIX_ENV=test mix test --include provider_live test/twelvgaige/llm/provider_live_test.exs
+
+.PHONY: e2e-sqlcipher-live
+e2e-sqlcipher-live: sqlcipher-store-system
 
 .PHONY: build
 build: escript release
@@ -287,12 +404,12 @@ burrito-smoke-only:
 	TWELVGAIGE_INSTALL_DIR=/tmp/$(APP)-burrito-smoke-$(BURRITO_TARGET)/install TWELVGAIGE_STORE_SQLITE=/tmp/$(APP)-burrito-release-$(BURRITO_TARGET).sqlite3 $(BURRITO_BIN) round run $(SMOKE_WORKFLOW_TOML)
 
 .PHONY: package-escript
-package-escript: escript-smoke
+package-escript: escript-smoke e2e-package-escript
 	mkdir -p $(ARTIFACT_DIR)/escript
 	cp $(APP) $(ARTIFACT_DIR)/escript/$(APP)-escript-$(VERSION)-$(ARTIFACT_SUFFIX)
 
 .PHONY: package-release
-package-release: release-smoke
+package-release: release-smoke e2e-package-release
 	mkdir -p $(ARTIFACT_DIR)/mix-release
 	cp $(NATIVE_TARBALL) $(ARTIFACT_DIR)/mix-release/$(NATIVE_RELEASE)-$(VERSION)-$(ARTIFACT_SUFFIX).tar.gz
 

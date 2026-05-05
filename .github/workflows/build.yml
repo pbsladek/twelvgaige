@@ -17,6 +17,7 @@ jobs:
   package:
     name: package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -46,7 +47,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-mix-prod-
 
-      - name: Build and smoke package artifacts
+      - name: Build and e2e package artifacts
         run: make package ARTIFACT_SUFFIX=${{ matrix.suffix }}
 
       - name: Upload package artifacts
@@ -59,6 +60,7 @@ jobs:
   burrito:
     name: burrito (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -112,9 +114,9 @@ jobs:
       - name: Build Burrito executable
         run: make burrito BURRITO_TARGET=${{ matrix.target }}
 
-      - name: Smoke host-runnable Burrito executable
+      - name: E2E host-runnable Burrito executable
         if: matrix.smoke
-        run: make burrito-smoke-only BURRITO_TARGET=${{ matrix.target }}
+        run: make e2e-package-burrito-only BURRITO_TARGET=${{ matrix.target }}
 
       - name: Package Burrito executable
         run: make package-burrito-artifact BURRITO_TARGET=${{ matrix.target }}

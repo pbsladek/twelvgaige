@@ -5,6 +5,9 @@ defmodule Twelvgaige.LLM.ProviderConfigTest do
   alias Twelvgaige.LLM.ProviderConfig
 
   @env_names [
+    "TWELVGAIGE_ANTHROPIC_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "TWELVGAIGE_ANTHROPIC_BASE_URL",
     "TWELVGAIGE_OPENAI_API_KEY",
     "OPENAI_API_KEY",
     "TWELVGAIGE_OPENAI_BASE_URL",
@@ -57,6 +60,17 @@ defmodule Twelvgaige.LLM.ProviderConfigTest do
     assert Keyword.fetch!(opts, :api_key) == "sk-specific"
   end
 
+  test "resolves Anthropic API key and base URL from app-specific environment" do
+    System.put_env("ANTHROPIC_API_KEY", "anthropic-standard")
+    System.put_env("TWELVGAIGE_ANTHROPIC_API_KEY", "anthropic-specific")
+    System.put_env("TWELVGAIGE_ANTHROPIC_BASE_URL", "https://api.example.test/v1/messages")
+
+    opts = ProviderConfig.resolve(:anthropic, [])
+
+    assert Keyword.fetch!(opts, :api_key) == "anthropic-specific"
+    assert Keyword.fetch!(opts, :base_url) == "https://api.example.test/v1/messages"
+  end
+
   test "application runtime config wins over environment defaults" do
     System.put_env("OPENAI_API_KEY", "sk-env")
 
@@ -71,6 +85,26 @@ defmodule Twelvgaige.LLM.ProviderConfigTest do
 
     assert Keyword.fetch!(opts, :api_key) == "sk-app"
     assert Keyword.fetch!(opts, :base_url) == "https://api.example.test/v1/chat/completions"
+  end
+
+  test "normalizes string-key runtime config and drops unknown keys" do
+    Application.put_env(:twelvgaige, :llm_providers, %{
+      "openai" => %{
+        "api_key" => "sk-map",
+        "base_url" => "https://api.example.test/v1/chat/completions",
+        "timeout_ms" => 1_000,
+        "allow_remote_provider_url" => true,
+        "ignored" => "value"
+      }
+    })
+
+    opts = ProviderConfig.resolve("openai", [])
+
+    assert Keyword.fetch!(opts, :api_key) == "sk-map"
+    assert Keyword.fetch!(opts, :base_url) == "https://api.example.test/v1/chat/completions"
+    assert Keyword.fetch!(opts, :timeout_ms) == 1_000
+    assert Keyword.fetch!(opts, :allow_remote_provider_url)
+    refute Keyword.has_key?(opts, :ignored)
   end
 
   test "explicit provider options win over runtime config" do

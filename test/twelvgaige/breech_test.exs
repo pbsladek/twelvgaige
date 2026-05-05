@@ -3,7 +3,11 @@ defmodule Twelvgaige.BreechTest do
 
   alias Twelvgaige.Breech
   alias Twelvgaige.ResourceLimiter
+  alias Twelvgaige.Round.Manifest
+  alias Twelvgaige.Round.Snapshot
   alias Twelvgaige.Shell.Cache, as: ShellCache
+  alias Twelvgaige.Shell.Workflow
+  alias Twelvgaige.Shot
 
   defmodule ProvenanceStore do
     use Agent
@@ -387,6 +391,62 @@ defmodule Twelvgaige.BreechTest do
     assert expanded_agent_path == Path.expand(agent_path)
     assert is_binary(agent_hash)
     assert is_binary(manifest.agent_hashes["inspector"])
+  end
+
+  test "recovers scheduler-owned rounds through scheduler recovery" do
+    name = :"breech_scheduler_recovery_#{System.unique_integer([:positive])}"
+    round_id = "round_breech_scheduler_recovery_#{System.unique_integer([:positive])}"
+    now = DateTime.utc_now()
+
+    assert {:ok, workflow} = Workflow.from_map(@workflow)
+
+    snapshot =
+      Snapshot.new(
+        id: round_id,
+        shell_id: workflow.id,
+        shell_version: workflow.version,
+        status: :firing,
+        version: 1,
+        input: %{},
+        started_at: now,
+        policy: %{scheduler_owned?: true, resource_profile: :laptop},
+        resource_profile: :laptop,
+        shots: [
+          Shot.State.new(
+            id: "only",
+            kind: :slug,
+            status: :running,
+            attempt: 1,
+            started_at: now
+          )
+        ]
+      )
+
+    manifest =
+      Manifest.new(
+        round_id: round_id,
+        workflow: workflow,
+        effective_resource_profile: :laptop,
+        created_at: now
+      )
+
+    start_supervised!(ProvenanceStore)
+    assert :ok = ProvenanceStore.create_round(snapshot, manifest, [])
+
+    start_supervised!({Breech, name: name, store: ProvenanceStore})
+
+    assert eventually(
+             fn ->
+               match?({:ok, %{status: :complete}}, Breech.get_round(round_id, server: name))
+             end,
+             50
+           )
+
+    assert {:ok, recovered} = Breech.get_round(round_id, server: name)
+    assert recovered.policy.scheduler_owned?
+    assert [%{id: "only", status: :complete, attempt: 2, history: [history]}] = recovered.shots
+    assert history.status == :interrupted
+    assert history.recovery_action == :retry_no_tool
   end
 
   test "rejects daemon-owned rounds with invalid input before queuing" do

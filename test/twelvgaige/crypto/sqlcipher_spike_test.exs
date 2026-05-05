@@ -29,4 +29,13 @@ defmodule Twelvgaige.Crypto.SQLCipherSpikeTest do
     assert Enum.any?(warnings, &String.contains?(&1, "not built against SQLCipher"))
     refute File.exists?(path)
   end
+
+  test "normalizes explicit target paths in unavailable reports" do
+    path = Path.join(["relative", "sqlcipher", "probe.db"])
+
+    assert {:ok, report} = SQLCipherSpike.run(path: path, key_env: "")
+
+    assert report["status"] == "unavailable"
+    assert report["path"] == Path.expand(path)
+  end
 end

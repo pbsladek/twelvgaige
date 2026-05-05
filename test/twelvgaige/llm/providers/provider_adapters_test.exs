@@ -321,6 +321,63 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
       assert error.message =~ "private IP"
     end
 
+    test "rejects provider endpoint overrides when DNS returns no addresses" do
+      transport = fn _request ->
+        flunk("transport should not be called when DNS resolution has no addresses")
+      end
+
+      assert {:error, error} =
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 base_url: "https://api.example.com/v1/chat/completions",
+                 allow_remote_provider_url: true,
+                 dns_resolver: fn "api.example.com" -> {:ok, []} end,
+                 transport: transport
+               )
+
+      assert error.class == :policy_error
+      assert error.reason == :policy_denied
+      assert error.message =~ "no addresses"
+      assert error.details.host == "api.example.com"
+    end
+
+    test "rejects provider endpoint overrides when DNS resolver returns invalid data" do
+      transport = fn _request ->
+        flunk("transport should not be called when DNS resolver returns invalid data")
+      end
+
+      assert {:error, error} =
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 base_url: "https://api.example.com/v1/chat/completions",
+                 allow_remote_provider_url: true,
+                 dns_resolver: fn "api.example.com" -> :wat end,
+                 transport: transport
+               )
+
+      assert error.class == :policy_error
+      assert error.reason == :policy_denied
+      assert error.message =~ "invalid response"
+      assert error.details.response == ":wat"
+    end
+
+    test "rejects provider endpoint overrides when DNS resolver raises" do
+      transport = fn _request ->
+        flunk("transport should not be called when DNS resolver raises")
+      end
+
+      assert {:error, error} =
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 base_url: "https://api.example.com/v1/chat/completions",
+                 allow_remote_provider_url: true,
+                 dns_resolver: fn "api.example.com" -> raise "resolver unavailable" end,
+                 transport: transport
+               )
+
+      assert error.class == :policy_error
+      assert error.reason == :policy_denied
+      assert error.message =~ "resolver raised"
+      assert error.details.reason == "resolver unavailable"
+    end
+
     test "rejects provider endpoint overrides that resolve to IPv6 link-local addresses" do
       transport = fn _request ->
         flunk("transport should not be called for denied provider URL")

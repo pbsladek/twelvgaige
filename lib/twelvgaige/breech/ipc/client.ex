@@ -210,11 +210,11 @@ defmodule Twelvgaige.Breech.IPC.Client do
   end
 
   @spec parse_address(String.t()) :: {:ok, address()} | {:error, :invalid_ipc_address}
-  def parse_address("tcp://" <> rest) do
-    case String.split(rest, ":", parts: 2) do
-      [host, port_string] ->
-        with {port, ""} <- Integer.parse(port_string),
-             {:ok, ip} <- parse_ip(host) do
+  def parse_address("tcp://" <> _rest = address) do
+    case URI.parse(address) do
+      %URI{scheme: "tcp", host: host, port: port}
+      when is_binary(host) and is_integer(port) ->
+        with {:ok, ip} <- parse_ip(host) do
           {:ok, {:tcp, ip, port}}
         else
           _error -> {:error, :invalid_ipc_address}

@@ -99,6 +99,31 @@ defmodule Twelvgaige.Breech.IPC.EndpointTest do
     assert error.details.endpoint_api_version == Protocol.api_version() + 1
   end
 
+  test "endpoint discovery reports malformed JSON", %{path: path} do
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, "{not-json")
+
+    assert {:error, %Jason.DecodeError{}} = Endpoint.discover(path: path)
+  end
+
+  test "endpoint discovery reports invalid endpoint addresses", %{path: path} do
+    File.mkdir_p!(Path.dirname(path))
+
+    endpoint = %{
+      "kind" => "twelvgaige.breech.endpoint",
+      "api_version" => Protocol.api_version(),
+      "version" => Twelvgaige.version(),
+      "address" => "tcp://localhost:44325",
+      "token" => "secret",
+      "pid" => System.pid(),
+      "created_at" => DateTime.to_iso8601(Twelvgaige.Clock.utc_now())
+    }
+
+    File.write!(path, Jason.encode!(endpoint))
+
+    assert {:error, :invalid_ipc_address} = Endpoint.discover(path: path)
+  end
+
   test "stale cleanup requires a verified singleton lock", %{path: path} do
     assert :ok =
              Endpoint.write(%{address: {:tcp, {127, 0, 0, 1}, 44_322}, token: "secret"},
@@ -115,6 +140,35 @@ defmodule Twelvgaige.Breech.IPC.EndpointTest do
                probe: fn _endpoint -> {:error, :daemon_unavailable} end
              )
 
+    assert :none = Endpoint.discover(path: path)
+  end
+
+  test "stale cleanup removes corrupt endpoint files after lock verification", %{path: path} do
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, "{not-json")
+
+    assert :ok = Endpoint.cleanup_stale(path: path, lock_verified?: true)
+    assert :none = Endpoint.discover(path: path)
+  end
+
+  test "stale cleanup removes endpoint files with invalid addresses after lock verification", %{
+    path: path
+  } do
+    File.mkdir_p!(Path.dirname(path))
+
+    endpoint = %{
+      "kind" => "twelvgaige.breech.endpoint",
+      "api_version" => Protocol.api_version(),
+      "version" => Twelvgaige.version(),
+      "address" => "tcp://localhost:44325",
+      "token" => "secret",
+      "pid" => System.pid(),
+      "created_at" => DateTime.to_iso8601(Twelvgaige.Clock.utc_now())
+    }
+
+    File.write!(path, Jason.encode!(endpoint))
+
+    assert :ok = Endpoint.cleanup_stale(path: path, lock_verified?: true)
     assert :none = Endpoint.discover(path: path)
   end
 

@@ -35,15 +35,22 @@ Use `./twelvgaige` in the examples below when running from the repo.
 Common development and CI targets are controlled by the Makefile:
 
 ```bash
+make check
+make coverage
+make e2e-cli
 make ci
+make e2e
 make package
 make release-smoke
 make package-burrito-smoke BURRITO_TARGET=linux
 ```
 
-`make ci` runs dependency fetch, formatter check, warnings-as-errors compile,
-normal tests, and persistence tests. GitHub Actions also runs
-`make authoring-check` in a separate CI job.
+`make check` is the fast local gate. `make coverage` enforces the offline
+coverage threshold. `make e2e-cli` runs the core CLI contract through the built
+escript. `make ci` runs dependency fetch, formatter check, warnings-as-errors
+compile, normal tests, and persistence tests. GitHub Actions also runs
+`make authoring-check`, package smoke, and remote e2e jobs. See
+[`docs/ci.md`](docs/ci.md) for the full CI and branch-protection checklist.
 
 Run Dialyzer locally when working through ElixirLS type warnings:
 
