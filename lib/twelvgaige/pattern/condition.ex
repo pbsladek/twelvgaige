@@ -83,7 +83,13 @@ defmodule Twelvgaige.Pattern.Condition do
 
   def shot_references(condition, opts) when is_binary(condition) do
     with {:ok, ast} <- parse(condition, opts) do
-      {:ok, ast |> collect_shot_references() |> Enum.uniq() |> Enum.sort()}
+      references =
+        ast
+        |> collect_shot_references(%{})
+        |> Map.keys()
+        |> Enum.sort()
+
+      {:ok, references}
     end
   end
 
@@ -235,19 +241,23 @@ defmodule Twelvgaige.Pattern.Condition do
     end
   end
 
-  defp collect_shot_references({:not, ast}), do: collect_shot_references(ast)
+  defp collect_shot_references({:not, ast}, acc), do: collect_shot_references(ast, acc)
 
-  defp collect_shot_references({:and, left, right}),
-    do: collect_shot_references(left) ++ collect_shot_references(right)
+  defp collect_shot_references({:and, left, right}, acc) do
+    right
+    |> collect_shot_references(collect_shot_references(left, acc))
+  end
 
-  defp collect_shot_references({:or, left, right}),
-    do: collect_shot_references(left) ++ collect_shot_references(right)
+  defp collect_shot_references({:or, left, right}, acc) do
+    right
+    |> collect_shot_references(collect_shot_references(left, acc))
+  end
 
-  defp collect_shot_references({:compare, ["shots", shot_id | _segments], _op, _literal}),
-    do: [shot_id]
+  defp collect_shot_references({:compare, ["shots", shot_id | _segments], _op, _literal}, acc),
+    do: Map.put(acc, shot_id, true)
 
-  defp collect_shot_references({:compare, _path, _op, _literal}), do: []
-  defp collect_shot_references(_ast), do: []
+  defp collect_shot_references({:compare, _path, _op, _literal}, acc), do: acc
+  defp collect_shot_references(_ast, acc), do: acc
 
   defp rewrite_shot_ast({:not, ast}, old_id, new_id),
     do: {:not, rewrite_shot_ast(ast, old_id, new_id)}

@@ -324,10 +324,14 @@ defmodule Twelvgaige.Authoring.Scaffold do
     |> scaffold_dirs()
     |> Enum.reduce_while({:ok, []}, fn dir, {:ok, acc} ->
       case scaffolds_in_dir(dir) do
-        {:ok, scaffolds} -> {:cont, {:ok, acc ++ scaffolds}}
+        {:ok, scaffolds} -> {:cont, {:ok, Enum.reverse(scaffolds) ++ acc}}
         {:error, _error} = error -> {:halt, error}
       end
     end)
+    |> case do
+      {:ok, scaffolds} -> {:ok, Enum.reverse(scaffolds)}
+      {:error, _error} = error -> error
+    end
   end
 
   defp scaffold_dirs(opts) do

@@ -355,14 +355,28 @@ defmodule Twelvgaige.Shell.Validation do
 
   @spec unique([term()], [term()]) :: :ok | {:error, Twelvgaige.Error.t()}
   def unique(values, path) do
-    duplicate =
-      values
-      |> Enum.find(fn value -> Enum.count(values, &(&1 == value)) > 1 end)
+    case first_duplicate(values) do
+      nil ->
+        :ok
 
-    if duplicate do
-      error(:invalid_shell, "duplicate value #{inspect(duplicate)}", path, %{duplicate: duplicate})
-    else
-      :ok
+      duplicate ->
+        error(:invalid_shell, "duplicate value #{inspect(duplicate)}", path, %{
+          duplicate: duplicate
+        })
+    end
+  end
+
+  defp first_duplicate(values) do
+    Enum.reduce_while(values, MapSet.new(), fn value, seen ->
+      if MapSet.member?(seen, value) do
+        {:halt, value}
+      else
+        {:cont, MapSet.put(seen, value)}
+      end
+    end)
+    |> case do
+      %MapSet{} -> nil
+      duplicate -> duplicate
     end
   end
 

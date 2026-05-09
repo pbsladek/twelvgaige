@@ -130,9 +130,11 @@ defmodule Twelvgaige.Tool.IntentJournal do
   defp audit_projection(nil, _keys), do: nil
 
   defp audit_projection(%{} = value, keys) do
+    value = normalize_keyed_map(value)
+
     keys
     |> Enum.reduce(%{}, fn key, acc ->
-      case fetch_key(value, key) do
+      case Map.fetch(value, key) do
         {:ok, nil} -> acc
         {:ok, found} -> Map.put(acc, key, Redactor.redact_json(found))
         :error -> acc
@@ -143,11 +145,8 @@ defmodule Twelvgaige.Tool.IntentJournal do
 
   defp audit_projection(_value, _keys), do: nil
 
-  defp fetch_key(map, key) do
-    case Enum.find(map, fn {map_key, _value} -> key_string(map_key) == key end) do
-      {_map_key, value} -> {:ok, value}
-      nil -> :error
-    end
+  defp normalize_keyed_map(map) do
+    Enum.reduce(map, %{}, fn {key, value}, acc -> Map.put_new(acc, key_string(key), value) end)
   end
 
   defp key_string(key) when is_binary(key), do: key

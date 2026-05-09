@@ -201,10 +201,14 @@ defmodule Twelvgaige.Authoring.ShotLibrary do
     |> library_dirs()
     |> Enum.reduce_while({:ok, []}, fn dir, {:ok, acc} ->
       case templates_in_dir(dir) do
-        {:ok, templates} -> {:cont, {:ok, acc ++ templates}}
+        {:ok, templates} -> {:cont, {:ok, Enum.reverse(templates) ++ acc}}
         {:error, _error} = error -> {:halt, error}
       end
     end)
+    |> case do
+      {:ok, templates} -> {:ok, Enum.reverse(templates)}
+      {:error, _error} = error -> error
+    end
   end
 
   defp library_dirs(opts) do

@@ -58,15 +58,23 @@ defmodule Twelvgaige.Output.Parser do
   end
 
   defp json_candidates(trimmed) do
-    [trimmed]
-    |> append_candidate(fenced_json(trimmed))
-    |> append_candidate(extracted_json(trimmed))
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.uniq()
-  end
+    [trimmed, fenced_json(trimmed), extracted_json(trimmed)]
+    |> Enum.reduce({[], MapSet.new()}, fn
+      nil, acc ->
+        acc
 
-  defp append_candidate(candidates, nil), do: candidates
-  defp append_candidate(candidates, candidate), do: candidates ++ [String.trim(candidate)]
+      candidate, {candidates, seen} ->
+        candidate = String.trim(candidate)
+
+        cond do
+          candidate == "" -> {candidates, seen}
+          MapSet.member?(seen, candidate) -> {candidates, seen}
+          true -> {[candidate | candidates], MapSet.put(seen, candidate)}
+        end
+    end)
+    |> elem(0)
+    |> Enum.reverse()
+  end
 
   defp fenced_json(content) do
     case Regex.run(~r/```(?:json)?\s*(.*?)```/s, content, capture: :all_but_first) do

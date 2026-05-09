@@ -52,9 +52,11 @@ defmodule Twelvgaige.Schema.ValueValidator do
   defp validate_type(_value, nil, _schema, _path, _opts), do: :ok
 
   defp validate_type(value, "object", schema, path, opts) when is_map(value) do
-    with :ok <- validate_required(value, Map.get(schema, "required", []), path, opts),
-         :ok <- validate_additional_properties(value, schema, path, opts) do
-      validate_properties(value, Map.get(schema, "properties", %{}), path, opts)
+    normalized = normalize_keyed_map(value)
+
+    with :ok <- validate_required(normalized, Map.get(schema, "required", []), path, opts),
+         :ok <- validate_additional_properties(normalized, schema, path, opts) do
+      validate_properties(normalized, Map.get(schema, "properties", %{}), path, opts)
     end
   end
 
@@ -87,7 +89,7 @@ defmodule Twelvgaige.Schema.ValueValidator do
 
   defp validate_required(value, required, path, opts) do
     Enum.reduce_while(required, :ok, fn key, :ok ->
-      if has_key?(value, key) do
+      if Map.has_key?(value, key) do
         {:cont, :ok}
       else
         {:halt, value_error("missing required field #{inspect(key)}", path ++ [key], opts)}
@@ -125,7 +127,7 @@ defmodule Twelvgaige.Schema.ValueValidator do
 
   defp validate_properties(value, properties, path, opts) do
     Enum.reduce_while(properties, :ok, fn {key, property_schema}, :ok ->
-      case fetch_key(value, key) do
+      case Map.fetch(value, key) do
         {:ok, property_value} ->
           case validate_value(property_value, property_schema, path ++ [key], opts) do
             :ok -> {:cont, :ok}
@@ -138,15 +140,8 @@ defmodule Twelvgaige.Schema.ValueValidator do
     end)
   end
 
-  defp has_key?(map, key) do
-    Enum.any?(Map.keys(map), &(key_string(&1) == key))
-  end
-
-  defp fetch_key(map, key) do
-    case Enum.find(map, fn {map_key, _value} -> key_string(map_key) == key end) do
-      {_map_key, value} -> {:ok, value}
-      nil -> :error
-    end
+  defp normalize_keyed_map(map) do
+    Enum.reduce(map, %{}, fn {key, value}, acc -> Map.put_new(acc, key_string(key), value) end)
   end
 
   defp key_string(key) when is_binary(key), do: key

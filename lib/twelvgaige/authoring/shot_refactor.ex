@@ -672,23 +672,32 @@ defmodule Twelvgaige.Authoring.ShotRefactor do
   end
 
   defp transitive_dependents(shots, ids) do
-    ids_set = MapSet.new(ids)
+    {_seen, dependents} = transitive_dependents(shots, MapSet.new(ids), [])
+    Enum.reverse(dependents)
+  end
 
+  defp transitive_dependents(shots, seen, acc) do
     next =
       shots
-      |> Enum.filter(fn shot ->
+      |> Enum.reduce([], fn shot, next ->
         shot_id = Map.get(shot, "id")
         deps = Map.get(shot, "depends_on", [])
-        shot_id not in ids and Enum.any?(deps, &MapSet.member?(ids_set, &1))
+
+        if not MapSet.member?(seen, shot_id) and Enum.any?(deps, &MapSet.member?(seen, &1)) do
+          [shot_id | next]
+        else
+          next
+        end
       end)
-      |> Enum.map(&Map.fetch!(&1, "id"))
+      |> Enum.reverse()
 
     case next do
       [] ->
-        []
+        {seen, acc}
 
       dependent_ids ->
-        Enum.uniq(dependent_ids ++ transitive_dependents(shots, ids ++ dependent_ids))
+        seen = Enum.reduce(dependent_ids, seen, &MapSet.put(&2, &1))
+        transitive_dependents(shots, seen, Enum.reverse(dependent_ids) ++ acc)
     end
   end
 
@@ -827,7 +836,7 @@ defmodule Twelvgaige.Authoring.ShotRefactor do
       Enum.any?(child_ids, &(&1 == "")) ->
         invalid("shot split child ids must be non-empty strings")
 
-      length(Enum.uniq(child_ids)) != length(child_ids) ->
+      duplicate_strings?(child_ids) ->
         invalid("shot split child ids must be unique", %{child_ids: child_ids})
 
       true ->
@@ -845,13 +854,15 @@ defmodule Twelvgaige.Authoring.ShotRefactor do
       Enum.any?(source_ids, &(&1 == "")) ->
         invalid("shot merge source ids must be non-empty strings")
 
-      length(Enum.uniq(source_ids)) != length(source_ids) ->
+      duplicate_strings?(source_ids) ->
         invalid("shot merge source ids must be unique", %{source_ids: source_ids})
 
       true ->
         {:ok, source_ids}
     end
   end
+
+  defp duplicate_strings?(values), do: MapSet.size(MapSet.new(values)) != length(values)
 
   defp split_document_shot(%{"shots" => shots} = document, shot_id, child_ids)
        when is_list(shots) do

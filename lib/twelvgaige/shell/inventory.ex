@@ -110,16 +110,15 @@ defmodule Twelvgaige.Shell.Inventory do
   end
 
   defp workflow_report(path, %Workflow{} = workflow, agents_by_id) do
-    tools = workflow.shots |> Enum.flat_map(& &1.tools) |> Enum.uniq() |> Enum.sort()
+    tools = workflow.shots |> Enum.flat_map(& &1.tools) |> uniq_sort()
 
     agents =
       workflow.shots
       |> Enum.map(& &1.agent)
       |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
-      |> Enum.sort()
+      |> uniq_sort()
 
-    providers = agents |> Enum.map(&provider_for(&1, agents_by_id)) |> Enum.uniq() |> Enum.sort()
+    providers = agents |> Enum.map(&provider_for(&1, agents_by_id)) |> uniq_sort()
 
     %{
       "path" => path,
@@ -217,8 +216,7 @@ defmodule Twelvgaige.Shell.Inventory do
       |> Enum.flat_map(&generated_source_ids(&1.metadata, "template"))
 
     (workflow_templates ++ shot_templates)
-    |> Enum.uniq()
-    |> Enum.sort()
+    |> uniq_sort()
   end
 
   defp generated_source_ids(%{generated_by: %{} = generated_by}, kind) do
@@ -244,10 +242,10 @@ defmodule Twelvgaige.Shell.Inventory do
   end
 
   defp summary(workflows, agents, errors) do
-    tools = workflows |> Enum.flat_map(&Map.get(&1, "tools", [])) |> Enum.uniq() |> Enum.sort()
+    tools = workflows |> Enum.flat_map(&Map.get(&1, "tools", [])) |> uniq_sort()
 
     providers =
-      agents |> Enum.map(& &1["provider"]) |> Enum.reject(&is_nil/1) |> Enum.uniq() |> Enum.sort()
+      agents |> Enum.map(& &1["provider"]) |> Enum.reject(&is_nil/1) |> uniq_sort()
 
     %{
       "workflow_count" => length(workflows),
@@ -279,6 +277,13 @@ defmodule Twelvgaige.Shell.Inventory do
     values
     |> Enum.frequencies()
     |> Map.new(fn {key, count} -> {key, count} end)
+  end
+
+  defp uniq_sort(values) do
+    values
+    |> MapSet.new()
+    |> MapSet.to_list()
+    |> Enum.sort()
   end
 
   defp lifecycle(nil), do: nil

@@ -24,14 +24,14 @@ defmodule Twelvgaige.Store.Retention do
 
   def stats(state, terminal_statuses \\ @terminal_statuses) do
     rounds = Map.get(state, :rounds, %{})
-    incomplete_rounds = Enum.count(rounds, fn {_id, snapshot} -> incomplete?(snapshot) end)
+    {terminal_rounds, incomplete_rounds} = round_status_counts(rounds, terminal_statuses)
 
     retained_bytes = retained_bytes(state)
     max_retained_bytes = Map.get(state, :max_retained_bytes)
 
     %{
       rounds: map_size(rounds),
-      terminal_rounds: map_size(rounds) - incomplete_rounds,
+      terminal_rounds: terminal_rounds,
       incomplete_rounds: incomplete_rounds,
       round_events: total_count(Map.get(state, :events, %{})),
       audit_events: total_count(Map.get(state, :audit_events, %{})),
@@ -42,8 +42,6 @@ defmodule Twelvgaige.Store.Retention do
       retained_bytes_over_limit: over_limit?(retained_bytes, max_retained_bytes),
       evicted_rounds: Map.get(state, :evicted_rounds, 0) || 0
     }
-    |> Map.put(:incomplete_rounds, count_incomplete(rounds, terminal_statuses))
-    |> Map.put(:terminal_rounds, count_terminal(rounds, terminal_statuses))
   end
 
   def retained_bytes(state) do
@@ -188,12 +186,14 @@ defmodule Twelvgaige.Store.Retention do
     |> Enum.reduce(0, fn events, count -> count + length(events || []) end)
   end
 
-  defp count_incomplete(rounds, terminal_statuses) do
-    Enum.count(rounds, fn {_id, snapshot} -> not terminal?(snapshot, terminal_statuses) end)
-  end
-
-  defp count_terminal(rounds, terminal_statuses) do
-    Enum.count(rounds, fn {_id, snapshot} -> terminal?(snapshot, terminal_statuses) end)
+  defp round_status_counts(rounds, terminal_statuses) do
+    Enum.reduce(rounds, {0, 0}, fn {_id, snapshot}, {terminal, incomplete} ->
+      if terminal?(snapshot, terminal_statuses) do
+        {terminal + 1, incomplete}
+      else
+        {terminal, incomplete + 1}
+      end
+    end)
   end
 
   defp terminal?(snapshot), do: terminal?(snapshot, @terminal_statuses)
@@ -202,8 +202,6 @@ defmodule Twelvgaige.Store.Retention do
     status = value(snapshot, :status)
     status in terminal_statuses or normalize_status(status) in terminal_statuses
   end
-
-  defp incomplete?(snapshot), do: not terminal?(snapshot)
 
   defp map_or_empty(%{} = map), do: map
   defp map_or_empty(_value), do: %{}

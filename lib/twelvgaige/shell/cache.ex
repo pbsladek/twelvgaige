@@ -166,13 +166,16 @@ defmodule Twelvgaige.Shell.Cache do
     paths
     |> Enum.reduce_while({:ok, []}, fn path, {:ok, acc} ->
       case shell_paths_for(path) do
-        {:ok, paths} -> {:cont, {:ok, acc ++ paths}}
+        {:ok, paths} -> {:cont, {:ok, [paths | acc]}}
         {:error, %Error{} = error} -> {:halt, {:error, error}}
       end
     end)
     |> case do
-      {:ok, paths} -> {:ok, paths |> Enum.uniq() |> Enum.sort()}
-      {:error, %Error{} = error} -> {:error, error}
+      {:ok, paths} ->
+        {:ok, paths |> List.flatten() |> MapSet.new() |> MapSet.to_list() |> Enum.sort()}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
     end
   end
 

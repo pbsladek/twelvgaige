@@ -438,9 +438,7 @@ defmodule Twelvgaige.Pattern.Compiler do
   end
 
   defp validate_unique_ids(shots) do
-    ids = Enum.map(shots, & &1.id)
-
-    case Enum.find(ids, fn id -> Enum.count(ids, &(&1 == id)) > 1 end) do
+    case first_duplicate_id(shots) do
       nil ->
         :ok
 
@@ -449,6 +447,20 @@ defmodule Twelvgaige.Pattern.Compiler do
          Error.new(:compile_error, :invalid_shell, "duplicate shot id",
            details: %{shot_id: duplicate}
          )}
+    end
+  end
+
+  defp first_duplicate_id(shots) do
+    Enum.reduce_while(shots, MapSet.new(), fn shot, seen ->
+      if MapSet.member?(seen, shot.id) do
+        {:halt, shot.id}
+      else
+        {:cont, MapSet.put(seen, shot.id)}
+      end
+    end)
+    |> case do
+      %MapSet{} -> nil
+      duplicate -> duplicate
     end
   end
 
@@ -479,42 +491,72 @@ defmodule Twelvgaige.Pattern.Compiler do
   end
 
   defp validate_acyclic(dependency_graph) do
-    all_nodes = Map.keys(dependency_graph)
+    {dependents, indegrees} = dependency_index(dependency_graph)
 
     ready =
-      dependency_graph
-      |> Enum.filter(fn {_id, deps} -> deps == [] end)
+      indegrees
+      |> Enum.filter(fn {_id, count} -> count == 0 end)
       |> Enum.map(&elem(&1, 0))
+      |> queue_from_list()
 
-    visited = visit_ready(ready, dependency_graph, %{})
+    visited = visit_ready(ready, dependents, indegrees, %{})
 
-    if map_size(visited) == length(all_nodes) do
+    if map_size(visited) == map_size(dependency_graph) do
       :ok
     else
+      remaining =
+        dependency_graph
+        |> Map.keys()
+        |> Enum.reject(&Map.has_key?(visited, &1))
+
       {:error,
        Error.new(:compile_error, :cycle_detected, "workflow dependency graph contains a cycle",
-         details: %{remaining: all_nodes -- Map.keys(visited)}
+         details: %{remaining: remaining}
        )}
     end
   end
 
-  defp visit_ready([], _graph, visited), do: visited
+  defp dependency_index(dependency_graph) do
+    Enum.reduce(dependency_graph, {%{}, %{}}, fn {id, deps}, {dependents, indegrees} ->
+      dependents =
+        Enum.reduce(deps, dependents, fn dependency, acc ->
+          Map.update(acc, dependency, [id], &[id | &1])
+        end)
 
-  defp visit_ready([node | rest], graph, visited) do
-    if Map.has_key?(visited, node) do
-      visit_ready(rest, graph, visited)
-    else
-      visited = Map.put(visited, node, true)
+      {dependents, Map.put(indegrees, id, length(deps))}
+    end)
+  end
 
-      newly_ready =
-        graph
-        |> Enum.reject(fn {id, _deps} -> Map.has_key?(visited, id) end)
-        |> Enum.filter(fn {_id, deps} -> Enum.all?(deps, &Map.has_key?(visited, &1)) end)
-        |> Enum.map(&elem(&1, 0))
+  defp queue_from_list(values), do: Enum.reduce(values, :queue.new(), &:queue.in/2)
 
-      visit_ready(rest ++ newly_ready, graph, visited)
+  defp visit_ready(queue, dependents, indegrees, visited) do
+    case :queue.out(queue) do
+      {:empty, _queue} ->
+        visited
+
+      {{:value, node}, queue} ->
+        if Map.has_key?(visited, node) do
+          visit_ready(queue, dependents, indegrees, visited)
+        else
+          visited = Map.put(visited, node, true)
+
+          {queue, indegrees} =
+            node
+            |> dependents_for(dependents)
+            |> Enum.reduce({queue, indegrees}, fn dependent, {queue, indegrees} ->
+              count = Map.fetch!(indegrees, dependent) - 1
+              indegrees = Map.put(indegrees, dependent, count)
+              queue = if count == 0, do: :queue.in(dependent, queue), else: queue
+
+              {queue, indegrees}
+            end)
+
+          visit_ready(queue, dependents, indegrees, visited)
+        end
     end
   end
+
+  defp dependents_for(node, dependents), do: Map.get(dependents, node, []) |> Enum.reverse()
 
   defp startable_state?(nil), do: false
 

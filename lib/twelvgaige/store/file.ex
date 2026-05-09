@@ -546,8 +546,7 @@ defmodule Twelvgaige.Store.File do
 
     state.events
     |> Map.get(round_id, [])
-    |> Enum.filter(&(value(&1, :seq) > after_seq))
-    |> Enum.take(limit)
+    |> events_after_seq(after_seq, limit)
   end
 
   defp audit_events_after(events, opts) do
@@ -555,15 +554,42 @@ defmodule Twelvgaige.Store.File do
     limit = opts |> Keyword.get(:limit, 100) |> normalize_positive_integer(100) |> min(1_000)
 
     events
-    |> assign_audit_sequences()
-    |> Enum.filter(&(value(&1, :seq) > after_seq))
-    |> Enum.take(limit)
+    |> audit_events_after_seq(after_seq, limit)
   end
 
-  defp assign_audit_sequences(events) do
+  defp events_after_seq(events, after_seq, limit) do
     events
-    |> Enum.with_index(1)
-    |> Enum.map(fn {event, seq} -> put_value(event, :seq, value(event, :seq) || seq) end)
+    |> Enum.reduce_while({[], 0}, fn event, {acc, count} ->
+      cond do
+        count >= limit -> {:halt, {acc, count}}
+        value(event, :seq) <= after_seq -> {:cont, {acc, count}}
+        true -> {:cont, {[event | acc], count + 1}}
+      end
+    end)
+    |> elem(0)
+    |> Enum.reverse()
+  end
+
+  defp audit_events_after_seq(events, after_seq, limit) do
+    events
+    |> Enum.reduce_while({[], 0, 1}, fn event, {acc, count, seq} ->
+      cond do
+        count >= limit ->
+          {:halt, {acc, count, seq}}
+
+        true ->
+          event = put_value(event, :seq, value(event, :seq) || seq)
+          next_seq = seq + 1
+
+          if value(event, :seq) > after_seq do
+            {:cont, {[event | acc], count + 1, next_seq}}
+          else
+            {:cont, {acc, count, next_seq}}
+          end
+      end
+    end)
+    |> elem(0)
+    |> Enum.reverse()
   end
 
   defp notify_event_watchers(state, round_id) do
