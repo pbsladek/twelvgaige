@@ -14,7 +14,6 @@ defmodule Twelvgaige.Round.Server do
   alias Twelvgaige.Error
   alias Twelvgaige.ID
   alias Twelvgaige.Loadout
-  alias Twelvgaige.Metrics
   alias Twelvgaige.Pattern.Compiler
   alias Twelvgaige.ResourceLimiter
   alias Twelvgaige.Round.Event
@@ -22,6 +21,8 @@ defmodule Twelvgaige.Round.Server do
   alias Twelvgaige.Round.Manifest
   alias Twelvgaige.Round.Recovery
   alias Twelvgaige.Round.Runner
+  alias Twelvgaige.Round.ServerMetrics
+  alias Twelvgaige.Round.ServerSafety
   alias Twelvgaige.Round.Snapshot
   alias Twelvgaige.Round.State, as: RoundState
   alias Twelvgaige.RuntimeProfile
@@ -31,6 +32,7 @@ defmodule Twelvgaige.Round.Server do
   alias Twelvgaige.Shot.AttemptJournal
   alias Twelvgaige.Shot.Executor, as: ShotExecutor
   alias Twelvgaige.Shot.RetryPolicy
+  alias Twelvgaige.Tool.RuntimeConfig, as: ToolRuntimeConfig
 
   defstruct [
     :workflow,
@@ -455,7 +457,7 @@ defmodule Twelvgaige.Round.Server do
   end
 
   defp start_scheduled_round(state) do
-    started_mono = monotonic_ms()
+    started_mono = ServerMetrics.monotonic_ms()
 
     result =
       with :ok <- InputValidator.validate(state.workflow, state.input),
@@ -482,13 +484,13 @@ defmodule Twelvgaige.Round.Server do
           {:error, %Error{} = error} ->
             release_round_permit(permit)
             result = {:error, error}
-            record_round_metrics(result, state.workflow.id, started_mono, state.opts)
+            ServerMetrics.record_round(result, state.workflow.id, started_mono, state.opts)
             finish_result(state, result)
         end
 
       {:error, %Error{} = error} ->
         result = {:error, error}
-        record_round_metrics(result, state.workflow.id, started_mono, state.opts)
+        ServerMetrics.record_round(result, state.workflow.id, started_mono, state.opts)
         finish_result(state, result)
     end
   end
@@ -766,7 +768,7 @@ defmodule Twelvgaige.Round.Server do
   end
 
   defp apply_shot_result(state, entry, result) do
-    record_shot_metrics(entry.shot, result, entry.started_mono, state.opts)
+    ServerMetrics.record_shot(entry.shot, result, entry.started_mono, state.opts)
 
     case result do
       {:ok, result} ->
@@ -836,18 +838,18 @@ defmodule Twelvgaige.Round.Server do
   end
 
   defp apply_safety_shot(state, shot) do
-    request = safety_request(state.round_state, shot)
+    request = ServerSafety.request(state.round_state, shot)
 
-    case safety_decision(request, state.opts) do
+    case ServerSafety.decision(request, state.opts) do
       {:approved, reason, actor} ->
-        record_safety_decision(:approved, state.opts)
+        ServerMetrics.record_safety_decision(:approved, state.opts)
         current = Map.fetch!(state.round_state.shot_states, shot.id)
 
         shot_state = %{
           current
           | status: :complete,
             attempt: 0,
-            output: safety_output("approved", reason, actor),
+            output: ServerSafety.output("approved", reason, actor),
             completed_at: Twelvgaige.Clock.utc_now()
         }
 
@@ -855,7 +857,7 @@ defmodule Twelvgaige.Round.Server do
         transition_round_state(state, round_state, :safety_approved)
 
       {:rejected, reason, actor} ->
-        record_safety_decision(:rejected, state.opts)
+        ServerMetrics.record_safety_decision(:rejected, state.opts)
 
         error =
           Error.new(:policy_error, :safety_rejected, "safety shot #{shot.id} was rejected",
@@ -869,7 +871,7 @@ defmodule Twelvgaige.Round.Server do
           current
           | status: :failed,
             attempt: 0,
-            output: safety_output("rejected", reason, actor),
+            output: ServerSafety.output("rejected", reason, actor),
             error: error,
             completed_at: Twelvgaige.Clock.utc_now()
         }
@@ -877,7 +879,7 @@ defmodule Twelvgaige.Round.Server do
         round_state =
           state.round_state
           |> RoundState.put_shot(shot_state)
-          |> Map.put(:status, rejected_round_status(state.round_state))
+          |> Map.put(:status, ServerSafety.rejected_round_status(state.round_state))
           |> Map.put(:completed_at, Twelvgaige.Clock.utc_now())
           |> Map.put(:error, error)
 
@@ -895,7 +897,7 @@ defmodule Twelvgaige.Round.Server do
           current
           | status: :awaiting_safety,
             attempt: 0,
-            output: safety_output("awaiting", nil, nil),
+            output: ServerSafety.output("awaiting", nil, nil),
             started_at: Twelvgaige.Clock.utc_now()
         }
 
@@ -921,7 +923,7 @@ defmodule Twelvgaige.Round.Server do
 
   defp apply_external_safety_decision(state, shot_state, request, :approved, opts) do
     with {:ok, state} <- ensure_round_permit(state) do
-      record_safety_decision(:approved, opts)
+      ServerMetrics.record_safety_decision(:approved, opts)
 
       reason = Keyword.get(opts, :reason)
       actor = Keyword.get(opts, :actor, "human")
@@ -930,7 +932,7 @@ defmodule Twelvgaige.Round.Server do
         %{
           shot_state
           | status: :complete,
-            output: safety_output("approved", reason, actor),
+            output: ServerSafety.output("approved", reason, actor),
             completed_at: Twelvgaige.Clock.utc_now()
         }
 
@@ -940,7 +942,7 @@ defmodule Twelvgaige.Round.Server do
         |> Map.merge(%{
           status: :firing,
           awaiting_safety:
-            drop_awaiting_safety(state.round_state.awaiting_safety, request["shot_id"])
+            ServerSafety.drop_awaiting(state.round_state.awaiting_safety, request["shot_id"])
         })
 
       {:ok, transition_round_state(state, round_state, :safety_approved)}
@@ -948,7 +950,7 @@ defmodule Twelvgaige.Round.Server do
   end
 
   defp apply_external_safety_decision(state, shot_state, request, :rejected, opts) do
-    record_safety_decision(:rejected, opts)
+    ServerMetrics.record_safety_decision(:rejected, opts)
 
     reason = Keyword.get(opts, :reason)
     actor = Keyword.get(opts, :actor, "human")
@@ -963,7 +965,7 @@ defmodule Twelvgaige.Round.Server do
       %{
         shot_state
         | status: :failed,
-          output: safety_output("rejected", reason, actor),
+          output: ServerSafety.output("rejected", reason, actor),
           error: error,
           completed_at: Twelvgaige.Clock.utc_now()
       }
@@ -972,11 +974,11 @@ defmodule Twelvgaige.Round.Server do
       state.round_state
       |> RoundState.put_shot(shot_state)
       |> Map.merge(%{
-        status: rejected_round_status(state.round_state),
+        status: ServerSafety.rejected_round_status(state.round_state),
         completed_at: Twelvgaige.Clock.utc_now(),
         error: error,
         awaiting_safety:
-          drop_awaiting_safety(state.round_state.awaiting_safety, request["shot_id"])
+          ServerSafety.drop_awaiting(state.round_state.awaiting_safety, request["shot_id"])
       })
 
     state =
@@ -1327,10 +1329,10 @@ defmodule Twelvgaige.Round.Server do
   defp apply_after_commit(state, {:finish, :success}) do
     result = {:ok, RoundState.to_snapshot(state.round_state)}
 
-    record_round_metrics(
+    ServerMetrics.record_round(
       result,
       state.workflow.id,
-      started_mono_from_round(state.round_state),
+      ServerMetrics.started_mono_from_round(state.round_state),
       state.opts
     )
 
@@ -1341,10 +1343,10 @@ defmodule Twelvgaige.Round.Server do
     snapshot = state.round_state |> RoundState.to_snapshot() |> Map.put(:error, error)
     result = {:ok, snapshot}
 
-    record_round_metrics(
+    ServerMetrics.record_round(
       result,
       state.workflow.id,
-      started_mono_from_round(state.round_state),
+      ServerMetrics.started_mono_from_round(state.round_state),
       state.opts
     )
 
@@ -1402,7 +1404,7 @@ defmodule Twelvgaige.Round.Server do
         monitor_ref: task.monitor_ref,
         timeout_ref: timeout && timeout.ref,
         timer_ref: timeout && timeout.timer_ref,
-        started_mono: monotonic_ms()
+        started_mono: ServerMetrics.monotonic_ms()
       }
 
       put_inflight(state, entry)
@@ -1904,123 +1906,6 @@ defmodule Twelvgaige.Round.Server do
     Enum.map(round_state.inflight, fn {_key, entry} -> entry.shot_id end)
   end
 
-  defp safety_scope(round_state),
-    do: Map.get(round_state.policy || %{}, :safety_scope, :dependency)
-
-  defp rejected_round_status(round_state) do
-    case Map.get(round_state.policy || %{}, :on_safety_reject, :halt_round) do
-      :fail_round -> :failed
-      _halt_round -> :halted
-    end
-  end
-
-  defp safety_request(round_state, shot) do
-    %{
-      "round_id" => round_state.id,
-      "shot_id" => shot.id,
-      "status" => "awaiting",
-      "scope" => Atom.to_string(safety_scope(round_state)),
-      "reason" => shot.description,
-      "requested_at" => DateTime.to_iso8601(Twelvgaige.Clock.utc_now())
-    }
-  end
-
-  defp safety_decision(request, opts) do
-    cond do
-      Keyword.get(opts, :approve_all_safety?, false) ->
-        {:approved, "approved by foreground option", "system"}
-
-      decisions = Keyword.get(opts, :safety_decisions) ->
-        decisions
-        |> lookup_safety_decision(request["shot_id"])
-        |> normalize_safety_decision()
-
-      handler = Keyword.get(opts, :safety_handler) ->
-        handler
-        |> call_safety_handler(request)
-        |> normalize_safety_decision()
-
-      true ->
-        :await
-    end
-  end
-
-  defp lookup_safety_decision(decisions, shot_id) when is_map(decisions) do
-    Enum.find_value(decisions, fn {key, value} ->
-      if to_string(key) == shot_id, do: value
-    end)
-  end
-
-  defp lookup_safety_decision(decisions, shot_id) when is_list(decisions) do
-    Enum.find_value(decisions, fn
-      {key, value} when is_atom(key) or is_binary(key) ->
-        if to_string(key) == shot_id, do: value
-
-      _other ->
-        nil
-    end)
-  end
-
-  defp lookup_safety_decision(_decisions, _shot_id), do: nil
-
-  defp call_safety_handler(handler, request) when is_function(handler, 1), do: handler.(request)
-
-  defp call_safety_handler(handler, request) when is_function(handler, 2),
-    do: handler.(request["shot_id"], request)
-
-  defp call_safety_handler(_handler, _request), do: nil
-
-  defp normalize_safety_decision(value)
-       when value in [:approve, :approved, "approve", "approved"] do
-    {:approved, nil, "system"}
-  end
-
-  defp normalize_safety_decision(value)
-       when value in [:reject, :rejected, "reject", "rejected"] do
-    {:rejected, nil, "system"}
-  end
-
-  defp normalize_safety_decision({decision, reason}) when decision in [:approve, :approved] do
-    {:approved, reason, "system"}
-  end
-
-  defp normalize_safety_decision({decision, reason}) when decision in [:reject, :rejected] do
-    {:rejected, reason, "system"}
-  end
-
-  defp normalize_safety_decision(%{} = decision) do
-    normalized =
-      decision
-      |> Enum.map(fn {key, value} -> {to_string(key), value} end)
-      |> Map.new()
-
-    case normalize_safety_decision(Map.get(normalized, "decision")) do
-      {:approved, _reason, _actor} ->
-        {:approved, Map.get(normalized, "reason"), Map.get(normalized, "actor", "system")}
-
-      {:rejected, _reason, _actor} ->
-        {:rejected, Map.get(normalized, "reason"), Map.get(normalized, "actor", "system")}
-
-      :await ->
-        :await
-    end
-  end
-
-  defp normalize_safety_decision(_value), do: :await
-
-  defp safety_output(decision, reason, actor) do
-    %{
-      "decision" => decision,
-      "reason" => reason,
-      "actor" => actor,
-      "decided_at" => DateTime.to_iso8601(Twelvgaige.Clock.utc_now())
-    }
-  end
-
-  defp drop_awaiting_safety(awaiting, shot_id) do
-    Enum.reject(awaiting, &(Map.get(&1, "shot_id") == shot_id))
-  end
-
   defp retry_history(shot_state, error) do
     shot_state.history ++
       [
@@ -2037,6 +1922,7 @@ defmodule Twelvgaige.Round.Server do
       opts
       |> Keyword.get(:profile, :laptop)
       |> RuntimeProfile.shot_opts(opts)
+      |> ToolRuntimeConfig.merge()
 
     case Keyword.get(opts, :attempt_responses) do
       responses when is_list(responses) ->
@@ -2060,76 +1946,6 @@ defmodule Twelvgaige.Round.Server do
       :allow_unsafe_tools_without_safety?
     ])
   end
-
-  defp record_round_metrics({:ok, %Snapshot{} = snapshot}, workflow_id, started_mono, opts) do
-    labels = %{workflow_id: workflow_id, status: snapshot.status}
-
-    Metrics.counter("twelvgaige_rounds_total", labels, 1, metrics_opts(opts))
-
-    Metrics.observe(
-      "twelvgaige_round_duration_seconds",
-      duration_seconds(started_mono),
-      labels,
-      metrics_opts(opts)
-    )
-  end
-
-  defp record_round_metrics({:error, %Error{} = error}, workflow_id, started_mono, opts) do
-    labels = %{workflow_id: workflow_id, status: :failed, error_class: error.class}
-
-    Metrics.counter("twelvgaige_rounds_total", labels, 1, metrics_opts(opts))
-
-    Metrics.observe(
-      "twelvgaige_round_duration_seconds",
-      duration_seconds(started_mono),
-      labels,
-      metrics_opts(opts)
-    )
-  end
-
-  defp record_shot_metrics(shot, result, started_mono, opts) do
-    labels =
-      %{
-        kind: Map.get(shot, :kind, :slug),
-        status: shot_status(result)
-      }
-      |> maybe_error_class(result)
-
-    Metrics.counter("twelvgaige_shot_attempts_total", labels, 1, metrics_opts(opts))
-
-    Metrics.observe(
-      "twelvgaige_shot_duration_seconds",
-      duration_seconds(started_mono),
-      labels,
-      metrics_opts(opts)
-    )
-  end
-
-  defp maybe_error_class(labels, {:error, %Error{} = error}),
-    do: Map.put(labels, :error_class, error.class)
-
-  defp maybe_error_class(labels, _result), do: labels
-
-  defp shot_status({:ok, _result}), do: :complete
-  defp shot_status({:error, _error}), do: :failed
-
-  defp record_safety_decision(decision, opts) do
-    Metrics.counter(
-      "twelvgaige_safety_decisions_total",
-      %{decision: decision},
-      1,
-      metrics_opts(opts)
-    )
-  end
-
-  defp metrics_opts(opts), do: [metrics: Keyword.get(opts, :metrics, Metrics)]
-
-  defp started_mono_from_round(%RoundState{started_at: %DateTime{} = started_at}) do
-    max(monotonic_ms() - DateTime.diff(Twelvgaige.Clock.utc_now(), started_at, :millisecond), 0)
-  end
-
-  defp duration_seconds(started_mono), do: max(monotonic_ms() - started_mono, 0) / 1000
-  defp monotonic_ms, do: System.monotonic_time(:millisecond)
 
   defp cancel_timer(nil), do: :ok
 

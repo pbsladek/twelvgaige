@@ -5,6 +5,17 @@ Actions run the same commands.
 
 ## Local Gates
 
+Use the repo-pinned tool versions when possible:
+
+```bash
+mise install
+make doctor
+```
+
+`.mise.toml` pins Erlang/OTP, Elixir, Zig, `kubectl`, and `k3d`. `make doctor`
+does not install tools; it reports whether the current shell can run the normal
+offline suite and optional package/live checks.
+
 Use these during normal development:
 
 ```bash
@@ -12,6 +23,13 @@ make check
 make test-local
 make coverage
 make e2e-cli
+```
+
+When a local e2e failure needs to be shared, preserve artifacts under the repo
+ignored `artifacts/e2e` directory:
+
+```bash
+make e2e-artifacts
 ```
 
 Use these before release work or larger changes:
@@ -38,6 +56,22 @@ installed locally, the same script can be run with:
 make e2e-windows
 ```
 
+## Local Live Suites
+
+Live suites stay opt-in. `make e2e-live-local` runs only the suites explicitly
+enabled by environment variables:
+
+```bash
+make e2e-live-local K3D_LIVE=1
+make e2e-live-local PROVIDER_LIVE=1 PROVIDER_LIVE_PROVIDERS=openai
+make e2e-live-local SQLCIPHER_LIVE=1 SQLCIPHER_PREFIX=/usr
+make e2e-live-local KEYCHAIN_LIVE=1
+```
+
+Use `make doctor-live` first when setting up a machine for live tests. Live
+artifacts are written under `artifacts/live/<platform>` locally unless
+`LIVE_ARTIFACT_DIR` is overridden.
+
 ## GitHub Workflows
 
 - `ci.yml`: format, compile, unit tests, persistence tests, authoring checks,
@@ -50,6 +84,8 @@ make e2e-windows
 - `live-e2e.yml`: opt-in k3d, provider-live, SQLCipher, and keychain checks.
 
 Live workflows never run on ordinary pull requests.
+See [Live E2E implementation plan](design/live-e2e-implementation-plan.md) for
+the suite design and promotion criteria.
 
 ## Live Environments
 
@@ -63,6 +99,17 @@ manual approval in repository settings:
 The scheduled k3d job does not use repository secrets and does not require a
 protected environment. Keep provider, SQLCipher, and keychain jobs manual unless
 the environment protections and cost controls are intentionally relaxed.
+
+Every live job uploads a small artifact bundle. k3d artifacts include a summary,
+generated fixture workflows, deterministic mock response scripts, CLI round
+outputs/stores, and cluster diagnostics on failure. The k3d suite covers
+read-only Kubernetes tools, runtime policy denial, RBAC denial, live
+`http_get`/`http_post` through a port-forwarded in-cluster fixture, a GitOps
+commit/apply/verify round, Git destructive-safety denial, guarded scale
+remediation, daemon restart/resume across a safety gate, and a fanout/fan-in
+inspection round. Generated least-privilege kubeconfigs are temp-only and are
+not uploaded. Provider, SQLCipher, and keychain artifacts include the live test
+log captured by the Make target.
 
 ## Required Checks
 

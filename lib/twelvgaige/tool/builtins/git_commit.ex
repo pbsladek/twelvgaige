@@ -238,8 +238,9 @@ defmodule Twelvgaige.Tool.Builtins.GitCommit do
       |> command_runner_opts()
       |> Keyword.put(:timeout_ms, Keyword.get(opts, :timeout_ms, @default_timeout_ms))
       |> Keyword.put(:cwd, root)
+      |> Keyword.put_new(:posix_port_runner?, false)
 
-    case runner.("git", ["-C", root] ++ args, runner_opts) do
+    case runner.("git", git_base_args(root) ++ args, runner_opts) do
       {:ok, %{status: 0} = result} ->
         {:ok, normalize_result(result)}
 
@@ -268,6 +269,17 @@ defmodule Twelvgaige.Tool.Builtins.GitCommit do
       stderr: Map.get(result, :stderr, ""),
       duration_ms: Map.get(result, :duration_ms, 0)
     }
+  end
+
+  defp git_base_args(root) do
+    [
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "tag.gpgSign=false",
+      "-C",
+      root
+    ]
   end
 
   defp command_runner_opts(opts) do

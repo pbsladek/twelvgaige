@@ -31,6 +31,7 @@ defmodule Twelvgaige.MixProject do
       {:ecto_sql, "~> 3.12"},
       {:ecto_sqlite3, "~> 0.17"},
       {:jason, "~> 1.4"},
+      {:stream_data, "~> 1.1", only: :test},
       {:toml_elixir, "~> 3.1"},
       {:yamerl, "~> 0.10"}
     ]
@@ -38,7 +39,7 @@ defmodule Twelvgaige.MixProject do
 
   defp dialyzer do
     [
-      plt_add_apps: [:inets, :mix, :public_key, :ssl],
+      plt_add_apps: [:ex_unit, :inets, :mix, :public_key, :ssl],
       flags: [:error_handling]
     ]
   end

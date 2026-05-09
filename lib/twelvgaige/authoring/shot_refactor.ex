@@ -9,6 +9,10 @@ defmodule Twelvgaige.Authoring.ShotRefactor do
 
   alias Twelvgaige.Error
   alias Twelvgaige.Pattern.Condition
+
+  import Twelvgaige.Authoring.ShotRefactor.Validation,
+    only: [format_for_path: 1, invalid: 1, invalid: 2, unified_diff: 3]
+
   alias Twelvgaige.Shell.Document, as: ShellDocument
   alias Twelvgaige.Shell.Schema
   alias Twelvgaige.Shell.Workflow
@@ -546,25 +550,6 @@ defmodule Twelvgaige.Authoring.ShotRefactor do
 
   def replace_tool(_path, _old_tool, _new_tool, _opts) do
     invalid("shot replace-tool requires path, old tool, and new tool strings")
-  end
-
-  defp format_for_path(path) do
-    case path |> Path.extname() |> String.downcase() do
-      ".json" ->
-        {:ok, :json}
-
-      ".toml" ->
-        {:ok, :toml}
-
-      ".yaml" ->
-        {:ok, :yaml}
-
-      ".yml" ->
-        {:ok, :yaml}
-
-      extension ->
-        invalid("unsupported shell file extension for shot refactor", %{extension: extension})
-    end
   end
 
   defp rename_document(%{"shots" => shots} = document, old_id, new_id) when is_list(shots) do
@@ -1524,37 +1509,4 @@ defmodule Twelvgaige.Authoring.ShotRefactor do
 
   defp non_empty([]), do: nil
   defp non_empty(values), do: values
-
-  defp unified_diff(path, original, candidate) do
-    original_lines = String.split(original, "\n", trim: false)
-    candidate_lines = String.split(candidate, "\n", trim: false)
-    max = max(length(original_lines), length(candidate_lines))
-
-    body =
-      0..(max - 1)
-      |> Enum.flat_map(fn index ->
-        old = Enum.at(original_lines, index)
-        new = Enum.at(candidate_lines, index)
-
-        cond do
-          old == new and not is_nil(old) -> [" #{old}"]
-          is_nil(old) -> ["+#{new}"]
-          is_nil(new) -> ["-#{old}"]
-          true -> ["-#{old}", "+#{new}"]
-        end
-      end)
-      |> Enum.reject(&(&1 in [" ", "+", "-"]))
-      |> Enum.join("\n")
-
-    """
-    --- #{path}
-    +++ #{path}
-    @@
-    #{body}
-    """
-  end
-
-  defp invalid(message, details \\ %{}) do
-    {:error, Error.new(:input_error, :invalid_shell, message, details: details)}
-  end
 end

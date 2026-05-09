@@ -1,0 +1,6 @@
+[tools]
+erlang = "28.4"
+elixir = "1.19.5-otp-28"
+zig = "0.15.2"
+kubectl = "1.32.0"
+k3d = "5.8.3"

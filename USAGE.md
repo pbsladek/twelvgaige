@@ -24,6 +24,7 @@ JSON and TOML authoring examples are covered in
 From source:
 
 ```bash
+mise install # optional, uses .mise.toml
 mix deps.get
 mix escript.build
 ./twelvgaige --help
@@ -35,6 +36,7 @@ Use `./twelvgaige` in the examples below when running from the repo.
 Common development and CI targets are controlled by the Makefile:
 
 ```bash
+make doctor
 make check
 make coverage
 make e2e-cli
@@ -51,6 +53,14 @@ escript. `make ci` runs dependency fetch, formatter check, warnings-as-errors
 compile, normal tests, and persistence tests. GitHub Actions also runs
 `make authoring-check`, package smoke, and remote e2e jobs. See
 [`docs/ci.md`](docs/ci.md) for the full CI and branch-protection checklist.
+
+For repeatable failure artifacts that can be shared in review, run:
+
+```bash
+make e2e-artifacts
+```
+
+This keeps per-suite transcripts and stdout/stderr under `artifacts/e2e`.
 
 Run Dialyzer locally when working through ElixirLS type warnings:
 
@@ -837,13 +847,24 @@ The useful pattern is: collect state, summarize it, validate structured output, 
 Live Kubernetes tests are opt-in. Prefer a disposable k3d cluster:
 
 ```bash
-k3d cluster create twelvgaige-smoke --servers 1 --agents 0 --wait
-kubectl get nodes --context k3d-twelvgaige-smoke
-TWELVGAIGE_K8S_LIVE=1 TWELVGAIGE_K8S_CONTEXT=k3d-twelvgaige-smoke mix test --include k8s_live
-k3d cluster delete twelvgaige-smoke
+make e2e-live-local K3D_LIVE=1
 ```
 
-Normal tests must not require a live cluster.
+That target creates a temporary k3d cluster, runs read-only Kubernetes tool
+tests, RBAC denial checks, real `http_get`/`http_post` rounds against a
+port-forwarded in-cluster fixture, a GitOps commit/apply round, Git destructive
+safety denial, guarded remediation, daemon restart/resume, and fanout/fan-in
+inspection. The harness deletes the cluster on exit. Normal tests must not
+require a live cluster.
+
+HTTP tools require trusted runtime policy. For local/private endpoints, pass the
+policy in environment, not in workflow or model output:
+
+```bash
+TWELVGAIGE_HTTP_ALLOWED_HOSTS=127.0.0.1 \
+TWELVGAIGE_HTTP_ALLOW_PRIVATE_HOSTS=1 \
+twelvgaige round run workflows/http_check.yaml
+```
 
 ## Output Formats
 

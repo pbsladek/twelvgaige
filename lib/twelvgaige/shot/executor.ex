@@ -99,7 +99,10 @@ defmodule Twelvgaige.Shot.Executor do
   end
 
   defp llm_opts(opts, attempt, iteration) do
-    error_opts = Keyword.take(opts, [:error, :mock_handler])
+    error_opts =
+      opts
+      |> Keyword.take([:error, :mock_handler])
+      |> Keyword.put(:mock_iteration, iteration)
 
     limiter_opts = [
       limiter: Keyword.get(opts, :limiter, Twelvgaige.ResourceLimiter),

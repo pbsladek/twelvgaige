@@ -494,7 +494,28 @@ Recommended jobs:
   - Runs on `ubuntu-latest`.
   - Manual dispatch and nightly schedule only at first.
   - Creates a disposable k3d cluster.
+  - Deploys a known fixture workload.
+  - Creates reader and writer service accounts/kubeconfigs with the least
+    privileges needed by each scenario.
   - Runs `TWELVGAIGE_K8S_LIVE=1 mix test --include k8s_live`.
+  - Verifies live `kubectl_get`, `kubectl_events`, `kubectl_describe`, and
+    `kubectl_logs` behavior.
+  - Verifies runtime Kubernetes policy denial and Kubernetes RBAC denial.
+  - Runs a deterministic mock-agent CLI round that calls `kubectl_get` against
+    the live fixture workload.
+  - Deploys an in-cluster HTTP fixture and validates real `http_get`,
+    safety-gated `http_post`, side-effect readback, and HTTP network-policy
+    denial through loopback `kubectl port-forward`.
+  - Runs a GitOps round that commits a generated manifest, applies it to k3d,
+    and verifies the rollout.
+  - Verifies Git commit contents, clean manifest status, untracked generated
+    workflow files, and destructive-safety denial for `git_commit`.
+  - Runs a guarded remediation round that scales a broken deployment back to a
+    healthy replica count after safety approval.
+  - Runs a daemon restart/resume round that pauses at a safety gate, restarts
+    Breech against the same store, approves, and verifies completion.
+  - Runs a fanout/fan-in inspection round with multiple agent definitions and
+    Kubernetes tool calls before synthesis.
   - Always deletes the cluster.
 
 - `provider-live-e2e`
@@ -575,6 +596,8 @@ Implementation status:
   workflow confirmation remains pending.
 - Phase T5 is implemented as opt-in live workflow/Make targets; remote live
   execution confirmation remains pending.
+- Repeatable local setup now has `.mise.toml`, `make doctor`, `make
+  doctor-live`, `make e2e-artifacts`, and `make e2e-live-local`.
 - Phase T6 is in progress with focused coverage tests for security equality,
   provider config normalization, redaction, SQLCipher spike reporting, CLI JSON
   errors, store failure reporting, and patch apply post-write validation
@@ -793,8 +816,12 @@ Progress:
 - `[x]` Added `make e2e-k3d`, `make e2e-provider-live`, and
   `make e2e-sqlcipher-live`.
 - `[x]` Added `test/e2e/k3d_live.sh`, which creates a disposable k3d cluster,
-  runs the existing `:k8s_live` tests, captures Kubernetes diagnostics on
-  failure, and deletes the cluster on exit.
+  deploys fixture workloads, runs live Kubernetes tool tests through
+  least-privilege kubeconfigs, runs deterministic CLI rounds against the live
+  fixture, validates real HTTP GET/POST with runtime network policy, GitOps
+  commit/apply, Git destructive-safety denial, guarded remediation, daemon
+  restart/resume, and fanout/fan-in scenarios, captures Kubernetes diagnostics
+  on failure, and deletes the cluster on exit.
 - `[x]` Added `test/twelvgaige/llm/provider_live_test.exs`, which only runs
   behind `:provider_live` and requires `TWELVGAIGE_PROVIDER_LIVE=1` plus explicit
   model/credential environment.
@@ -805,6 +832,9 @@ Progress:
 - `[x]` Provider, SQLCipher, and Keychain live jobs use GitHub environments
   (`live-providers`, `live-sqlcipher`, `live-keychain`) so repository settings
   can require manual approval before secrets are exposed.
+- `[x]` Added `docs/design/live-e2e-implementation-plan.md`.
+- `[x]` Live jobs upload artifact bundles for k3d diagnostics and
+  provider/SQLCipher/keychain logs.
 - `[ ]` Remote live k3d/provider/SQLCipher/Keychain jobs have been manually
   confirmed in GitHub Actions.
 

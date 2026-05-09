@@ -34,6 +34,7 @@ Anthropic, OpenAI, Gemini, Ollama, or mock providers.
 From source:
 
 ```bash
+mise install # optional, uses .mise.toml
 mix deps.get
 mix escript.build
 ./twelvgaige version
@@ -48,6 +49,7 @@ make escript-smoke
 Run the main local validation gates:
 
 ```bash
+make doctor
 make check
 make coverage
 make e2e-cli

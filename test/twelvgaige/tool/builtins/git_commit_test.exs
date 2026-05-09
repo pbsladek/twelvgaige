@@ -12,13 +12,46 @@ defmodule Twelvgaige.Tool.Builtins.GitCommitTest do
       send(self(), {:runner, binary, args, opts})
 
       case args do
-        ["-C", ^root, "status", "--porcelain", "--", "note.txt"] ->
+        [
+          "-c",
+          "commit.gpgsign=false",
+          "-c",
+          "tag.gpgSign=false",
+          "-C",
+          ^root,
+          "status",
+          "--porcelain",
+          "--",
+          "note.txt"
+        ] ->
           {:ok, %{status: 0, stdout: " M note.txt\n", stderr: "", duration_ms: 2}}
 
-        ["-C", ^root, "add", "--", "note.txt"] ->
+        [
+          "-c",
+          "commit.gpgsign=false",
+          "-c",
+          "tag.gpgSign=false",
+          "-C",
+          ^root,
+          "add",
+          "--",
+          "note.txt"
+        ] ->
           {:ok, %{status: 0, stdout: "", stderr: "", duration_ms: 3}}
 
-        ["-C", ^root, "commit", "-m", "Update note", "--", "note.txt"] ->
+        [
+          "-c",
+          "commit.gpgsign=false",
+          "-c",
+          "tag.gpgSign=false",
+          "-C",
+          ^root,
+          "commit",
+          "-m",
+          "Update note",
+          "--",
+          "note.txt"
+        ] ->
           {:ok, %{status: 0, stdout: "[main abc123] Update note\n", stderr: "", duration_ms: 4}}
       end
     end
@@ -30,15 +63,47 @@ defmodule Twelvgaige.Tool.Builtins.GitCommitTest do
                command_runner: runner
              )
 
-    assert_receive {:runner, "git", ["-C", ^root, "status", "--porcelain", "--", "note.txt"],
-                    [cwd: ^root, timeout_ms: 30_000]}
-
-    assert_receive {:runner, "git", ["-C", ^root, "add", "--", "note.txt"],
-                    [cwd: ^root, timeout_ms: 30_000]}
+    assert_receive {:runner, "git",
+                    [
+                      "-c",
+                      "commit.gpgsign=false",
+                      "-c",
+                      "tag.gpgSign=false",
+                      "-C",
+                      ^root,
+                      "status",
+                      "--porcelain",
+                      "--",
+                      "note.txt"
+                    ], [posix_port_runner?: false, cwd: ^root, timeout_ms: 30_000]}
 
     assert_receive {:runner, "git",
-                    ["-C", ^root, "commit", "-m", "Update note", "--", "note.txt"],
-                    [cwd: ^root, timeout_ms: 30_000]}
+                    [
+                      "-c",
+                      "commit.gpgsign=false",
+                      "-c",
+                      "tag.gpgSign=false",
+                      "-C",
+                      ^root,
+                      "add",
+                      "--",
+                      "note.txt"
+                    ], [posix_port_runner?: false, cwd: ^root, timeout_ms: 30_000]}
+
+    assert_receive {:runner, "git",
+                    [
+                      "-c",
+                      "commit.gpgsign=false",
+                      "-c",
+                      "tag.gpgSign=false",
+                      "-C",
+                      ^root,
+                      "commit",
+                      "-m",
+                      "Update note",
+                      "--",
+                      "note.txt"
+                    ], [posix_port_runner?: false, cwd: ^root, timeout_ms: 30_000]}
 
     assert output["paths"] == ["note.txt"]
     assert output["commit_excerpt"] =~ "Update note"
@@ -129,13 +194,19 @@ defmodule Twelvgaige.Tool.Builtins.GitCommitTest do
     File.write!(Path.join(root, "note.txt"), "updated\n")
 
     runner = fn
-      "git", ["-C", ^root, "status" | _rest], _opts ->
+      "git",
+      ["-c", "commit.gpgsign=false", "-c", "tag.gpgSign=false", "-C", ^root, "status" | _rest],
+      _opts ->
         {:ok, %{status: 0, stdout: " M note.txt token=secret\n", stderr: "", duration_ms: 1}}
 
-      "git", ["-C", ^root, "add" | _rest], _opts ->
+      "git",
+      ["-c", "commit.gpgsign=false", "-c", "tag.gpgSign=false", "-C", ^root, "add" | _rest],
+      _opts ->
         {:ok, %{status: 0, stdout: "", stderr: "", duration_ms: 1}}
 
-      "git", ["-C", ^root, "commit" | _rest], _opts ->
+      "git",
+      ["-c", "commit.gpgsign=false", "-c", "tag.gpgSign=false", "-C", ^root, "commit" | _rest],
+      _opts ->
         {:ok, %{status: 1, stdout: "password=secret\n", stderr: "", duration_ms: 1}}
     end
 

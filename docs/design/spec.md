@@ -2630,6 +2630,19 @@ Default `http_get` policy:
 
 Infrastructure teams may opt into private network access by CIDR/domain allowlist. That opt-in belongs in trusted tool policy, not LLM output.
 
+CLI and daemon runs may supply trusted HTTP tool policy through process
+environment:
+
+- `TWELVGAIGE_HTTP_ALLOWED_HOSTS`
+- `TWELVGAIGE_HTTP_ALLOW_PRIVATE_HOSTS`
+- `TWELVGAIGE_HTTP_TIMEOUT_MS`
+- `TWELVGAIGE_HTTP_DEFAULT_MAX_BYTES`
+
+These values are merged into `tool_opts_by_name` for `http_get` and `http_post`
+at shot execution time. Explicit programmatic tool options take precedence over
+environment defaults. Model output can request a URL, but it cannot grant itself
+network policy.
+
 ### 20.8 Networking Tests
 
 Normal `mix test` must not open external network connections.

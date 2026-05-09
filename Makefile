@@ -14,6 +14,7 @@ SQLCIPHER_PREFIX ?= $(shell prefix="$$(brew --prefix sqlcipher 2>/dev/null || tr
 SQLCIPHER_CFLAGS ?= -I$(SQLCIPHER_PREFIX)/include/sqlcipher
 SQLCIPHER_LDFLAGS ?= -L$(SQLCIPHER_PREFIX)/lib -lsqlcipher
 SQLCIPHER_KEY ?= dev-only-sqlcipher-spike-key
+SQLCIPHER_LIVE ?= 0
 SQLCIPHER_SPIKE_PATH ?= /tmp/$(APP)-sqlcipher-spike-$(ARTIFACT_SUFFIX).db
 SQLCIPHER_SMOKE_TMP ?= /tmp/$(APP)-sqlcipher-smoke-$(ARTIFACT_SUFFIX)
 SQLCIPHER_STORE_KEY_ENV ?= TWELVGAIGE_SQLCIPHER_SMOKE_KEY
@@ -23,6 +24,7 @@ PROVIDER_LIVE_PROVIDERS ?=
 K3D_LIVE ?= 0
 K3D_CLUSTER_PREFIX ?= twelvgaige-live
 K3D_NAMESPACE ?= default
+LIVE_ARTIFACT_DIR ?= $(ARTIFACT_DIR)/live/$(ARTIFACT_SUFFIX)
 
 $(shell mkdir -p "$(ERL_CRASH_DUMP_DIR)")
 
@@ -54,6 +56,7 @@ AUTHORING_TMP ?= /tmp/$(APP)-authoring-$(ARTIFACT_SUFFIX)
 AUTHORING_BIN ?= ./$(APP)
 E2E_BIN ?= ./$(APP)
 E2E_TMP ?= /tmp
+E2E_ARTIFACT_DIR ?= $(ARTIFACT_DIR)/e2e
 
 NATIVE_BIN := _build/prod/rel/$(NATIVE_RELEASE)/bin/$(APP)
 NATIVE_TARBALL := _build/prod/$(NATIVE_RELEASE)-$(VERSION).tar.gz
@@ -73,12 +76,15 @@ help:
 	@printf "%s\n" ""
 	@printf "%s\n" "Local development:"
 	@printf "%s\n" "  make setup             Fetch dependencies"
+	@printf "%s\n" "  make doctor            Check local toolchain prerequisites"
+	@printf "%s\n" "  make doctor-live       Check opt-in live E2E prerequisites"
 	@printf "%s\n" "  make check             Format check, compile, unit tests"
 	@printf "%s\n" "  make typecheck         Run Dialyzer via Dialyxir"
 	@printf "%s\n" "  make test-local        Run default local test suite"
 	@printf "%s\n" "  make coverage          Run default offline tests with 70% coverage gate"
 	@printf "%s\n" "  make coverage-export   Generate coverage report and summary artifact"
 	@printf "%s\n" "  make e2e               Build escript and run offline CLI E2E"
+	@printf "%s\n" "  make e2e-artifacts     Run offline E2E and keep artifacts under $(E2E_ARTIFACT_DIR)"
 	@printf "%s\n" "  make e2e-cli           Run CLI E2E with E2E_BIN=$(E2E_BIN)"
 	@printf "%s\n" "  make e2e-package       Run package-level E2E against escript/native/Burrito"
 	@printf "%s\n" "  make e2e-windows       Run Windows CLI contract E2E with PowerShell"
@@ -100,6 +106,7 @@ help:
 	@printf "%s\n" "                         Run opt-in live LLM provider smoke tests"
 	@printf "%s\n" "  make e2e-sqlcipher-live"
 	@printf "%s\n" "                         Run opt-in SQLCipher live store tests"
+	@printf "%s\n" "  make e2e-live-local    Run enabled live suites; set K3D_LIVE/PROVIDER_LIVE/SQLCIPHER_LIVE/KEYCHAIN_LIVE"
 	@printf "%s\n" ""
 	@printf "%s\n" "Builds:"
 	@printf "%s\n" "  make build             Build escript and native Mix release"
@@ -127,6 +134,13 @@ setup: deps
 
 deps:
 	mix deps.get
+
+.PHONY: doctor doctor-live
+doctor:
+	elixir scripts/doctor.exs
+
+doctor-live:
+	TWELVGAIGE_DOCTOR_LIVE=1 K3D_LIVE="$(K3D_LIVE)" PROVIDER_LIVE="$(PROVIDER_LIVE)" PROVIDER_LIVE_PROVIDERS="$(PROVIDER_LIVE_PROVIDERS)" SQLCIPHER_PREFIX="$(SQLCIPHER_PREFIX)" KEYCHAIN_LIVE="$(KEYCHAIN_LIVE)" elixir scripts/doctor.exs --live
 
 .PHONY: compile
 compile:
@@ -195,6 +209,11 @@ unit-focus:
 
 .PHONY: e2e
 e2e: e2e-cli e2e-daemon e2e-safety e2e-authoring e2e-store
+
+.PHONY: e2e-artifacts
+e2e-artifacts:
+	mkdir -p "$(E2E_ARTIFACT_DIR)"
+	TWELVGAIGE_E2E_KEEP=1 $(MAKE) e2e E2E_TMP="$(E2E_ARTIFACT_DIR)"
 
 .PHONY: e2e-local-mac
 e2e-local-mac: e2e
@@ -306,7 +325,9 @@ sqlcipher-spike-system: sqlcipher-compile
 
 .PHONY: sqlcipher-store-system
 sqlcipher-store-system: sqlcipher-compile
-	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' TWELVGAIGE_SQLCIPHER_LIVE=1 TWELVGAIGE_SQLCIPHER_LIVE_KEY='$(SQLCIPHER_KEY)' MIX_ENV=test mix test --include persistence --include sqlcipher_live test/twelvgaige/store/sqlite_encrypted_live_test.exs
+	mkdir -p "$(LIVE_ARTIFACT_DIR)"
+	DYLD_FALLBACK_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(DYLD_FALLBACK_LIBRARY_PATH)' LD_LIBRARY_PATH='$(SQLCIPHER_PREFIX)/lib:$(LD_LIBRARY_PATH)' TWELVGAIGE_SQLCIPHER_LIVE=1 TWELVGAIGE_SQLCIPHER_LIVE_KEY='$(SQLCIPHER_KEY)' MIX_ENV=test mix test --include persistence --include sqlcipher_live test/twelvgaige/store/sqlite_encrypted_live_test.exs > "$(LIVE_ARTIFACT_DIR)/sqlcipher-live.log" 2>&1 || { cat "$(LIVE_ARTIFACT_DIR)/sqlcipher-live.log"; exit 1; }
+	cat "$(LIVE_ARTIFACT_DIR)/sqlcipher-live.log"
 
 .PHONY: sqlcipher-escript-smoke-system
 sqlcipher-escript-smoke-system: sqlcipher-compile escript
@@ -334,20 +355,47 @@ sqlcipher-smoke-commands: require-sqlcipher
 keychain-smoke-macos: deps
 	@test "$$(uname -s)" = "Darwin" || { printf "%s\n" "keychain-smoke-macos requires macOS." >&2; exit 1; }
 	@test "$(KEYCHAIN_LIVE)" = "1" || { printf "%s\n" "set KEYCHAIN_LIVE=1 to create and delete a temporary Twelvgaige Keychain item." >&2; exit 1; }
-	TWELVGAIGE_KEYCHAIN_LIVE=1 MIX_ENV=test mix test --include keychain_live test/twelvgaige/crypto/macos_keychain_live_test.exs
+	mkdir -p "$(LIVE_ARTIFACT_DIR)"
+	TWELVGAIGE_KEYCHAIN_LIVE=1 MIX_ENV=test mix test --include keychain_live test/twelvgaige/crypto/macos_keychain_live_test.exs > "$(LIVE_ARTIFACT_DIR)/keychain-live.log" 2>&1 || { cat "$(LIVE_ARTIFACT_DIR)/keychain-live.log"; exit 1; }
+	cat "$(LIVE_ARTIFACT_DIR)/keychain-live.log"
 
 .PHONY: e2e-k3d
 e2e-k3d: deps
 	@test "$(K3D_LIVE)" = "1" || { printf "%s\n" "set K3D_LIVE=1 to create and delete a disposable k3d cluster." >&2; exit 1; }
-	K3D_CLUSTER_PREFIX=$(K3D_CLUSTER_PREFIX) K3D_NAMESPACE=$(K3D_NAMESPACE) test/e2e/k3d_live.sh
+	TWELVGAIGE_LIVE_ARTIFACT_DIR="$(LIVE_ARTIFACT_DIR)/k3d" K3D_CLUSTER_PREFIX=$(K3D_CLUSTER_PREFIX) K3D_NAMESPACE=$(K3D_NAMESPACE) test/e2e/k3d_live.sh
 
 .PHONY: e2e-provider-live
 e2e-provider-live: deps
 	@test "$(PROVIDER_LIVE)" = "1" || { printf "%s\n" "set PROVIDER_LIVE=1 to call live LLM provider APIs." >&2; exit 1; }
-	TWELVGAIGE_PROVIDER_LIVE=1 TWELVGAIGE_PROVIDER_LIVE_PROVIDERS='$(PROVIDER_LIVE_PROVIDERS)' MIX_ENV=test mix test --include provider_live test/twelvgaige/llm/provider_live_test.exs
+	mkdir -p "$(LIVE_ARTIFACT_DIR)"
+	TWELVGAIGE_PROVIDER_LIVE=1 TWELVGAIGE_PROVIDER_LIVE_PROVIDERS='$(PROVIDER_LIVE_PROVIDERS)' MIX_ENV=test mix test --include provider_live test/twelvgaige/llm/provider_live_test.exs > "$(LIVE_ARTIFACT_DIR)/provider-live.log" 2>&1 || { cat "$(LIVE_ARTIFACT_DIR)/provider-live.log"; exit 1; }
+	cat "$(LIVE_ARTIFACT_DIR)/provider-live.log"
 
 .PHONY: e2e-sqlcipher-live
 e2e-sqlcipher-live: sqlcipher-store-system
+
+.PHONY: e2e-live-local
+e2e-live-local: doctor-live
+	@ran=0; \
+	if [ "$(K3D_LIVE)" = "1" ]; then \
+		$(MAKE) e2e-k3d K3D_LIVE=1 LIVE_ARTIFACT_DIR="$(LIVE_ARTIFACT_DIR)"; \
+		ran=1; \
+	fi; \
+	if [ "$(PROVIDER_LIVE)" = "1" ]; then \
+		$(MAKE) e2e-provider-live PROVIDER_LIVE=1 PROVIDER_LIVE_PROVIDERS="$(PROVIDER_LIVE_PROVIDERS)" LIVE_ARTIFACT_DIR="$(LIVE_ARTIFACT_DIR)/providers"; \
+		ran=1; \
+	fi; \
+	if [ "$(SQLCIPHER_LIVE)" = "1" ]; then \
+		$(MAKE) e2e-sqlcipher-live SQLCIPHER_PREFIX="$(SQLCIPHER_PREFIX)" LIVE_ARTIFACT_DIR="$(LIVE_ARTIFACT_DIR)/sqlcipher"; \
+		ran=1; \
+	fi; \
+	if [ "$(KEYCHAIN_LIVE)" = "1" ]; then \
+		$(MAKE) keychain-smoke-macos KEYCHAIN_LIVE=1 LIVE_ARTIFACT_DIR="$(LIVE_ARTIFACT_DIR)/keychain"; \
+		ran=1; \
+	fi; \
+	if [ "$$ran" = "0" ]; then \
+		printf "%s\n" "no live suites enabled; set one of K3D_LIVE=1 PROVIDER_LIVE=1 SQLCIPHER_LIVE=1 KEYCHAIN_LIVE=1"; \
+	fi
 
 .PHONY: build
 build: escript release

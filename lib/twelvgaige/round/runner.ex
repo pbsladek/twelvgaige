@@ -21,6 +21,7 @@ defmodule Twelvgaige.Round.Runner do
   alias Twelvgaige.Shot.AttemptJournal
   alias Twelvgaige.Shot.Executor, as: ShotExecutor
   alias Twelvgaige.Shot.RetryPolicy
+  alias Twelvgaige.Tool.RuntimeConfig, as: ToolRuntimeConfig
 
   @spec run(Workflow.t(), map(), keyword()) :: {:ok, Snapshot.t()} | {:error, Error.t()}
   def run(%Workflow{} = workflow, input, opts \\ []) when is_map(input) do
@@ -880,6 +881,7 @@ defmodule Twelvgaige.Round.Runner do
     opts =
       profile
       |> RuntimeProfile.shot_opts(opts)
+      |> ToolRuntimeConfig.merge()
 
     case Keyword.get(opts, :attempt_responses) do
       responses when is_list(responses) ->

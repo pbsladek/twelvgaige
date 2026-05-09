@@ -110,6 +110,10 @@ Examples:
 - `http_get` and `http_post` require trusted `allowed_hosts` policy, validate
   schemes, deny URL userinfo, deny obvious private hosts by default, check
   resolved addresses, deny redirects after response, and bound response size.
+  CLI/daemon rounds can opt into local HTTP tool policy through
+  `TWELVGAIGE_HTTP_ALLOWED_HOSTS`, `TWELVGAIGE_HTTP_ALLOW_PRIVATE_HOSTS`, and
+  related runtime environment. That policy is process-owned and is not accepted
+  from model output.
 - Kubernetes tools build fixed `kubectl` argv rather than shell command strings.
 - Kubernetes write tools require `confirm=true` and deny cluster-scope writes.
 - `kubectl_exec` is irreversible, requires runtime opt-in, structured argv, and

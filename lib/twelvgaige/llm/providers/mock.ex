@@ -40,6 +40,92 @@ defmodule Twelvgaige.LLM.Providers.Mock do
         call_handler(handler, model, messages, opts)
 
       true ->
+        scripted_or_default(model, messages, opts)
+    end
+  end
+
+  def complete(_model, _messages, _opts) do
+    {:error, Error.new(:llm_error, :llm_bad_request, "mock provider received invalid input")}
+  end
+
+  defp scripted_response(opts) do
+    case System.get_env("TWELVGAIGE_MOCK_RESPONSES_FILE") do
+      value when is_binary(value) and value != "" ->
+        value
+        |> File.read()
+        |> decode_scripted_responses(value)
+        |> response_at(script_key(opts), Keyword.get(opts, :mock_iteration, 0), value)
+
+      _missing ->
+        :missing
+    end
+  end
+
+  defp decode_scripted_responses({:ok, contents}, _path) do
+    case Jason.decode(contents) do
+      {:ok, responses} -> responses
+      {:error, reason} -> {:error, {:invalid_json, Exception.message(reason)}}
+    end
+  end
+
+  defp decode_scripted_responses({:error, reason}, _path), do: {:error, {:read_failed, reason}}
+
+  defp response_at(%{"responses_by_shot" => responses_by_shot}, shot_id, iteration, path)
+       when is_map(responses_by_shot) do
+    responses_by_shot
+    |> Map.get(shot_id)
+    |> response_at(shot_id, iteration, path)
+  end
+
+  defp response_at(%{responses_by_shot: responses_by_shot}, shot_id, iteration, path)
+       when is_map(responses_by_shot) do
+    responses_by_shot
+    |> Map.get(shot_id)
+    |> response_at(shot_id, iteration, path)
+  end
+
+  defp response_at(%{"responses" => responses}, shot_id, iteration, path),
+    do: response_at(responses, shot_id, iteration, path)
+
+  defp response_at(%{responses: responses}, shot_id, iteration, path),
+    do: response_at(responses, shot_id, iteration, path)
+
+  defp response_at(responses, _shot_id, iteration, _path)
+       when is_list(responses) and is_integer(iteration) do
+    case Enum.at(responses, iteration) do
+      nil -> {:error, {:missing_iteration, iteration}}
+      response -> {:ok, response}
+    end
+  end
+
+  defp response_at(nil, shot_id, _iteration, _path), do: {:error, {:missing_shot, shot_id}}
+  defp response_at({:error, reason}, _shot_id, _iteration, _path), do: {:error, reason}
+
+  defp response_at(_responses, _shot_id, _iteration, _path),
+    do: {:error, :invalid_response_script}
+
+  defp script_key(opts) do
+    opts
+    |> Keyword.get(:limiter_context, %{})
+    |> case do
+      %{shot_id: shot_id} when is_binary(shot_id) -> shot_id
+      %{"shot_id" => shot_id} when is_binary(shot_id) -> shot_id
+      _context -> "default"
+    end
+  end
+
+  defp scripted_or_default(model, messages, opts) do
+    case scripted_response(opts) do
+      {:ok, response} ->
+        {:ok, normalize_response(model, response)}
+
+      {:error, reason} ->
+        {:error,
+         Error.new(:llm_error, :llm_bad_request, "mock provider response script is invalid",
+           details: %{reason: inspect(reason)}
+         )}
+
+      :missing ->
         {:ok,
          %Response{
            provider: provider_id(),
@@ -51,10 +137,6 @@ defmodule Twelvgaige.LLM.Providers.Mock do
            raw_redacted: %{provider: provider_id()}
          }}
     end
-  end
-
-  def complete(_model, _messages, _opts) do
-    {:error, Error.new(:llm_error, :llm_bad_request, "mock provider received invalid input")}
   end
 
   defp call_handler(handler, model, messages, opts) when is_function(handler, 3) do

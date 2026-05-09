@@ -22,155 +22,12 @@ defmodule Twelvgaige.Store.SQLite do
   alias Twelvgaige.Store.SQLite.Migrations.RoundQueryColumns
   alias Twelvgaige.Store.SQLite.Migrations.ShotRuns
   alias Twelvgaige.Store.SQLite.Repo
+  alias Twelvgaige.Store.SQLite.TermCodec
 
   @terminal_statuses MapSet.new([:complete, :failed, :halted, :cancelled])
   @max_event_wait_ms 30_000
   @retention_batch_size 32
   @default_sqlcipher_kdf_iter 256_000
-  @external_term_modules [
-    Calendar.ISO,
-    DateTime,
-    MapSet,
-    Twelvgaige.Audit.Event,
-    Twelvgaige.Error,
-    Twelvgaige.LLM.Response,
-    Twelvgaige.Loadout,
-    Twelvgaige.Pattern.Compiled,
-    Twelvgaige.Round.Event,
-    Twelvgaige.Round.Manifest,
-    Twelvgaige.Round.ShotRun,
-    Twelvgaige.Round.Snapshot,
-    Twelvgaige.Shell.Agent,
-    Twelvgaige.Shell.Agent.Choke,
-    Twelvgaige.Shell.Agent.Memory,
-    Twelvgaige.Shell.Agent.Tools,
-    Twelvgaige.Shell.Workflow,
-    Twelvgaige.Shell.Workflow.Choke,
-    Twelvgaige.Shell.Workflow.Policy,
-    Twelvgaige.Shell.Workflow.Retry,
-    Twelvgaige.Shell.Workflow.Shot,
-    Twelvgaige.Shot.Attempt,
-    Twelvgaige.Shot.AttemptJournal,
-    Twelvgaige.Shot.State,
-    Twelvgaige.Tool.Call,
-    Twelvgaige.Tool.IntentJournal
-  ]
-  @external_term_atoms [
-    :actor,
-    :agent,
-    :attempt,
-    :audit,
-    :awaiting_reconciliation,
-    :awaiting_safety,
-    :backoff,
-    :base_delay_ms,
-    :block_round,
-    :calendar,
-    :cancelled,
-    :cancel_round,
-    :choke,
-    :complete,
-    :completed,
-    :completed_at,
-    :condition,
-    :created_at,
-    :day,
-    :dependency,
-    :depends_on,
-    :description,
-    :effective_resource_profile,
-    :error,
-    :estimated,
-    :event_type,
-    :fail_round,
-    false,
-    :fixed,
-    :halt_round,
-    :history,
-    :hour,
-    :id,
-    :idempotency_metadata,
-    :input,
-    :input_schema,
-    :input_tokens,
-    :kind,
-    :failed,
-    :halted,
-    :laptop,
-    :max_attempts,
-    :max_delay_ms,
-    :max_iterations,
-    :microsecond,
-    :minute,
-    :month,
-    :name,
-    :next_retry_at,
-    :occurred_at,
-    :ok,
-    :on_cancel,
-    :on_condition_error,
-    :on_safety_reject,
-    :on_shot_failure,
-    :on_store_error,
-    :output,
-    :output_schema,
-    :output_tokens,
-    :path,
-    :payload,
-    :pending,
-    :policy,
-    :prompt,
-    :queue_timeout_ms,
-    :queued,
-    :read_only,
-    :requires_tool_intents,
-    :resource_profile,
-    :result,
-    :retry,
-    :retryable_errors,
-    :round_completed,
-    :round_id,
-    :round_state_transition,
-    :round_version,
-    :retrying,
-    :running,
-    :safety_level,
-    :safety_scope,
-    :schema_version,
-    :second,
-    :seq,
-    :shell_id,
-    :shell_version,
-    :shot_attempt_finished,
-    :shot_attempt_started,
-    :shot_id,
-    :shots,
-    :skipped,
-    :slug,
-    :source,
-    :started_at,
-    :status,
-    :std_offset,
-    :store_status,
-    :summary,
-    :time_zone,
-    :timeout_ms,
-    :tool_call_count,
-    :token_budget,
-    :tool_safety,
-    :tools,
-    :total_tokens,
-    :transition_id,
-    true,
-    :type,
-    :usage,
-    :utc_offset,
-    :version,
-    :workflow,
-    :workflow_hash,
-    :year,
-    :zone_abbr
-  ]
 
   defstruct [
     :path,
@@ -233,9 +90,7 @@ defmodule Twelvgaige.Store.SQLite do
   def terminate(_reason, _state), do: :ok
 
   defp preload_external_term_atoms do
-    Enum.each(@external_term_modules, &Code.ensure_loaded/1)
-    Enum.each(@external_term_atoms, &Atom.to_string/1)
-    :ok
+    TermCodec.preload()
   end
 
   @impl Twelvgaige.Store
@@ -1724,12 +1579,10 @@ defmodule Twelvgaige.Store.SQLite do
     error -> {:error, error}
   end
 
-  defp encode(term), do: :erlang.term_to_binary(term)
-  defp decode(binary), do: :erlang.binary_to_term(binary, [:safe])
-  defp encode_nullable(nil), do: nil
-  defp encode_nullable(term), do: encode(term)
-  defp decode_nullable(nil), do: nil
-  defp decode_nullable(binary), do: decode(binary)
+  defp encode(term), do: TermCodec.encode(term)
+  defp decode(binary), do: TermCodec.decode(binary)
+  defp encode_nullable(term), do: TermCodec.encode_nullable(term)
+  defp decode_nullable(binary), do: TermCodec.decode_nullable(binary)
 
   defp attempt_key(attempt) do
     {fetch_id!(attempt, :round), value(attempt, :shot_id), value(attempt, :attempt)}
