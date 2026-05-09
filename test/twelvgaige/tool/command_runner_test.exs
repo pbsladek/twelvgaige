@@ -127,5 +127,9 @@ defmodule Twelvgaige.Tool.CommandRunnerTest do
     "IO.write(System.get_env(#{inspect(@canary_env)}) || \"missing\")"
   end
 
-  defp normalize_tmp_path(path), do: String.replace_prefix(path, "/private/var/", "/var/")
+  defp normalize_tmp_path(path) do
+    path
+    |> String.replace_prefix("/private/var/", "/var/")
+    |> String.replace_prefix("/private/tmp/", "/tmp/")
+  end
 end

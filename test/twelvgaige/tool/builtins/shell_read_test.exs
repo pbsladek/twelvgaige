@@ -34,6 +34,20 @@ defmodule Twelvgaige.Tool.Builtins.ShellReadTest do
     refute error.retryable
   end
 
+  test "rejects explicitly invalid max_bytes instead of falling back to defaults" do
+    root = tmp_dir!()
+    File.write!(Path.join(root, "report.txt"), "abcdef")
+
+    for max_bytes <- [0, false] do
+      assert {:error, error} =
+               ShellRead.execute(%{"path" => "report.txt", "max_bytes" => max_bytes},
+                 root: root
+               )
+
+      assert error.reason == :tool_input_invalid
+    end
+  end
+
   defp tmp_dir! do
     path =
       Path.join(System.tmp_dir!(), "twelvgaige-shell-read-#{System.unique_integer([:positive])}")

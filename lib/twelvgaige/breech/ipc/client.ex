@@ -11,6 +11,8 @@ defmodule Twelvgaige.Breech.IPC.Client do
 
   @timeout_ms 30_000
   @windows_pipe_prefix "\\\\.\\pipe\\"
+  @classes_by_string Map.new(Error.classes(), &{Atom.to_string(&1), &1})
+  @reasons_by_string Map.new(Error.reasons(), &{Atom.to_string(&1), &1})
 
   @type address ::
           {:tcp, :inet.ip_address(), :inet.port_number()}
@@ -283,22 +285,26 @@ defmodule Twelvgaige.Breech.IPC.Client do
   defp decode_error(%{"reason" => "not_found"}), do: :not_found
 
   defp decode_error(%{"reason" => reason}) when is_binary(reason) do
-    cond do
-      reason in Enum.map(Error.reasons(), &Atom.to_string/1) -> String.to_existing_atom(reason)
-      true -> :unknown
+    case known_reason(reason) do
+      {:ok, reason} -> reason
+      :error -> :unknown
     end
   end
 
   defp decode_error(_error), do: :unknown
 
   defp known_class(class) when is_binary(class) do
-    class = String.to_atom(class)
-    if Error.valid_class?(class), do: {:ok, class}, else: :error
+    case Map.fetch(@classes_by_string, class) do
+      {:ok, class} -> {:ok, class}
+      :error -> :error
+    end
   end
 
   defp known_reason(reason) when is_binary(reason) do
-    reason = String.to_atom(reason)
-    if Error.valid_reason?(reason), do: {:ok, reason}, else: :error
+    case Map.fetch(@reasons_by_string, reason) do
+      {:ok, reason} -> {:ok, reason}
+      :error -> :error
+    end
   end
 
   defp run_opts(opts) do

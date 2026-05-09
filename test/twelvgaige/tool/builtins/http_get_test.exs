@@ -42,6 +42,64 @@ defmodule Twelvgaige.Tool.Builtins.HTTPGetTest do
     assert private_ip.reason == :network_policy_denied
   end
 
+  test "denies non-public literal address ranges before transport" do
+    transport = fn _url, _opts -> flunk("transport should not be called") end
+
+    cases = [
+      {"http://localhost.", "localhost"},
+      {"http://100.64.0.1", "100.64.0.1"},
+      {"http://192.0.0.1", "192.0.0.1"},
+      {"http://192.0.2.1", "192.0.2.1"},
+      {"http://192.88.99.1", "192.88.99.1"},
+      {"http://198.18.0.1", "198.18.0.1"},
+      {"http://198.51.100.1", "198.51.100.1"},
+      {"http://203.0.113.1", "203.0.113.1"},
+      {"http://224.0.0.1", "224.0.0.1"},
+      {"http://[::ffff:127.0.0.1]", "::ffff:127.0.0.1"},
+      {"http://[2001:db8::1]", "2001:db8::1"},
+      {"http://[fec0::1]", "fec0::1"}
+    ]
+
+    for {url, allowed_host} <- cases do
+      assert {:error, error} =
+               HTTPGet.execute(%{"url" => url},
+                 allowed_hosts: [allowed_host],
+                 transport: transport
+               )
+
+      assert error.reason == :network_policy_denied
+    end
+  end
+
+  test "validates malformed allowed host policies without raising" do
+    assert {:error, error} =
+             HTTPGet.execute(%{"url" => "https://example.com"},
+               allowed_hosts: [:example],
+               transport: fn _url, _opts -> flunk("transport should not be called") end
+             )
+
+    assert error.reason == :network_policy_denied
+  end
+
+  test "wildcard host policies require a subdomain match" do
+    transport = fn _url, _opts -> {:ok, %{status: 200, headers: [], body: "ok"}} end
+
+    assert {:error, apex_error} =
+             HTTPGet.execute(%{"url" => "https://example.com"},
+               allowed_hosts: ["*.example.com"],
+               transport: transport
+             )
+
+    assert apex_error.reason == :network_policy_denied
+
+    assert {:ok, %{"status" => 200}} =
+             HTTPGet.execute(%{"url" => "https://api.example.com"},
+               allowed_hosts: ["*.example.com"],
+               dns_resolver: fn "api.example.com" -> {:ok, [{93, 184, 216, 34}]} end,
+               transport: transport
+             )
+  end
+
   test "requires explicit allowed host policy" do
     assert {:error, error} =
              HTTPGet.execute(%{"url" => "https://example.com"},
@@ -126,5 +184,20 @@ defmodule Twelvgaige.Tool.Builtins.HTTPGetTest do
              )
 
     assert error.reason == :http_response_too_large
+  end
+
+  test "rejects explicitly invalid max_bytes instead of falling back to defaults" do
+    transport = fn _url, _opts -> flunk("transport should not be called") end
+
+    for max_bytes <- [0, false] do
+      assert {:error, error} =
+               HTTPGet.execute(%{"url" => "https://example.com", "max_bytes" => max_bytes},
+                 allowed_hosts: ["example.com"],
+                 dns_resolver: fn "example.com" -> {:ok, [{93, 184, 216, 34}]} end,
+                 transport: transport
+               )
+
+      assert error.reason == :tool_input_invalid
+    end
   end
 end

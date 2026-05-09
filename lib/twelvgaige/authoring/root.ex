@@ -37,13 +37,19 @@ defmodule Twelvgaige.Authoring.Root do
     expanded_root = Path.expand(root)
     relative = Path.relative_to(expanded_path, expanded_root)
 
-    if expanded_path == expanded_root or within_relative_path?(relative) do
-      :ok
-    else
-      {:error,
-       Error.new(:input_error, :invalid_shell, "path is outside the resolved traphouse root",
-         details: %{path: expanded_path, root: expanded_root, root_source: Atom.to_string(source)}
-       )}
+    cond do
+      expanded_path == expanded_root or within_relative_path?(relative) ->
+        ensure_no_symlink_components(expanded_path, expanded_root, source)
+
+      true ->
+        {:error,
+         Error.new(:input_error, :invalid_shell, "path is outside the resolved traphouse root",
+           details: %{
+             path: expanded_path,
+             root: expanded_root,
+             root_source: Atom.to_string(source)
+           }
+         )}
     end
   end
 
@@ -97,5 +103,50 @@ defmodule Twelvgaige.Authoring.Root do
     relative != ".." and
       not String.starts_with?(relative, "../") and
       Path.type(relative) == :relative
+  end
+
+  defp ensure_no_symlink_components(expanded_path, expanded_root, source) do
+    relative = Path.relative_to(expanded_path, expanded_root)
+
+    relative
+    |> Path.split()
+    |> Enum.reduce_while({:ok, expanded_root}, fn segment, {:ok, acc} ->
+      current = Path.join(acc, segment)
+
+      case File.lstat(current) do
+        {:ok, %{type: :symlink}} ->
+          {:halt, {:error, symlink_error(current, expanded_root, source)}}
+
+        {:ok, _stat} ->
+          {:cont, {:ok, current}}
+
+        {:error, :enoent} ->
+          {:halt, {:ok, current}}
+
+        {:error, reason} ->
+          {:halt, {:error, inspect_error(current, expanded_root, source, reason)}}
+      end
+    end)
+    |> case do
+      {:ok, _path} -> :ok
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp symlink_error(path, root, source) do
+    Error.new(:input_error, :invalid_shell, "path contains a symlink component",
+      details: %{path: path, root: root, root_source: Atom.to_string(source)}
+    )
+  end
+
+  defp inspect_error(path, root, source, reason) do
+    Error.new(:input_error, :invalid_shell, "could not inspect path within traphouse root",
+      details: %{
+        path: path,
+        root: root,
+        root_source: Atom.to_string(source),
+        reason: inspect(reason)
+      }
+    )
   end
 end

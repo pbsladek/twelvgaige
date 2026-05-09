@@ -141,7 +141,7 @@ defmodule Twelvgaige.Shell.Lifecycle do
        %{
          path: path,
          action: action,
-         lifecycle: String.to_atom(lifecycle),
+         lifecycle: lifecycle_atom(action),
          actor: actor,
          scope: Keyword.get(opts, :scope),
          reason: nil,
@@ -154,6 +154,9 @@ defmodule Twelvgaige.Shell.Lifecycle do
        }}
     end
   end
+
+  defp lifecycle_atom(:review), do: :reviewed
+  defp lifecycle_atom(:approve), do: :approved
 
   defp update_terminal_lifecycle(
          path,

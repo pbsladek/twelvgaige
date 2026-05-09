@@ -32,4 +32,29 @@ defmodule Twelvgaige.Breech.IPC.ClientTest do
     assert Client.parse_address("npipe:////./pipe") == {:error, :invalid_ipc_address}
     assert Client.parse_address("\\\\.\\pipe\\") == {:error, :invalid_ipc_address}
   end
+
+  test "does not create atoms while decoding unknown remote errors" do
+    class = "class_#{System.unique_integer([:positive, :monotonic])}"
+    reason = "reason_#{System.unique_integer([:positive, :monotonic])}"
+    assert_raise ArgumentError, fn -> String.to_existing_atom(class) end
+    assert_raise ArgumentError, fn -> String.to_existing_atom(reason) end
+
+    transport = fn _path, _payload, _opts ->
+      {:ok,
+       Twelvgaige.Breech.IPC.Protocol.encode(%{
+         "ok" => false,
+         "error" => %{
+           "class" => class,
+           "reason" => reason,
+           "message" => "malformed remote error"
+         }
+       })}
+    end
+
+    assert Client.status({:npipe, ~S(\\.\pipe\twelvgaige-test)}, npipe_transport: transport) ==
+             {:error, reason}
+
+    assert_raise ArgumentError, fn -> String.to_existing_atom(class) end
+    assert_raise ArgumentError, fn -> String.to_existing_atom(reason) end
+  end
 end

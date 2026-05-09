@@ -382,10 +382,10 @@ defmodule Twelvgaige.ResourceLimiter do
 
   defp permit_bytes(:retained_bytes, context, opts) do
     bytes =
-      Map.get(context, :bytes) ||
-        Map.get(context, "bytes") ||
-        Keyword.get(opts, :bytes) ||
-        0
+      case value(context, :bytes, :missing) do
+        :missing -> Keyword.get(opts, :bytes, 0)
+        value -> value
+      end
 
     if is_integer(bytes) and bytes >= 0 do
       {:ok, bytes}
@@ -396,9 +396,10 @@ defmodule Twelvgaige.ResourceLimiter do
 
   defp permit_bytes(_resource_kind, context, opts) do
     bytes =
-      Map.get(context, :bytes) ||
-        Map.get(context, "bytes") ||
-        Keyword.get(opts, :bytes)
+      case value(context, :bytes, :missing) do
+        :missing -> Keyword.get(opts, :bytes)
+        value -> value
+      end
 
     if is_nil(bytes) or (is_integer(bytes) and bytes >= 0) do
       {:ok, bytes}
@@ -409,9 +410,10 @@ defmodule Twelvgaige.ResourceLimiter do
 
   defp queue_timeout_ms(context, opts) do
     timeout_ms =
-      Map.get(context, :queue_timeout_ms) ||
-        Map.get(context, "queue_timeout_ms") ||
-        Keyword.get(opts, :queue_timeout_ms)
+      case value(context, :queue_timeout_ms, :missing) do
+        :missing -> Keyword.get(opts, :queue_timeout_ms)
+        value -> value
+      end
 
     cond do
       is_nil(timeout_ms) -> {:ok, nil}
@@ -867,7 +869,11 @@ defmodule Twelvgaige.ResourceLimiter do
 
   defp round_id(context), do: value(context, :round_id)
 
-  defp value(context, key) do
-    Map.get(context, key) || Map.get(context, Atom.to_string(key))
+  defp value(context, key, default \\ nil) do
+    cond do
+      Map.has_key?(context, key) -> Map.fetch!(context, key)
+      Map.has_key?(context, Atom.to_string(key)) -> Map.fetch!(context, Atom.to_string(key))
+      true -> default
+    end
   end
 end

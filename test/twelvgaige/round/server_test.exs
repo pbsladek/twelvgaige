@@ -689,7 +689,7 @@ defmodule Twelvgaige.Round.ServerTest do
     parent = self()
     counter = :counters.new(1, [])
 
-    starter = fn fun ->
+    starter = fn _fun ->
       :counters.add(counter, 1, 1)
       attempt = :counters.get(counter, 1)
       server = self()
@@ -720,7 +720,16 @@ defmodule Twelvgaige.Round.ServerTest do
 
         {:ok, %{pid: pid, result_ref: result_ref, monitor_ref: monitor_ref}}
       else
-        pid = spawn(fn -> send(server, {result_ref, fun.()}) end)
+        pid =
+          spawn(fn ->
+            send(
+              server,
+              {result_ref,
+               {:shot_result, "only", 2,
+                {:ok, %{content: "fresh", output: "fresh", tool_calls: [], usage: %{}}}}}
+            )
+          end)
+
         monitor_ref = Process.monitor(pid)
         {:ok, %{pid: pid, result_ref: result_ref, monitor_ref: monitor_ref}}
       end

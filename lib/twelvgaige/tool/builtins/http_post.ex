@@ -144,13 +144,15 @@ defmodule Twelvgaige.Tool.Builtins.HTTPPost do
   end
 
   defp ensure_allowed_host(host, allowed_hosts) when is_list(allowed_hosts) do
-    if Enum.any?(allowed_hosts, &host_allowed?(String.downcase(host), String.downcase(&1))) do
-      :ok
-    else
-      tool_error(:network_policy_denied, "host is not in the allowed_hosts policy",
-        host: host,
-        allowed_hosts: allowed_hosts
-      )
+    with {:ok, allowed_hosts} <- normalize_allowed_hosts(allowed_hosts) do
+      if Enum.any?(allowed_hosts, &host_allowed?(normalize_host(host), &1)) do
+        :ok
+      else
+        tool_error(:network_policy_denied, "host is not in the allowed_hosts policy",
+          host: host,
+          allowed_hosts: allowed_hosts
+        )
+      end
     end
   end
 
@@ -158,8 +160,17 @@ defmodule Twelvgaige.Tool.Builtins.HTTPPost do
     tool_error(:network_policy_denied, "invalid allowed_hosts policy", host: host)
   end
 
-  defp host_allowed?(host, "*." <> suffix),
-    do: host == suffix or String.ends_with?(host, "." <> suffix)
+  defp normalize_allowed_hosts(allowed_hosts) do
+    if Enum.all?(allowed_hosts, &(is_binary(&1) and String.trim(&1) != "")) do
+      {:ok, Enum.map(allowed_hosts, &normalize_host/1)}
+    else
+      tool_error(:network_policy_denied, "invalid allowed_hosts policy")
+    end
+  end
+
+  defp normalize_host(host), do: host |> String.downcase() |> String.trim_trailing(".")
+
+  defp host_allowed?(host, "*." <> suffix), do: String.ends_with?(host, "." <> suffix)
 
   defp host_allowed?(host, allowed), do: host == allowed
 
@@ -181,7 +192,7 @@ defmodule Twelvgaige.Tool.Builtins.HTTPPost do
   end
 
   defp private_host_name?(host) do
-    host = String.downcase(host)
+    host = normalize_host(host)
     host in ["localhost", "localhost.localdomain"] or String.ends_with?(host, ".local")
   end
 
@@ -276,14 +287,23 @@ defmodule Twelvgaige.Tool.Builtins.HTTPPost do
   defp private_ip?({169, 254, _, _}), do: true
   defp private_ip?({172, second, _, _}) when second in 16..31, do: true
   defp private_ip?({192, 168, _, _}), do: true
+  defp private_ip?({100, second, _, _}) when second in 64..127, do: true
+  defp private_ip?({192, 0, 0, _}), do: true
+  defp private_ip?({192, 0, 2, _}), do: true
+  defp private_ip?({192, 88, 99, _}), do: true
+  defp private_ip?({198, second, _, _}) when second in 18..19, do: true
+  defp private_ip?({198, 51, 100, _}), do: true
+  defp private_ip?({203, 0, 113, _}), do: true
   defp private_ip?({0, _, _, _}), do: true
   defp private_ip?({255, 255, 255, 255}), do: true
+  defp private_ip?({first, _, _, _}) when first >= 224, do: true
 
   defp private_ip?({a, b, c, d, e, f, g, h}) do
     ip = {a, b, c, d, e, f, g, h}
 
     ipv6_loopback?(ip) or ipv6_unspecified?(ip) or ipv6_link_local?(a) or
-      ipv6_unique_local?(a) or ipv6_multicast?(a)
+      ipv6_unique_local?(a) or ipv6_multicast?(a) or ipv6_documentation?(a, b) or
+      ipv6_site_local?(a) or ipv6_embeds_private_ipv4?(ip)
   end
 
   defp private_ip?(_ip), do: false
@@ -297,6 +317,20 @@ defmodule Twelvgaige.Tool.Builtins.HTTPPost do
   defp ipv6_link_local?(first), do: (first &&& 0xFFC0) == 0xFE80
   defp ipv6_unique_local?(first), do: (first &&& 0xFE00) == 0xFC00
   defp ipv6_multicast?(first), do: (first &&& 0xFF00) == 0xFF00
+  defp ipv6_documentation?(first, second), do: first == 0x2001 and second == 0x0DB8
+  defp ipv6_site_local?(first), do: (first &&& 0xFFC0) == 0xFEC0
+
+  defp ipv6_embeds_private_ipv4?({0, 0, 0, 0, 0, 0, high, low}),
+    do: private_ip?(ipv4_from_words(high, low))
+
+  defp ipv6_embeds_private_ipv4?({0, 0, 0, 0, 0, 0xFFFF, high, low}),
+    do: private_ip?(ipv4_from_words(high, low))
+
+  defp ipv6_embeds_private_ipv4?(_ip), do: false
+
+  defp ipv4_from_words(high, low) do
+    {high >>> 8, high &&& 0xFF, low >>> 8, low &&& 0xFF}
+  end
 
   defp format_ip(address) do
     address

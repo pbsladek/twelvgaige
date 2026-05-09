@@ -251,6 +251,21 @@ defmodule Twelvgaige.ResourceLimiterTest do
              queue?: true,
              queue_timeout_ms: -1
            ) == {:error, :invalid_queue_timeout}
+
+    assert ResourceLimiter.acquire(:llm_call, %{"queue_timeout_ms" => false},
+             server: limiter,
+             queue?: true
+           ) == {:error, :invalid_queue_timeout}
+  end
+
+  test "invalid explicit byte counts are rejected before permits are granted" do
+    limiter = start_limiter(limits: %{llm_call: 1, retained_bytes: 10})
+
+    assert ResourceLimiter.acquire(:retained_bytes, %{"bytes" => false}, server: limiter) ==
+             {:error, :invalid_bytes}
+
+    assert ResourceLimiter.acquire(:llm_call, %{"bytes" => false}, server: limiter) ==
+             {:error, :invalid_bytes}
   end
 
   test "owner process down removes queued waiters" do

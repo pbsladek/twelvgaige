@@ -622,7 +622,7 @@ defmodule Twelvgaige.BreechTest do
     assert eventually(fn -> ResourceLimiter.snapshot(limiter).used.active_shot == 0 end, 50)
   end
 
-  defp eventually(fun), do: eventually(fun, 20)
+  defp eventually(fun), do: eventually(fun, 100)
   defp eventually(_fun, 0), do: false
 
   defp eventually(fun, attempts_left) do

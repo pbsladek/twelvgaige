@@ -25,6 +25,21 @@ defmodule Twelvgaige.Authoring.RootTest do
     assert error.message =~ "outside the resolved traphouse root"
   end
 
+  test "rejects symlink paths inside a resolved root" do
+    root = tmp_dir!()
+    outside = Path.join(tmp_dir!(), "outside.yaml")
+    link = Path.join(root, "workflows/linked.yaml")
+
+    File.mkdir_p!(Path.dirname(link))
+    File.write!(outside, "kind: workflow\n")
+    File.ln_s!(outside, link)
+
+    assert {:ok, resolution} = Root.resolve(root: root)
+    assert {:error, error} = Root.ensure_within_root(link, resolution)
+    assert error.reason == :invalid_shell
+    assert error.message =~ "symlink"
+  end
+
   test "uses nearest cwd traphouse when no explicit root is supplied" do
     original = File.cwd!()
     workspace = tmp_dir!()

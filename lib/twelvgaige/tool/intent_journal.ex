@@ -144,14 +144,15 @@ defmodule Twelvgaige.Tool.IntentJournal do
   defp audit_projection(_value, _keys), do: nil
 
   defp fetch_key(map, key) do
-    cond do
-      Map.has_key?(map, key) -> {:ok, Map.fetch!(map, key)}
-      Map.has_key?(map, String.to_atom(key)) -> {:ok, Map.fetch!(map, String.to_atom(key))}
-      true -> :error
+    case Enum.find(map, fn {map_key, _value} -> key_string(map_key) == key end) do
+      {_map_key, value} -> {:ok, value}
+      nil -> :error
     end
-  rescue
-    ArgumentError -> :error
   end
+
+  defp key_string(key) when is_binary(key), do: key
+  defp key_string(key) when is_atom(key), do: Atom.to_string(key)
+  defp key_string(key), do: inspect(key)
 
   defp empty_to_nil(map) when map == %{}, do: nil
   defp empty_to_nil(map), do: map

@@ -64,7 +64,7 @@ defmodule Twelvgaige.Tool.Builtins.ShellRead do
   end
 
   defp fetch_path(input) do
-    case Map.get(input, "path") || Map.get(input, :path) do
+    case value(input, "path") do
       path when is_binary(path) -> {:ok, path}
       _value -> tool_error(:tool_input_invalid, "path must be a string")
     end
@@ -72,9 +72,10 @@ defmodule Twelvgaige.Tool.Builtins.ShellRead do
 
   defp max_bytes(input, opts) do
     max_bytes =
-      Map.get(input, "max_bytes") ||
-        Map.get(input, :max_bytes) ||
-        Keyword.get(opts, :default_max_bytes, @default_max_bytes)
+      case fetch_value(input, "max_bytes") do
+        {:ok, value} -> value
+        :error -> Keyword.get(opts, :default_max_bytes, @default_max_bytes)
+      end
 
     hard_max_bytes = Keyword.get(opts, :hard_max_bytes, @hard_max_bytes)
 
@@ -89,6 +90,24 @@ defmodule Twelvgaige.Tool.Builtins.ShellRead do
         {:ok, max_bytes}
     end
   end
+
+  defp value(map, key) do
+    case fetch_value(map, key) do
+      {:ok, value} -> value
+      :error -> nil
+    end
+  end
+
+  defp fetch_value(map, key) do
+    case Enum.find(map, fn {map_key, _value} -> key_string(map_key) == key end) do
+      {_map_key, value} -> {:ok, value}
+      nil -> :error
+    end
+  end
+
+  defp key_string(key) when is_binary(key), do: key
+  defp key_string(key) when is_atom(key), do: Atom.to_string(key)
+  defp key_string(key), do: inspect(key)
 
   defp resolve_path(root, path) do
     expanded_root = Path.expand(root)

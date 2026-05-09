@@ -81,6 +81,70 @@ defmodule Twelvgaige.Tool.Builtins.HTTPPostTest do
     assert header.details.header == "authorization"
   end
 
+  test "denies non-public literal address ranges before transport" do
+    cases = [
+      {"http://localhost./hooks", "localhost"},
+      {"http://100.64.0.1/hooks", "100.64.0.1"},
+      {"http://192.0.0.1/hooks", "192.0.0.1"},
+      {"http://192.0.2.1/hooks", "192.0.2.1"},
+      {"http://192.88.99.1/hooks", "192.88.99.1"},
+      {"http://198.18.0.1/hooks", "198.18.0.1"},
+      {"http://198.51.100.1/hooks", "198.51.100.1"},
+      {"http://203.0.113.1/hooks", "203.0.113.1"},
+      {"http://224.0.0.1/hooks", "224.0.0.1"},
+      {"http://[::ffff:127.0.0.1]/hooks", "::ffff:127.0.0.1"},
+      {"http://[2001:db8::1]/hooks", "2001:db8::1"},
+      {"http://[fec0::1]/hooks", "fec0::1"}
+    ]
+
+    for {url, allowed_host} <- cases do
+      assert {:error, error} =
+               HTTPPost.execute(
+                 %{"url" => url, "body" => "{}", "confirm" => true},
+                 allowed_hosts: [allowed_host],
+                 transport: unused_transport()
+               )
+
+      assert error.reason == :network_policy_denied
+    end
+  end
+
+  test "validates malformed allowed host policies without raising" do
+    assert {:error, error} =
+             HTTPPost.execute(
+               %{"url" => "https://example.com/hooks", "body" => "{}", "confirm" => true},
+               allowed_hosts: [:example],
+               transport: unused_transport()
+             )
+
+    assert error.reason == :network_policy_denied
+  end
+
+  test "wildcard host policies require a subdomain match" do
+    transport = fn _url, _opts -> {:ok, %{status: 204, headers: [], body: ""}} end
+
+    assert {:error, apex_error} =
+             HTTPPost.execute(
+               %{"url" => "https://example.com/hooks", "body" => "{}", "confirm" => true},
+               allowed_hosts: ["*.example.com"],
+               transport: transport
+             )
+
+    assert apex_error.reason == :network_policy_denied
+
+    assert {:ok, %{"status" => 204}} =
+             HTTPPost.execute(
+               %{
+                 "url" => "https://api.example.com/hooks",
+                 "body" => "{}",
+                 "confirm" => true
+               },
+               allowed_hosts: ["*.example.com"],
+               dns_resolver: fn "api.example.com" -> {:ok, [{93, 184, 216, 34}]} end,
+               transport: transport
+             )
+  end
+
   test "requires explicit allowed host policy" do
     assert {:error, error} =
              HTTPPost.execute(

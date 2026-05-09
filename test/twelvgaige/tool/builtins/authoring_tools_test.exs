@@ -2,6 +2,7 @@ defmodule Twelvgaige.Tool.Builtins.AuthoringToolsTest do
   use ExUnit.Case, async: true
 
   alias Twelvgaige.Tool.Executor
+  alias Twelvgaige.Tool.Builtins.Authoring.Common
 
   @authoring_tools ~w(
     shell_validate
@@ -76,6 +77,35 @@ defmodule Twelvgaige.Tool.Builtins.AuthoringToolsTest do
     assert error.reason == :tool_denied
   end
 
+  test "authoring tools deny symlink escapes below the configured root" do
+    root = write_collection!()
+    outside_root = tmp_dir!("twelvgaige-authoring-outside")
+    outside = Path.join(outside_root, "outside.yaml")
+    File.write!(outside, workflow_yaml("outside"))
+
+    link = Path.join(root, "workflows/linked.yaml")
+    File.ln_s!(outside, link)
+
+    assert {:error, error} =
+             Executor.execute("shell_validate", %{"path" => "workflows/linked.yaml"},
+               allowed_tools: ["shell_validate"],
+               max_safety: :read_only,
+               limiter: nil,
+               tool_opts: [root: root]
+             )
+
+    assert error.reason == :tool_denied
+  end
+
+  test "authoring common lookups preserve false and avoid creating atoms" do
+    assert Common.optional_boolean(%{"strict" => false}, "strict", true) == false
+
+    field = "field_#{System.unique_integer([:positive, :monotonic])}"
+    assert_raise ArgumentError, fn -> String.to_existing_atom(field) end
+    assert {:ok, "value"} = Common.fetch_string(%{field => "value"}, field)
+    assert_raise ArgumentError, fn -> String.to_existing_atom(field) end
+  end
+
   defp assert_validated(output) do
     assert output["kind"] == "workflow"
     assert output["id"] == "simple"
@@ -138,6 +168,13 @@ defmodule Twelvgaige.Tool.Builtins.AuthoringToolsTest do
     File.write!(Path.join(agent_dir, "mock_agent.yaml"), agent_yaml())
     on_exit(fn -> File.rm_rf(root) end)
     root
+  end
+
+  defp tmp_dir!(prefix) do
+    path = Path.join(System.tmp_dir!(), "#{prefix}-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(path)
+    on_exit(fn -> File.rm_rf(path) end)
+    path
   end
 
   defp workflow_yaml(id) do
