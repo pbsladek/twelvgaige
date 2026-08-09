@@ -4,6 +4,7 @@ defmodule Twelvgaige.CLI.Dispatcher do
   alias Twelvgaige.CLI.Commands.Audit, as: AuditCommand
   alias Twelvgaige.CLI.Commands.Crypto, as: CryptoCommand
   alias Twelvgaige.CLI.Commands.Daemon, as: DaemonCommand
+  alias Twelvgaige.CLI.Commands.Operations, as: OperationsCommand
   alias Twelvgaige.CLI.Commands.Round, as: RoundCommand
   alias Twelvgaige.CLI.Commands.RoundControl, as: RoundControlCommand
   alias Twelvgaige.CLI.Commands.ScaffoldLibrary, as: ScaffoldLibraryCommand
@@ -56,6 +57,57 @@ defmodule Twelvgaige.CLI.Dispatcher do
   def run(["audit", "verify", path | args]), do: AuditCommand.verify_checkpoint(path, args)
   def run(["daemon", "paths" | args]), do: DaemonCommand.paths(args)
   def run(["daemon", "stop" | args]), do: DaemonCommand.stop(args)
+  def run(["daemon", "token", "rotate" | args]), do: OperationsCommand.rotate_token(args)
+  def run(["session", "list" | args]), do: OperationsCommand.session_list(args)
+
+  def run(["session", "show", session_id | args]),
+    do: OperationsCommand.session_show(session_id, args)
+
+  def run(["session", "attach", session_id | args]),
+    do: OperationsCommand.session_attach(session_id, args)
+
+  def run(["session", "takeover", session_id | args]),
+    do: OperationsCommand.session_takeover(session_id, args)
+
+  def run(["session", "revoke", session_id | args]),
+    do: OperationsCommand.session_revoke(session_id, args)
+
+  def run(["sandbox", "health" | args]), do: OperationsCommand.sandbox_health(args)
+  def run(["sandbox", "reconcile" | args]), do: OperationsCommand.sandbox_reconcile(args)
+  def run(["operations", "dashboard" | args]), do: OperationsCommand.dashboard(args)
+
+  def run(["operations", "audit", "status" | args]),
+    do: OperationsCommand.audit_status(args)
+
+  def run(["operations", "audit", "checkpoint" | args]),
+    do: OperationsCommand.audit_checkpoint(args)
+
+  def run(["operations", "audit", "export", destination | args]),
+    do: OperationsCommand.audit_export(destination, args)
+
+  def run(["operations", "store", "stats" | args]), do: OperationsCommand.store_stats(args)
+
+  def run(["operations", "store", "backup", destination | args]),
+    do: OperationsCommand.store_backup(destination, args)
+
+  def run(["operations", "store", "restore", source, destination | args]),
+    do: OperationsCommand.store_restore(source, destination, args)
+
+  def run(["operations", "retention", "status" | args]),
+    do: OperationsCommand.retention_status(args)
+
+  def run(["operations", "retention", "run" | args]),
+    do: OperationsCommand.retention_run(args)
+
+  def run(["operations", "artifact", "inventory" | args]),
+    do: OperationsCommand.artifact_inventory(args)
+
+  def run(["operations", "artifact", "rotate" | args]),
+    do: OperationsCommand.artifact_rotate(args)
+
+  def run(["operations", "release", "check" | args]),
+    do: OperationsCommand.release_check(args)
+
   def run(["shell", "validate", path]), do: ShellCacheCommand.validate(path, format: :human)
 
   def run(["shell", "validate", path, "--format", format]),

@@ -28,10 +28,10 @@ defmodule Twelvgaige.Authoring.ShotLibrary do
       "namespace" => "builtin",
       "id" => "analysis.slug",
       "version" => "1.0.0",
-      "description" => "Generic analysis shot for mocked local workflows.",
+      "description" => "Generic analysis shot for local workflows.",
       "shot" => %{
         "kind" => "slug",
-        "agent" => "mock_agent",
+        "agent" => "local_agent",
         "prompt" => "Analyze the current workflow context and return a concise finding."
       }
     },

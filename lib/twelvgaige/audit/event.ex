@@ -42,11 +42,17 @@ defmodule Twelvgaige.Audit.Event do
   end
 
   defp normalize_value(values) when is_list(values), do: Enum.map(values, &normalize_value/1)
+  defp normalize_value(value) when is_tuple(value), do: inspect(value)
+  defp normalize_value(value) when is_pid(value), do: inspect(value)
+  defp normalize_value(value) when is_reference(value), do: inspect(value)
+  defp normalize_value(value) when is_function(value), do: inspect(value)
+  defp normalize_value(value) when is_port(value), do: inspect(value)
   defp normalize_value(nil), do: nil
   defp normalize_value(value) when is_boolean(value), do: value
   defp normalize_value(value) when is_atom(value), do: Atom.to_string(value)
   defp normalize_value(value), do: value
 
   defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
-  defp normalize_key(key), do: key
+  defp normalize_key(key) when is_binary(key), do: key
+  defp normalize_key(key), do: inspect(key)
 end

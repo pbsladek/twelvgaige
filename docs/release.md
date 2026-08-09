@@ -51,6 +51,7 @@ current `mix.exs` version and refuses to reuse an existing tag.
 
 Pushing a `v*` tag starts `.github/workflows/release.yml`. That workflow builds:
 
+- Source-built escript packages for Linux and macOS.
 - Native Mix release artifacts.
 - Burrito single-binary artifacts for supported targets.
 - Build metadata.

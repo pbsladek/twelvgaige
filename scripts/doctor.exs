@@ -1,7 +1,7 @@
 defmodule TwelvgaigeDoctor do
   @moduledoc false
 
-  @expected_elixir "1.19.5"
+  @expected_elixir "1.20.3"
   @expected_otp "28"
   @expected_zig "0.15.2"
   @expected_k3d "5.8.3"
@@ -171,19 +171,9 @@ defmodule TwelvgaigeDoctor do
     end
   end
 
-  defp provider_ready?("anthropic") do
-    env_any?(["TWELVGAIGE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]) and
-      env_present?("TWELVGAIGE_ANTHROPIC_LIVE_MODEL")
-  end
-
   defp provider_ready?("openai") do
     env_any?(["TWELVGAIGE_OPENAI_API_KEY", "OPENAI_API_KEY"]) and
       env_present?("TWELVGAIGE_OPENAI_LIVE_MODEL")
-  end
-
-  defp provider_ready?("gemini") do
-    env_any?(["TWELVGAIGE_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]) and
-      env_present?("TWELVGAIGE_GEMINI_LIVE_MODEL")
   end
 
   defp provider_ready?("ollama") do

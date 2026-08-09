@@ -8,7 +8,10 @@ This checklist gates the current local single-node CLI release. It assumes Twelv
 - macOS/Linux default IPC: Unix socket.
 - Windows default IPC: authenticated loopback TCP.
 - Durable local stores: file store and SQLite store.
-- Provider adapters: Anthropic, OpenAI, Gemini, and Ollama with offline fixture coverage.
+- Provider adapters: OpenAI and Ollama with offline fixture coverage.
+- Optional single-user operations plane: delegated Codex sessions with Podman
+  as the default sandbox and Apple containers as an explicit qualified macOS
+  backend.
 - Kubernetes support: structured `kubectl` tools with fake-runner tests and opt-in live smoke tests.
 - Distribution: source-built escript, native Mix release tarball, and Burrito single-file executable for the target OS/architecture.
 - Package targets emit `artifacts/BUILD-METADATA.txt` and `artifacts/SHA256SUMS`.
@@ -52,6 +55,18 @@ inventory against a temporary traphouse copy, verifies shot and scaffold
 libraries, runs read-only author review, and verifies/applies a generated patch
 artifact in dry-run mode.
 
+For a host or backend release claim that includes the operations plane, also
+run:
+
+```bash
+make release-qualification
+```
+
+That target evaluates the fail-closed operations release matrix and reruns the
+default repository gate. It requires the pinned sandbox, worker-image, egress,
+and qualification artifacts for any backend claimed as supported on that host.
+Do not claim delegated-session support from unit tests alone.
+
 Run the daemon suite on machines where local IPC tests are supported:
 
 ```bash
@@ -67,7 +82,12 @@ TWELVGAIGE_K8S_LIVE=1 TWELVGAIGE_K8S_CONTEXT=k3d-twelvgaige-smoke mix test --inc
 k3d cluster delete twelvgaige-smoke
 ```
 
-Provider live smoke tests, when present, must require both an ExUnit tag and environment opt-in so normal tests never call external LLMs.
+Provider live smoke tests require both an ExUnit tag and environment opt-in so
+normal tests never call external LLMs:
+
+```bash
+make e2e-provider-live PROVIDER_LIVE=1 PROVIDER_LIVE_PROVIDERS=openai
+```
 
 ## Local CLI Smoke
 
@@ -150,9 +170,9 @@ Then submit a detached round, stop the daemon, restart it against the same datab
 Run at least one representative round under each supported local profile:
 
 ```bash
-TWELVGAIGE_PROFILE=minimal ./twelvgaige round run test/fixtures/shells/simple_workflow.yaml --agent-shell test/fixtures/shells/mock_agent.yaml
-TWELVGAIGE_PROFILE=laptop ./twelvgaige round run test/fixtures/shells/simple_workflow.yaml --agent-shell test/fixtures/shells/mock_agent.yaml
-TWELVGAIGE_PROFILE=workstation ./twelvgaige round run test/fixtures/shells/simple_workflow.yaml --agent-shell test/fixtures/shells/mock_agent.yaml
+TWELVGAIGE_PROFILE=minimal ./twelvgaige round run docs/traphouse/workflows/simple.yaml --agent-shell docs/traphouse/workflows/agents/local_agent.yaml
+TWELVGAIGE_PROFILE=laptop ./twelvgaige round run docs/traphouse/workflows/simple.yaml --agent-shell docs/traphouse/workflows/agents/local_agent.yaml
+TWELVGAIGE_PROFILE=workstation ./twelvgaige round run docs/traphouse/workflows/simple.yaml --agent-shell docs/traphouse/workflows/agents/local_agent.yaml
 ```
 
 For release notes, record approximate idle daemon RSS, peak RSS during the smoke workflow, and whether other normal desktop workloads remain responsive.

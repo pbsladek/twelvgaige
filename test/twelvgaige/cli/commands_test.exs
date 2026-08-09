@@ -105,49 +105,11 @@ defmodule Twelvgaige.CLI.CommandsTest do
            } = Jason.decode!(output)
   end
 
-  test "shell new writes workflow and mock agents when requested" do
-    root =
-      Path.join(System.tmp_dir!(), "twelvgaige_cli_new_#{System.unique_integer([:positive])}")
+  test "shell new rejects the removed mock-agent option" do
+    assert {:ok, output, 4} =
+             Main.run(["shell", "new", "incident", "--with-mock-agents"])
 
-    output_path = Path.join(root, "workflows/incident.yaml")
-
-    on_exit(fn -> File.rm_rf(root) end)
-
-    assert {:ok, output, 0} =
-             Main.run([
-               "shell",
-               "new",
-               "incident",
-               "--scaffold",
-               "inspect-analyze-gate-fix-verify",
-               "--output",
-               output_path,
-               "--with-mock-agents",
-               "--write"
-             ])
-
-    assert output =~ "created workflow shell: #{output_path}"
-    assert output =~ "created agent shell:"
-
-    assert {:ok, _workflow} = Twelvgaige.Shell.Loader.load(output_path)
-    assert {:ok, agents} = Twelvgaige.Shell.Loader.load_agents_for_workflow(output_path)
-
-    assert Enum.map(agents, & &1.id) == [
-             "incident_analyst",
-             "incident_inspector",
-             "incident_operator"
-           ]
-
-    assert {:ok, lint_output, 0} =
-             Main.run(["shell", "lint", output_path, "--strict", "--format", "json"])
-
-    assert %{"status" => "ok"} = Jason.decode!(lint_output)
-
-    assert {:ok, run_output, 0} =
-             Main.run(["round", "run", output_path, "--approve-safety"])
-
-    assert run_output =~ "Status: complete"
-    assert run_output =~ "remediate [complete]"
+    assert output =~ "unknown option --with-mock-agents"
   end
 
   test "shell scaffold commands manage local scaffold libraries" do
@@ -2559,13 +2521,11 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} =
              Main.run(["round", "watch", round_id, "--format", "ndjson"])
 
-    assert [event] =
-             output
-             |> String.split("\n", trim: true)
-             |> Enum.map(&Jason.decode!/1)
+    events = output |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
+    event = List.last(events)
 
     assert event["round_id"] == round_id
-    assert event["seq"] == 1
+    assert Enum.map(events, & &1["seq"]) == Enum.to_list(1..length(events))
     assert event["event_type"] == "round_completed"
     assert event["payload"]["status"] == "complete"
   end
@@ -2717,7 +2677,8 @@ defmodule Twelvgaige.CLI.CommandsTest do
              match?({:ok, %{status: :awaiting_safety}}, Twelvgaige.get_round(round_id))
            end)
 
-    assert {:ok, [awaiting_event]} = Twelvgaige.list_round_events(round_id)
+    assert {:ok, awaiting_events} = Twelvgaige.list_round_events(round_id)
+    awaiting_event = List.last(awaiting_events)
 
     watcher =
       Task.async(fn ->
@@ -2746,7 +2707,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} = Task.await(watcher)
     assert [event] = output |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
     assert event["round_id"] == round_id
-    assert event["event_type"] == "round_completed"
+    assert event["event_type"] == "safety_approved"
   end
 
   test "round watch can follow until a daemon-owned round reaches terminal state" do
@@ -2786,8 +2747,16 @@ defmodule Twelvgaige.CLI.CommandsTest do
 
     events = output |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
 
-    assert Enum.map(events, & &1["round_id"]) == [round_id, round_id]
-    assert Enum.map(events, & &1["event_type"]) == ["round_awaiting_safety", "round_completed"]
+    assert Enum.all?(events, &(&1["round_id"] == round_id))
+
+    assert Enum.map(events, & &1["event_type"]) == [
+             "round_started",
+             "safety_awaiting",
+             "safety_approved",
+             "shot_started",
+             "shot_completed",
+             "round_completed"
+           ]
   end
 
   test "round list includes daemon-owned rounds" do

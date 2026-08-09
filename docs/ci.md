@@ -20,10 +20,23 @@ Use these during normal development:
 
 ```bash
 make check
+make quality
 make test-local
 make coverage
 make e2e-cli
 ```
+
+`make check` enforces formatting, warnings-as-errors compilation, the strict
+Credo baseline, the high-confidence Sobelow gate, unit tests, and the existing
+performance/doc checks. `make quality` adds locked Hex advisory audits.
+The Sobelow scan records all confidence levels in `artifacts/sobelow.sarif`, but
+only reviewed high-confidence findings fail the build. Reviewed syntax-only
+false positives are documented next to the protected code.
+
+`make authoring-check` builds a test-environment escript so its provider-assisted
+review step uses the test-only deterministic adapter. It does not require an
+Ollama service or hosted credentials; production builds still expose only
+OpenAI and Ollama.
 
 When a local e2e failure needs to be shared, preserve artifacts under the repo
 ignored `artifacts/e2e` directory:
@@ -74,8 +87,9 @@ artifacts are written under `artifacts/live/<platform>` locally unless
 
 ## GitHub Workflows
 
-- `ci.yml`: format, compile, unit tests, persistence tests, authoring checks,
-  and the 70% coverage gate.
+- `ci.yml`: format, compile, Credo, Sobelow, dependency advisories, unit and
+  persistence tests, authoring checks, and the 75%
+  aggregate coverage gate.
 - `e2e.yml`: offline process-level CLI checks on Linux, macOS, and Windows.
 - `build.yml`: package and smoke-test escript, Mix release, and Burrito
   artifacts.
@@ -101,8 +115,8 @@ protected environment. Keep provider, SQLCipher, and keychain jobs manual unless
 the environment protections and cost controls are intentionally relaxed.
 
 Every live job uploads a small artifact bundle. k3d artifacts include a summary,
-generated fixture workflows, deterministic mock response scripts, CLI round
-outputs/stores, and cluster diagnostics on failure. The k3d suite covers
+generated fixture workflows, test-only deterministic response scripts, CLI
+round outputs/stores, and cluster diagnostics on failure. The k3d suite covers
 read-only Kubernetes tools, runtime policy denial, RBAC denial, live
 `http_get`/`http_post` through a port-forwarded in-cluster fixture, a GitOps
 commit/apply/verify round, Git destructive-safety denial, guarded scale
@@ -123,8 +137,8 @@ these checks before merge:
 - `offline cli (ubuntu-latest)`
 - `offline cli (macos-14)`
 - `windows cli contract`
-- `package (linux-x86_64)`
-- `package (macos-arm64)`
+- `package (ubuntu-latest)`
+- `package (macos-14)`
 - `burrito (linux)`
 - `burrito (linux_arm64)`
 - `burrito (windows)`
@@ -135,6 +149,9 @@ external systems and are manual/scheduled health checks, not ordinary PR gates.
 
 Coverage remains a separate required job instead of being folded into
 `make ci`. That keeps the default CI log shorter and preserves an explicit
-coverage artifact for review. Coverage summaries are not posted as PR comments
-for now; the required check plus uploaded `cover/` and `coverage-summary.txt`
-artifacts are enough until review noise proves otherwise.
+coverage artifact for review. It publishes LCOV, Cobertura XML, and ExCoveralls
+JSON for Elixir. Codecov enforces 75% project coverage and 90% changed-line
+coverage. The local qualification gate also enforces 85% for six critical
+authorization/schema modules and 55% for the two subprocess/protocol boundary
+modules. These repository gates run before any external upload and remain
+authoritative.

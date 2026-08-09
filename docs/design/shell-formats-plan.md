@@ -1,5 +1,8 @@
 # Shell Authoring Formats Plan
 
+Status: implemented for YAML, JSON, and TOML. Programmatic formats remain
+disabled under the accepted gating RFC.
+
 Twelvgaige currently loads workflow and agent shells from YAML, JSON, and TOML.
 Further format work must keep the control plane format-neutral: every authoring
 format parses into the same normalized shell map, passes the same validation, and

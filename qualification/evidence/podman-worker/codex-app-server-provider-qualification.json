@@ -1,0 +1,66 @@
+{
+  "artifacts": {
+    "protocol_report": {
+      "digest": "sha256:de634328bde3fec39439c665775effe07cecf687c713bd8baf7a5a7382cf3e6b",
+      "path": "artifacts/qualification/podman-worker/codex-app-server-20260808T051500Z-82105.json"
+    }
+  },
+  "auth": {
+    "container_storage": "tmpfs",
+    "destroyed_after_run": true,
+    "persisted_in_workspace": false,
+    "profile": "local_user_login_ephemeral_tmpfs",
+    "secret_value_scan": "pass"
+  },
+  "fixture": {
+    "exact_content_verified": true,
+    "expected_file": "app-server-qualified.txt"
+  },
+  "generated_at": "2026-08-08T05:15:14Z",
+  "image": {
+    "digest": "sha256:c3edda97f103f9db0d61d0873589f4e08c093dae04030adc0c6b90deabc105c4",
+    "reference": "localhost/twelvgaige/worker:codex-0.146.0"
+  },
+  "initialized": {
+    "platform_family": "unix",
+    "platform_os": "linux",
+    "user_agent": "twelvgaige/0.146.0 (Alpine Linux 3.23.5; aarch64) unknown (twelvgaige; 0.0.3)"
+  },
+  "protocol": {
+    "approval_count": 2,
+    "approval_methods": [
+      "item/commandExecution/requestApproval"
+    ],
+    "cli_version": "0.146.0",
+    "digest_bound_receipts": true,
+    "event_types": [
+      "approval_required",
+      "message_delta",
+      "session_started",
+      "tool_finished",
+      "tool_started",
+      "turn_completed",
+      "turn_started",
+      "usage_updated"
+    ],
+    "exact_resume_thread_id": "019fdfcb-caee-7fc0-8230-045e6f8a0d38",
+    "exact_resume_verified": true,
+    "experimental_api": false,
+    "schema_digest": "2d40289dea67cdef56c4de0b4f8caba4a4dcf4c1b73d16bb3711e88988e732f2",
+    "thread_id": "019fdfcb-caee-7fc0-8230-045e6f8a0d38",
+    "transport": "stdio",
+    "turn_id": "019fdfcb-cb20-7542-b35c-87f909c13243"
+  },
+  "result": "pass",
+  "sandbox": {
+    "capabilities": "drop_all",
+    "gid": 65532,
+    "inner": "codex_external_sandbox_mode",
+    "network": "explicit_unrestricted_qualification_flag",
+    "no_new_privileges": true,
+    "outer": "podman_authoritative",
+    "rootfs": "read_only",
+    "uid": 65532
+  },
+  "schema_version": 1
+}

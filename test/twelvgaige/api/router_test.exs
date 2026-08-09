@@ -83,7 +83,9 @@ defmodule Twelvgaige.API.RouterTest do
 
     response = Router.dispatch("GET", "/api/v1/rounds/round_api_1/events", "", server: breech)
     assert response.status == 200
-    assert [%{"event_type" => "round_completed"}] = decode(response)
+    events = decode(response)
+    assert List.last(events)["event_type"] == "round_completed"
+    assert Enum.map(events, & &1["seq"]) == Enum.to_list(1..length(events))
 
     response =
       Router.dispatch("GET", "/api/v1/rounds/round_api_1/events?format=ndjson", "",
@@ -93,7 +95,9 @@ defmodule Twelvgaige.API.RouterTest do
     assert response.status == 200
     assert {"content-type", "application/x-ndjson; charset=utf-8"} in response.headers
     assert {"x-twelvgaige-stream-mode", "bounded-replay"} in response.headers
-    assert [%{"event_type" => "round_completed"}] = decode_ndjson(response)
+
+    assert decode_ndjson(response) |> List.last() |> Map.fetch!("event_type") ==
+             "round_completed"
 
     response =
       Router.dispatch("GET", "/api/v1/rounds/round_api_1/events?format=sse", "", server: breech)
@@ -114,8 +118,9 @@ defmodule Twelvgaige.API.RouterTest do
 
     assert {"content-type", "application/cloudevents-batch+json; charset=utf-8"} in response.headers
 
-    assert [%{"specversion" => "1.0", "type" => "dev.twelvgaige.round.round_completed"}] =
-             decode(response)
+    cloud_events = decode(response)
+    assert List.last(cloud_events)["specversion"] == "1.0"
+    assert List.last(cloud_events)["type"] == "dev.twelvgaige.round.round_completed"
 
     response = Router.dispatch("GET", "/api/v1/audit/round_api_1", "", server: breech)
     assert response.status == 200
@@ -219,7 +224,7 @@ defmodule Twelvgaige.API.RouterTest do
     assert response =
              Router.dispatch(
                "GET",
-               "/api/v1/rounds/round_api_follow/events?after_seq=1&format=sse&follow=true&timeout_ms=1",
+               "/api/v1/rounds/round_api_follow/events?after_seq=2&format=sse&follow=true&timeout_ms=1",
                "",
                server: breech
              )
@@ -231,7 +236,7 @@ defmodule Twelvgaige.API.RouterTest do
       Task.async(fn ->
         Router.dispatch(
           "GET",
-          "/api/v1/rounds/round_api_follow/events?after_seq=1&format=sse&follow=true&timeout_ms=1000",
+          "/api/v1/rounds/round_api_follow/events?after_seq=2&format=sse&follow=true&timeout_ms=1000",
           "",
           server: breech
         )
@@ -249,7 +254,7 @@ defmodule Twelvgaige.API.RouterTest do
 
     response = Task.await(waiter)
     assert response.status == 200
-    assert response.body =~ "event: round_completed\n"
+    assert response.body =~ "event: safety_approved\n"
   end
 
   test "bounded follow can continue until the round is terminal", %{breech: breech} do
@@ -296,10 +301,14 @@ defmodule Twelvgaige.API.RouterTest do
     response = Task.await(waiter)
     assert response.status == 200
 
-    assert ["round_awaiting_safety", "round_completed"] =
-             response
-             |> decode_ndjson()
-             |> Enum.map(& &1["event_type"])
+    assert [
+             "round_started",
+             "safety_awaiting",
+             "safety_approved",
+             "shot_started",
+             "shot_completed",
+             "round_completed"
+           ] = response |> decode_ndjson() |> Enum.map(& &1["event_type"])
   end
 
   test "approves safety and cancels rounds through control endpoints", %{breech: breech} do

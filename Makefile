@@ -25,6 +25,12 @@ K3D_LIVE ?= 0
 K3D_CLUSTER_PREFIX ?= twelvgaige-live
 K3D_NAMESPACE ?= default
 LIVE_ARTIFACT_DIR ?= $(ARTIFACT_DIR)/live/$(ARTIFACT_SUFFIX)
+TWELVGAIGE_DATA_ROOT ?= $(HOME)/Library/Application Support/Twelvgaige
+TWELVGAIGE_PODMAN_MACHINE ?= twelvgaige
+TWELVGAIGE_PODMAN_CPUS ?= 4
+TWELVGAIGE_PODMAN_MEMORY_MIB ?= 6144
+TWELVGAIGE_PODMAN_DISK_GIB ?= 64
+TWELVGAIGE_WORKER_IMAGE ?= localhost/twelvgaige/worker:codex-0.146.0
 
 $(shell mkdir -p "$(ERL_CRASH_DUMP_DIR)")
 
@@ -53,7 +59,7 @@ SMOKE_TMP ?= /tmp/$(APP)-smoke-$(ARTIFACT_SUFFIX)
 SMOKE_ENV ?=
 AUTHORING_ROOT ?= docs/traphouse
 AUTHORING_TMP ?= /tmp/$(APP)-authoring-$(ARTIFACT_SUFFIX)
-AUTHORING_BIN ?= ./$(APP)
+AUTHORING_BIN ?= $(AUTHORING_TMP)/twelvgaige-test
 E2E_BIN ?= ./$(APP)
 E2E_TMP ?= /tmp
 E2E_ARTIFACT_DIR ?= $(ARTIFACT_DIR)/e2e
@@ -78,10 +84,44 @@ help:
 	@printf "%s\n" "  make setup             Fetch dependencies"
 	@printf "%s\n" "  make doctor            Check local toolchain prerequisites"
 	@printf "%s\n" "  make doctor-live       Check opt-in live E2E prerequisites"
-	@printf "%s\n" "  make check             Format check, compile, unit tests"
+	@printf "%s\n" "  make podman-machine-plan"
+	@printf "%s\n" "                         Show the dedicated macOS Podman VM configuration"
+	@printf "%s\n" "  make podman-machine-create"
+	@printf "%s\n" "                         Create/start the dedicated VM and narrow application-data mount"
+	@printf "%s\n" "  make podman-machine-health"
+	@printf "%s\n" "                         Verify the VM, connection, and declared mount boundary"
+	@printf "%s\n" "  make podman-worker-build"
+	@printf "%s\n" "                         Build the pinned minimal Codex worker image"
+	@printf "%s\n" "  make podman-worker-qualify-image"
+	@printf "%s\n" "                         Build, SBOM, scan, sign, and record the worker image"
+	@printf "%s\n" "  make podman-live-qualify"
+	@printf "%s\n" "                         Run live Podman security, recovery, and performance qualification"
+	@printf "%s\n" "  make podman-codex-provider-qualify"
+	@printf "%s\n" "                         Run a provider-authenticated Codex fixture in the Podman worker"
+	@printf "%s\n" "  make podman-codex-app-server-qualify"
+	@printf "%s\n" "                         Qualify structured approvals and exact resume through App Server"
+	@printf "%s\n" "  make apple-container-health"
+	@printf "%s\n" "                         Probe the pinned Apple container runtime and host contract"
+	@printf "%s\n" "  make apple-container-live-qualify"
+	@printf "%s\n" "                         Run Apple VM security, recovery, cancellation, and memory qualification"
+	@printf "%s\n" "  make apple-container-codex-provider-qualify"
+	@printf "%s\n" "                         Run the unchanged authenticated Codex fixture in an Apple VM"
+	@printf "%s\n" "  make egress-proxy-qualify-image"
+	@printf "%s\n" "                         Build, SBOM, scan, sign, and record the egress proxy image"
+	@printf "%s\n" "  make egress-live-qualify"
+	@printf "%s\n" "                         Qualify broker-only egress on Podman and Apple backends"
+	@printf "%s\n" "  make operations-live-qualify"
+	@printf "%s\n" "                         Record queue, retention, backend, SLO, and error-budget evidence"
+	@printf "%s\n" "  make release-qualification"
+	@printf "%s\n" "                         Evaluate and record the complete fail-closed release matrix"
+	@printf "%s\n" "  make check             Format, compile, static analysis, and unit tests"
+	@printf "%s\n" "  make quality           Run Credo, Sobelow, and dependency audits"
+	@printf "%s\n" "  make credo             Run the strict Elixir static-analysis baseline"
+	@printf "%s\n" "  make sobelow           Run the reviewed high-confidence security gate"
+	@printf "%s\n" "  make dependency-audit  Audit locked Hex dependencies"
 	@printf "%s\n" "  make typecheck         Run Dialyzer via Dialyxir"
 	@printf "%s\n" "  make test-local        Run default local test suite"
-	@printf "%s\n" "  make coverage          Run default offline tests with 70% coverage gate"
+	@printf "%s\n" "  make coverage          Run offline tests with the 75% aggregate coverage gate"
 	@printf "%s\n" "  make coverage-export   Generate coverage report and summary artifact"
 	@printf "%s\n" "  make e2e               Build escript and run offline CLI E2E"
 	@printf "%s\n" "  make e2e-artifacts     Run offline E2E and keep artifacts under $(E2E_ARTIFACT_DIR)"
@@ -142,6 +182,107 @@ doctor:
 doctor-live:
 	TWELVGAIGE_DOCTOR_LIVE=1 K3D_LIVE="$(K3D_LIVE)" PROVIDER_LIVE="$(PROVIDER_LIVE)" PROVIDER_LIVE_PROVIDERS="$(PROVIDER_LIVE_PROVIDERS)" SQLCIPHER_PREFIX="$(SQLCIPHER_PREFIX)" KEYCHAIN_LIVE="$(KEYCHAIN_LIVE)" elixir scripts/doctor.exs --live
 
+.PHONY: podman-machine-plan podman-machine-create podman-machine-health
+podman-machine-plan:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	TWELVGAIGE_PODMAN_CPUS="$(TWELVGAIGE_PODMAN_CPUS)" \
+	TWELVGAIGE_PODMAN_MEMORY_MIB="$(TWELVGAIGE_PODMAN_MEMORY_MIB)" \
+	TWELVGAIGE_PODMAN_DISK_GIB="$(TWELVGAIGE_PODMAN_DISK_GIB)" \
+	scripts/podman_machine.sh plan
+
+podman-machine-create:
+	@TWELVGAIGE_PODMAN_CONFIRM=1 \
+	TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	TWELVGAIGE_PODMAN_CPUS="$(TWELVGAIGE_PODMAN_CPUS)" \
+	TWELVGAIGE_PODMAN_MEMORY_MIB="$(TWELVGAIGE_PODMAN_MEMORY_MIB)" \
+	TWELVGAIGE_PODMAN_DISK_GIB="$(TWELVGAIGE_PODMAN_DISK_GIB)" \
+	scripts/podman_machine.sh create
+
+podman-machine-health:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	scripts/podman_machine.sh status
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	MIX_ENV=dev mix run -e 'root = System.fetch_env!("TWELVGAIGE_DATA_ROOT"); machine = System.fetch_env!("TWELVGAIGE_PODMAN_MACHINE"); IO.inspect(Twelvgaige.Sandbox.PodmanMachine.health(allowed_roots: [root], machine_name: machine), label: "Podman health")'
+
+.PHONY: podman-worker-build podman-worker-supply-chain podman-worker-qualify-image podman-worker-status
+podman-worker-build:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	TWELVGAIGE_WORKER_IMAGE="$(TWELVGAIGE_WORKER_IMAGE)" \
+	scripts/podman_worker.sh build
+
+podman-worker-supply-chain:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	TWELVGAIGE_WORKER_IMAGE="$(TWELVGAIGE_WORKER_IMAGE)" \
+	scripts/podman_worker.sh supply-chain
+
+podman-worker-qualify-image:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	TWELVGAIGE_WORKER_IMAGE="$(TWELVGAIGE_WORKER_IMAGE)" \
+	scripts/podman_worker.sh qualify-image
+
+podman-worker-status:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_WORKER_IMAGE="$(TWELVGAIGE_WORKER_IMAGE)" \
+	scripts/podman_worker.sh status
+
+.PHONY: podman-live-qualify
+podman-live-qualify:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	MIX_ENV=dev mix run scripts/qualify_podman.exs
+
+.PHONY: podman-codex-provider-qualify podman-codex-app-server-qualify
+podman-codex-provider-qualify:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	scripts/qualify_codex_provider.sh
+
+podman-codex-app-server-qualify:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	scripts/qualify_codex_app_server.sh
+
+.PHONY: apple-container-health apple-container-live-qualify apple-container-codex-provider-qualify
+apple-container-health:
+	@MIX_ENV=dev mix run -e 'IO.inspect(Twelvgaige.Sandbox.Backend.AppleContainer.probe(timeout_ms: 60000), label: "Apple container health")'
+
+apple-container-live-qualify:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	MIX_ENV=dev mix run scripts/qualify_apple_container.exs
+
+apple-container-codex-provider-qualify:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	scripts/qualify_apple_codex_provider.sh
+
+.PHONY: egress-proxy-build egress-proxy-qualify-image egress-proxy-status egress-live-qualify
+egress-proxy-build:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" scripts/egress_proxy.sh build
+
+egress-proxy-qualify-image:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" scripts/egress_proxy.sh qualify-image
+
+egress-proxy-status:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" scripts/egress_proxy.sh status
+
+egress-live-qualify:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" MIX_ENV=dev mix run scripts/qualify_egress_boundary.exs
+
+.PHONY: operations-live-qualify release-qualification
+operations-live-qualify:
+	@MIX_ENV=dev mix run scripts/qualify_operations.exs
+
+release-qualification:
+	@MIX_ENV=dev mix run scripts/qualify_operations.exs
+	@$(MAKE) check
+	@MIX_ENV=dev mix run scripts/qualify_release.exs
+
 .PHONY: compile
 compile:
 	MIX_ENV=test mix compile --warnings-as-errors
@@ -163,6 +304,22 @@ typecheck: dialyzer
 dialyzer:
 	MIX_ENV=dev mix dialyzer
 
+.PHONY: quality credo sobelow dependency-audit hex-audit
+quality: credo sobelow dependency-audit
+
+credo:
+	MIX_ENV=test mix credo --strict
+
+sobelow:
+	mkdir -p $(ARTIFACT_DIR)
+	@printf 'sobelow-%s\n' "$$(date +%s)" > $(ARTIFACT_DIR)/sobelow-version
+	SOBELOW_HOME=$(ARTIFACT_DIR)/sobelow-version MIX_ENV=test mix sobelow --format sarif --out $(ARTIFACT_DIR)/sobelow.sarif
+
+dependency-audit: hex-audit
+
+hex-audit:
+	mix hex.audit
+
 .PHONY: test-all
 test-all:
 	MIX_ENV=test mix test --include integration --include daemon --include persistence --include slow
@@ -173,14 +330,12 @@ test-persistence:
 
 .PHONY: coverage
 coverage: deps
-	MIX_ENV=test mix test --cover
+	COVERAGE_SUMMARY="$(COVERAGE_SUMMARY)" scripts/coverage.sh export
+	@printf "%s\n" "coverage summary written to $(COVERAGE_SUMMARY)"
 
 .PHONY: coverage-export
 coverage-export: deps
-	rm -rf cover
-	mkdir -p $(ARTIFACT_DIR)
-	MIX_ENV=test mix test --cover --export-coverage default > $(COVERAGE_SUMMARY) 2>&1 || { cat $(COVERAGE_SUMMARY); exit 1; }
-	MIX_ENV=test mix test.coverage >> $(COVERAGE_SUMMARY) 2>&1 || { cat $(COVERAGE_SUMMARY); exit 1; }
+	COVERAGE_SUMMARY="$(COVERAGE_SUMMARY)" scripts/coverage.sh export
 	@printf "%s\n" "coverage summary written to $(COVERAGE_SUMMARY)"
 
 .PHONY: coverage-persistence
@@ -261,10 +416,17 @@ e2e-package-burrito-only:
 	TWELVGAIGE_E2E_BIN=$(BURRITO_BIN) TWELVGAIGE_E2E_TMP=$(E2E_TMP) test/e2e/cli_basic.sh
 
 .PHONY: check
-check: format-check compile test authoring-docs
+check: format-check compile credo sobelow test perf-phase0-check authoring-docs
 
 .PHONY: ci
-ci: deps format-check compile test test-persistence
+ci: deps format-check compile quality test perf-phase0-check test-persistence
+
+.PHONY: perf-phase0 perf-phase0-check
+perf-phase0:
+	MIX_ENV=test mix run scripts/perf_review.exs --format json
+
+perf-phase0-check:
+	MIX_ENV=test mix run scripts/perf_review.exs --format json --check benchmarks/phase0-core-v1.json
 
 .PHONY: authoring-check
 authoring-check: authoring-docs authoring-drift
@@ -282,10 +444,11 @@ authoring-docs:
 	fi
 
 .PHONY: authoring-drift
-authoring-drift: escript
+authoring-drift: deps
 	rm -rf $(AUTHORING_TMP)
 	mkdir -p $(AUTHORING_TMP)
 	MIX_ENV=test mix run scripts/authoring_fixture.exs $(AUTHORING_TMP)
+	MIX_ENV=test TWELVGAIGE_ESCRIPT_PATH=$(AUTHORING_BIN) mix escript.build
 	$(AUTHORING_BIN) shell lint $(AUTHORING_TMP)/traphouse/workflows/shell_authoring_review_readonly.yaml --root $(AUTHORING_TMP)/traphouse --strict --format json > $(AUTHORING_TMP)/lint.json
 	$(AUTHORING_BIN) shell inventory $(AUTHORING_TMP)/traphouse --root $(AUTHORING_TMP)/traphouse --format json > $(AUTHORING_TMP)/inventory.json
 	$(AUTHORING_BIN) shot library verify --root $(AUTHORING_TMP)/traphouse --format json > $(AUTHORING_TMP)/shot-library.json

@@ -14,8 +14,10 @@ defmodule Twelvgaige.Store.File do
   @behaviour Twelvgaige.Store
 
   alias Twelvgaige.Audit.Event, as: AuditEvent
+  alias Twelvgaige.Audit.Chain, as: AuditChain
   alias Twelvgaige.Redactor
   alias Twelvgaige.Round.ShotRun
+  alias Twelvgaige.Round.Snapshot
   alias Twelvgaige.Security.FileMode
   alias Twelvgaige.Store.Retention
 
@@ -158,8 +160,9 @@ defmodule Twelvgaige.Store.File do
 
   @impl true
   def handle_call({:create_round, snapshot, manifest, audit_events}, _from, state) do
+    snapshot = Snapshot.persistable(snapshot)
     round_id = fetch_id!(snapshot, :round)
-    audit_events = AuditEvent.sanitize_many(audit_events)
+    audit_events = AuditChain.append([], AuditEvent.sanitize_many(audit_events))
 
     if Map.has_key?(state.rounds, round_id) do
       {:reply, {:error, :round_already_exists}, state}
@@ -329,7 +332,11 @@ defmodule Twelvgaige.Store.File do
 
       true ->
         {events, next_seq} = assign_event_sequences(events, state.next_seq[round_id] || 1)
-        next_snapshot = put_value(next_snapshot, :version, expected_version + 1)
+
+        next_snapshot =
+          next_snapshot
+          |> put_value(:version, expected_version + 1)
+          |> Snapshot.persistable()
 
         state =
           state
@@ -444,10 +451,15 @@ defmodule Twelvgaige.Store.File do
     end
   end
 
+  # Local state is decoded in restricted mode and must match the store struct.
+  # sobelow_skip ["Misc.BinToTerm"]
   defp load_state(path) do
     case File.read(path) do
       {:ok, binary} ->
-        {:ok, %{:erlang.binary_to_term(binary, [:safe]) | path: path}}
+        case :erlang.binary_to_term(binary, [:safe]) do
+          %__MODULE__{} = state -> {:ok, %{state | path: path}}
+          _other -> {:error, :store_corrupt}
+        end
 
       {:error, :enoent} ->
         {:ok, %__MODULE__{path: path}}
@@ -474,9 +486,10 @@ defmodule Twelvgaige.Store.File do
   defp append_audit(state, _round_id, []), do: state
 
   defp append_audit(state, round_id, audit_events) do
-    audit_events = AuditEvent.sanitize_many(audit_events)
+    existing = Map.get(state.audit_events, round_id, [])
+    audit_events = AuditChain.append(existing, AuditEvent.sanitize_many(audit_events))
 
-    update_in(state.audit_events[round_id], &((&1 || []) ++ audit_events))
+    put_in(state.audit_events[round_id], existing ++ audit_events)
   end
 
   defp sanitize_journal(%{} = journal, %{sensitive_retention: :summary}) do

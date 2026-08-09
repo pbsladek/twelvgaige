@@ -1,14 +1,20 @@
 # Testing, Coverage, And E2E Plan
 
-This plan raises test confidence around Twelvgaige's CLI, daemon, authoring,
-storage, packaging, and integration surfaces. The first coverage target is 70%
-line coverage, enforced in CI after a measured baseline and targeted gap
-closure. E2E coverage should exercise the real CLI locally and on GitHub-hosted
-runners without requiring hosted LLM credentials by default. Local development
-and manual e2e iteration should optimize for macOS first because the primary
-developer machine is a Mac.
+Status: implemented record. The original 70% baseline described throughout the
+phase history has been superseded by a 75% aggregate repository gate. Coverage
+from the default and specialized offline suites is merged before enforcement,
+six security- and recovery-critical modules have an 85% floor, and two
+subprocess/protocol boundary modules have a 55% floor. Current commands and CI
+behavior are documented in [`../ci.md`](../ci.md).
+
+This plan records how test confidence was raised around Twelvgaige's CLI,
+daemon, authoring, storage, packaging, and integration surfaces. Historical
+sections retain the earlier 70% milestones so completed phase decisions remain
+understandable.
 
 ## Current State Review
+
+Historical baseline at the start of this plan:
 
 What is strong today:
 
@@ -65,7 +71,7 @@ Gaps to close:
 
 ## Non-Goals
 
-- Do not require live Anthropic, OpenAI, Gemini, Ollama, Kubernetes, Keychain, or
+- Do not require live OpenAI, Ollama, Kubernetes, Keychain, or
   SQLCipher for normal PR checks.
 - Do not target 90%+ coverage before stabilizing the 70% gate and e2e suite.
 - Do not test every CLI flag through shell e2e; use ExUnit for detailed matrix
@@ -409,7 +415,7 @@ Flow:
 1. Copy `docs/traphouse` to a temp traphouse.
 2. Run `shell scaffold verify`.
 3. Run `shot library verify`.
-4. Run `shell author review` with mock provider.
+4. Run `shell author review` with the test-only deterministic provider.
 5. Generate a patch fixture.
 6. Run `shell patch inspect`.
 7. Run `shell patch verify --approval`.
@@ -501,7 +507,8 @@ Recommended jobs:
   - Verifies live `kubectl_get`, `kubectl_events`, `kubectl_describe`, and
     `kubectl_logs` behavior.
   - Verifies runtime Kubernetes policy denial and Kubernetes RBAC denial.
-  - Runs a deterministic mock-agent CLI round that calls `kubectl_get` against
+  - Runs a CLI round with the test-only deterministic provider that calls
+    `kubectl_get` against
     the live fixture workload.
   - Deploys an in-cluster HTTP fixture and validates real `http_get`,
     safety-gated `http_post`, side-effect readback, and HTTP network-policy
@@ -581,10 +588,12 @@ Suggested grouping:
 
 Implementation status:
 
-- Phase T0 is started and the initial coverage gate is wired.
+- Phase T0 is complete. The initial 70% gate was superseded by the merged 75%
+  aggregate gate and module-specific floors described above.
 - Phase T1 is complete with the shared shell harness, CLI, daemon, safety,
   authoring, and store E2E scripts.
-- Phase T2 is started with a Linux coverage GitHub Actions job.
+- Phase T2 is complete with Linux coverage export, artifact upload, and gate
+  enforcement in GitHub Actions.
 - Phase T3 is implemented with Linux/macOS offline E2E workflow jobs, a Windows
   source-built CLI contract job, deterministic runner-temp artifact paths, and a
   branch-protection checklist; remote confirmation remains pending.
@@ -598,7 +607,7 @@ Implementation status:
   execution confirmation remains pending.
 - Repeatable local setup now has `.mise.toml`, `make doctor`, `make
   doctor-live`, `make e2e-artifacts`, and `make e2e-live-local`.
-- Phase T6 is in progress with focused coverage tests for security equality,
+- Phase T6 is complete for the current 75% target, with focused tests for security equality,
   provider config normalization, redaction, SQLCipher spike reporting, CLI JSON
   errors, store failure reporting, and patch apply post-write validation
   failures, daemon endpoint cleanup, and IPC address parsing.
@@ -799,7 +808,7 @@ Goal: add opt-in live environment checks.
 Tasks:
 
 - `[x]` Add manual/scheduled k3d job.
-- `[x]` Add manual provider-live job for Anthropic/OpenAI/Gemini/Ollama where
+- `[x]` Add manual provider-live job for OpenAI/Ollama where
   practical.
 - `[x]` Add SQLCipher and Keychain live jobs as manual platform-specific workflows.
 - `[x]` Require both tags and explicit env opt-ins, for example
@@ -844,9 +853,9 @@ Goal: use the baseline to add targeted tests, not broad shallow assertions.
 
 Current target:
 
-- Keep the required gate at 70% until the remote coverage job is stable.
-- The 75% local milestone is met on macOS. Raise the enforced gate only after
-  offline Linux/macOS CI and package E2E have been green for at least a week.
+- The required aggregate gate is 75%.
+- Merge the default and specialized offline suite exports before enforcement.
+- Keep the separate 85% critical-module and 55% boundary-module floors.
 
 Priority areas:
 
@@ -908,7 +917,7 @@ Progress:
 
 ## Coverage Policy
 
-- Initial gate: 70%.
+- Current aggregate gate: 75%. The initial milestone was 70%.
 - Files excluded from coverage must be justified in `mix.exs` comments or this
   plan.
 - Lowering the threshold requires updating this plan with a reason.
@@ -934,7 +943,7 @@ Progress:
 
 ## Definition Of Done For This Testing Track
 
-- `make coverage` enforces 70% offline coverage.
+- `make coverage` enforces 75% aggregate offline coverage.
 - `make e2e` runs the core CLI contract locally without network credentials.
 - `.github/workflows/e2e.yml` runs offline e2e on clean runners.
 - Package e2e reuses the same scripts against built artifacts.

@@ -28,10 +28,12 @@ defmodule Twelvgaige.BreechSQLiteStoreTest do
   }
 
   setup do
+    suffix = Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
+
     dir =
       Path.join(
         System.tmp_dir!(),
-        "twelvgaige_breech_sqlite_#{System.unique_integer([:positive])}"
+        "twelvgaige_breech_sqlite_#{suffix}"
       )
 
     on_exit(fn -> File.rm_rf(dir) end)
@@ -53,8 +55,14 @@ defmodule Twelvgaige.BreechSQLiteStoreTest do
              match?({:ok, %{status: :complete}}, Breech.get_round(round_id, server: breech_name))
            end)
 
-    assert {:ok, [%{event_type: :round_completed}]} =
-             Breech.list_round_events(round_id, server: breech_name)
+    assert {:ok, events} = Breech.list_round_events(round_id, server: breech_name)
+
+    assert Enum.map(events, &{&1.seq, &1.round_version, &1.event_type}) == [
+             {1, 1, :round_started},
+             {2, 2, :shot_started},
+             {3, 3, :shot_completed},
+             {4, 4, :round_completed}
+           ]
 
     stop_supervised!(Breech)
     stop_supervised!(SQLiteStore)
@@ -69,8 +77,8 @@ defmodule Twelvgaige.BreechSQLiteStoreTest do
     assert {:ok, rounds} = Breech.list_rounds(server: breech_name, status: :complete)
     assert Enum.any?(rounds, &(&1.id == round_id))
 
-    assert {:ok, [%{event_type: :round_completed, seq: 1}]} =
-             Breech.list_round_events(round_id, server: breech_name)
+    assert {:ok, restarted_events} = Breech.list_round_events(round_id, server: breech_name)
+    assert restarted_events == events
   end
 
   test "sqlite store participates in startup partial recovery", %{path: path} do
@@ -127,7 +135,9 @@ defmodule Twelvgaige.BreechSQLiteStoreTest do
     assert {:ok, completed} = Breech.get_round(round_id, server: breech_name)
     shots = Map.new(completed.shots, &{&1.id, &1})
 
-    assert completed.version == 3
+    # Recovery records the interrupted attempt and retry as distinct durable
+    # transitions before the successful shot and round completion.
+    assert completed.version == 5
     assert shots["first"].status == :complete
     assert shots["first"].output == %{"content" => "already completed"}
     assert shots["second"].status == :complete

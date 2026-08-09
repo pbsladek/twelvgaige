@@ -90,7 +90,7 @@ defmodule Twelvgaige.Shell.Agent do
   alias Twelvgaige.Shell.Validation, as: V
 
   @keys ~w(kind id name version provider model system_prompt tools choke memory)
-  @providers ~w(mock anthropic openai gemini ollama)
+  @providers ~w(openai ollama) ++ Application.compile_env(:twelvgaige, :test_provider_ids, [])
 
   @type t :: %__MODULE__{
           kind: :agent,

@@ -2,8 +2,8 @@ kind: agent
 id: shell_safety_reviewer
 name: Shell Safety Reviewer
 version: 1.0.0
-provider: mock
-model: mock-model
+provider: ollama
+model: llama3.2
 system_prompt: Review safety gates, write-capable tools, ownership, lifecycle, and impact.
 tools:
   allowed: [shell_lint, shell_impact, tool_catalog_read]

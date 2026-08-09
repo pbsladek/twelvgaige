@@ -59,6 +59,7 @@ defmodule Twelvgaige.Error do
     :daemon_auth_failed,
     :daemon_version_mismatch,
     :policy_denied,
+    :round_timeout,
     :shot_timeout,
     :resource_queue_timeout,
     :output_too_large,
@@ -118,6 +119,7 @@ defmodule Twelvgaige.Error do
           | :daemon_auth_failed
           | :daemon_version_mismatch
           | :policy_denied
+          | :round_timeout
           | :shot_timeout
           | :resource_queue_timeout
           | :output_too_large

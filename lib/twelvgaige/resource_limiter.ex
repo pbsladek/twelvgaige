@@ -141,7 +141,7 @@ defmodule Twelvgaige.ResourceLimiter do
   resource is saturated, returns a waiter and later sends one of these messages
   to the waiter owner:
 
-    * `{:resource_available, waiter_id, resource_kind}`
+    * `{:resource_granted, waiter_id, permit}`
     * `{:resource_timeout, waiter_id, resource_kind}`
 
   `queue_timeout_ms` is separate from execution timeout. If omitted, the waiter
@@ -652,19 +652,37 @@ defmodule Twelvgaige.ResourceLimiter do
       nil ->
         state
 
-      {waiter_id, %{waiter: waiter}} ->
+      {waiter_id, %{waiter: waiter} = entry} ->
         queue_key = queue_key(waiter.resource_kind)
         round_key = waiter_round_key(waiter)
         state = observe_waiter_drop(waiter_id, :granted, state)
 
-        state =
-          waiter_id
-          |> drop_waiter(state)
-          |> Map.update!(:last_served_round, &Map.put(&1, queue_key, round_key))
+        {state, permit} = promote_waiter(waiter_id, entry, state)
+        state = Map.update!(state, :last_served_round, &Map.put(&1, queue_key, round_key))
 
-        send(waiter.owner_pid, {:resource_available, waiter.id, waiter.resource_kind})
-        state
+        send(waiter.owner_pid, {:resource_granted, waiter.id, permit})
+        notify_eligible_waiters(state)
     end
+  end
+
+  defp promote_waiter(waiter_id, %{waiter: waiter, targets: targets} = entry, state) do
+    cancel_waiter_timer(entry)
+
+    state = %{
+      state
+      | waiters: Map.delete(state.waiters, waiter_id),
+        owner_waiters:
+          Map.update!(state.owner_waiters, waiter.owner_pid, &MapSet.delete(&1, waiter_id))
+    }
+
+    context = %{
+      round_id: waiter.round_id,
+      shot_id: waiter.shot_id,
+      attempt: waiter.attempt
+    }
+
+    permit = build_permit(waiter.resource_kind, context, waiter.owner_pid, nil)
+    {put_permit(permit, targets, state), permit}
   end
 
   defp next_eligible_waiter(state) do

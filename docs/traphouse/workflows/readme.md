@@ -1,9 +1,10 @@
 # Workflow Shell Examples
 
-These are runnable, no-network shell examples for local smoke testing and format
-review. The YAML, JSON, and TOML files describe the same workflow and agent, so
-they should normalize to the same canonical shell document and compile to the
-same pattern.
+These are runnable local shell examples for smoke testing and format review.
+The YAML, JSON, and TOML files describe the same workflow and agent, so they
+should normalize to the same canonical shell document and compile to the same
+pattern. Validation, normalization, and conversion are offline. Running the
+examples calls a local Ollama service.
 
 ## Validate
 
@@ -35,8 +36,9 @@ twelvgaige shell convert docs/traphouse/workflows/simple.toml --to json
 
 ## Run
 
-The workflow uses the `mock` provider and auto-discovers agents from
-`docs/traphouse/workflows/agents/`, so it does not call a live LLM:
+The workflows auto-discover Ollama agents from
+`docs/traphouse/workflows/agents/`. Start Ollama and make the configured
+`llama3.2` model available before running them:
 
 ```bash
 twelvgaige round run docs/traphouse/workflows/simple.yaml
@@ -49,15 +51,15 @@ twelvgaige round run docs/traphouse/workflows/shell_authoring_review_readonly.ya
 ## Authoring Review
 
 `shell_authoring_review_readonly.yaml` demonstrates SAM5's read-only authoring
-tools. Its agents are mock agents with access to shell validation, graph, lint,
+tools. Its local Ollama agents have access to shell validation, graph, lint,
 inventory, impact, normalize, diff, catalog-read, and patch-plan tools. The
 workflow is safe to run locally because no tool writes files.
 
 ## Drafting
 
 `shell draft` can turn local notes into a candidate shell without executing it.
-The default mock provider is offline and deterministic; hosted providers require
-`--allow-remote` and receive redacted source text.
+The default Ollama provider is local; hosted OpenAI use requires
+`--allow-remote` and receives redacted source text.
 
 ```bash
 twelvgaige shell draft --from incident-notes.md

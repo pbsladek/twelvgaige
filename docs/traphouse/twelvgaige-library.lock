@@ -1,11 +1,11 @@
 entries:
-  - digest: "sha256:de8899d6a813ffb41b1e81a1929cd791d5a676f8e826aa38cd67dd38e86d1a74"
+  - digest: "sha256:ce5489153985e6d7ab17047e304c5f71c77e02ce65c0af28b5976c71efd3a6fb"
     id: "release-readiness"
     kind: "scaffold"
     namespace: "platform"
     source: "scaffolds/release-readiness.yaml"
     version: "1.0.0"
-  - digest: "sha256:5ec11a045366a3faebfea618a1a978a24a9f129ee3a827cced8518443675d93f"
+  - digest: "sha256:67f8ba0683e243a74c53c718d1c5f10df7cfdd451eff7cc6e042fcae91b2c414"
     id: "review.summary"
     kind: "shot_template"
     namespace: "platform"

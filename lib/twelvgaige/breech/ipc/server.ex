@@ -34,6 +34,14 @@ defmodule Twelvgaige.Breech.IPC.Server do
     :acceptor_ref,
     :endpoint_path,
     :lock,
+    :operations,
+    :provider_limiter,
+    :scheduler,
+    :retention,
+    :artifact_store,
+    :keyring,
+    :audit_export_key,
+    :audit_anchor,
     max_frame_bytes: @default_max_frame_bytes,
     allow_approve_all_safety?: false
   ]
@@ -80,6 +88,9 @@ defmodule Twelvgaige.Breech.IPC.Server do
   @spec address(GenServer.server()) :: Twelvgaige.Breech.IPC.Client.address()
   def address(server), do: GenServer.call(server, :address)
 
+  @spec rotate_token(GenServer.server()) :: {:ok, String.t()} | {:error, term()}
+  def rotate_token(server), do: GenServer.call(server, :rotate_token)
+
   @impl true
   def init(opts) do
     transport = Keyword.get(opts, :transport, :tcp)
@@ -100,6 +111,29 @@ defmodule Twelvgaige.Breech.IPC.Server do
         breech: Keyword.get(opts, :breech, Breech),
         endpoint_path: endpoint_path,
         lock: lock,
+        operations:
+          Keyword.get(opts, :operations, Process.whereis(Twelvgaige.Operations.SessionControl)),
+        provider_limiter:
+          Keyword.get(
+            opts,
+            :provider_limiter,
+            Process.whereis(Twelvgaige.Operations.ProviderLimiter)
+          ),
+        scheduler: Keyword.get(opts, :scheduler, Process.whereis(Twelvgaige.Scheduler)),
+        retention:
+          Keyword.get(opts, :retention, Process.whereis(Twelvgaige.Operations.RetentionEnforcer)),
+        artifact_store:
+          Keyword.get(opts, :artifact_store, Process.whereis(Twelvgaige.Artifact.Store)),
+        keyring: Keyword.get(opts, :keyring, Process.whereis(Twelvgaige.Operations.Keyring)),
+        audit_export_key:
+          Keyword.get(
+            opts,
+            :audit_export_key,
+            Application.get_env(:twelvgaige, :operations_audit_export_key) ||
+              keyring_key(Process.whereis(Twelvgaige.Operations.Keyring), :audit_export)
+          ),
+        audit_anchor:
+          Keyword.get(opts, :audit_anchor, Process.whereis(Twelvgaige.Operations.AuditAnchor)),
         max_frame_bytes: Keyword.get(opts, :max_frame_bytes, @default_max_frame_bytes),
         allow_approve_all_safety?: Keyword.get(opts, :allow_approve_all_safety?, false)
       }
@@ -139,6 +173,22 @@ defmodule Twelvgaige.Breech.IPC.Server do
 
   def handle_call(:address, _from, state) do
     {:reply, state.address, state}
+  end
+
+  def handle_call(:request_state, _from, state), do: {:reply, state, state}
+
+  def handle_call(:rotate_token, _from, state) do
+    token = Endpoint.token()
+    next = %{state | token: token}
+
+    with :ok <- write_endpoint(next),
+         {:ok, _event} <- append_control_audit(state, :control_token_rotated, %{}) do
+      {:reply, {:ok, token}, next}
+    else
+      {:error, reason} ->
+        _ = write_endpoint(state)
+        {:reply, {:error, reason}, state}
+    end
   end
 
   @impl true
@@ -322,8 +372,9 @@ defmodule Twelvgaige.Breech.IPC.Server do
     response =
       with {:ok, payload} <- recv_transport(socket, 30_000),
            :ok <- ensure_frame_size(payload, state.max_frame_bytes),
-           {:ok, request} <- Protocol.decode(payload) do
-        dispatch(request, state, server)
+           {:ok, request} <- Protocol.decode(payload),
+           current <- GenServer.call(server, :request_state) do
+        dispatch(request, current, server)
       else
         {:error, reason} ->
           Protocol.error(%{}, reason)
@@ -380,6 +431,11 @@ defmodule Twelvgaige.Breech.IPC.Server do
         Protocol.error(request, :invalid_envelope)
 
       not Protocol.authorized?(request, state.token) ->
+        _ =
+          append_control_audit(state, :control_authentication_failed, %{
+            command: Map.get(request, "command")
+          })
+
         Protocol.error(request, :daemon_auth_failed)
 
       true ->
@@ -392,6 +448,13 @@ defmodule Twelvgaige.Breech.IPC.Server do
     Protocol.ok(request, %{"status" => "stopping"})
   end
 
+  defp execute(%{"command" => "daemon.token.rotate"} = request, _state, server) do
+    case rotate_token(server) do
+      {:ok, token} -> Protocol.ok(request, %{"token" => token, "status" => "rotated"})
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
   defp execute(%{"command" => "status"} = request, state, _server) do
     breech = state.breech
 
@@ -399,6 +462,245 @@ defmodule Twelvgaige.Breech.IPC.Server do
       {:ok, status} -> Protocol.ok(request, status)
       {:error, reason} -> Protocol.error(request, reason)
     end
+  end
+
+  defp execute(%{"command" => "session.list", "body" => body} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state),
+         {:ok, sessions} <-
+           Twelvgaige.Operations.SessionControl.list(
+             server: operations,
+             status: parse_session_status(body["status"])
+           ) do
+      Protocol.ok(request, sessions)
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "session.show", "body" => body} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state),
+         {:ok, session} <-
+           Twelvgaige.Operations.SessionControl.get(body["session_id"], server: operations) do
+      Protocol.ok(request, Map.drop(session, [:controller_pid, :credential_lease_id]))
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "session.attach", "body" => body} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state),
+         {:ok, lease, session} <-
+           Twelvgaige.Operations.SessionControl.attach(body["session_id"], server: operations) do
+      Protocol.ok(request, %{lease: lease, session: session})
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "session.takeover", "body" => body} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state),
+         epoch <- body["expected_epoch"],
+         true <- is_integer(epoch),
+         {:ok, lease, session} <-
+           Twelvgaige.Operations.SessionControl.takeover(body["session_id"], epoch,
+             server: operations
+           ) do
+      Protocol.ok(request, %{lease: lease, session: session})
+    else
+      false -> Protocol.error(request, :session_control_epoch_required)
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "session.revoke", "body" => body} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state),
+         {:ok, session} <-
+           Twelvgaige.Operations.SessionControl.revoke(body["session_id"], server: operations) do
+      Protocol.ok(request, session)
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "sandbox.health"} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state),
+         {:ok, health} <-
+           Twelvgaige.Operations.SessionControl.backend_health(server: operations) do
+      Protocol.ok(request, health)
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "sandbox.reconcile", "body" => body} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state),
+         {:ok, report} <-
+           Twelvgaige.Operations.SessionControl.reconcile(
+             server: operations,
+             apply?: body["apply"] == true,
+             destroy_orphans?: body["destroy_orphans"] == true
+           ) do
+      Protocol.ok(request, report)
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "operations.dashboard"} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state) do
+      dashboard =
+        Twelvgaige.Operations.Dashboard.snapshot(
+          session_control: operations,
+          provider_limiter: state.provider_limiter,
+          scheduler: state.scheduler,
+          audit_anchor: state.audit_anchor
+        )
+
+      Protocol.ok(request, dashboard)
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "operations.audit.status"} = request, state, _server) do
+    with {:ok, audit_anchor} <- require_audit_anchor(state) do
+      Protocol.ok(request, Twelvgaige.Operations.AuditAnchor.status(server: audit_anchor))
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "operations.audit.checkpoint"} = request, state, _server) do
+    with {:ok, audit_anchor} <- require_audit_anchor(state),
+         {:ok, report} <- Twelvgaige.Operations.AuditAnchor.run(server: audit_anchor) do
+      Protocol.ok(request, report)
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(
+         %{"command" => "operations.audit.export", "body" => body} = request,
+         state,
+         _server
+       ) do
+    with {:ok, operations} <- require_operations(state),
+         key when is_binary(key) <- state.audit_export_key,
+         destination when is_binary(destination) <- body["destination"],
+         {:ok, _event} <-
+           append_control_audit(state, :audit_export_requested, %{
+             destination_digest: sha256_text(destination)
+           }),
+         {:ok, report} <-
+           Twelvgaige.Operations.AuditExport.export(destination, key,
+             store: operations_store(operations),
+             authorize: fn -> :ok end
+           ) do
+      Protocol.ok(request, report)
+    else
+      nil -> Protocol.error(request, :audit_export_configuration_unavailable)
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "operations.store.stats"} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state),
+         {:ok, stats} <-
+           Twelvgaige.Operations.Store.stats(server: operations_store(operations)) do
+      Protocol.ok(request, stats)
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(
+         %{"command" => "operations.store.backup", "body" => body} = request,
+         state,
+         _server
+       ) do
+    with {:ok, operations} <- require_operations(state),
+         {:ok, audit_anchor} <- require_audit_anchor(state),
+         {:ok, _checkpoint} <-
+           Twelvgaige.Operations.AuditAnchor.run(server: audit_anchor),
+         destination when is_binary(destination) <- body["destination"],
+         {:ok, report} <-
+           Twelvgaige.Operations.Store.backup(destination,
+             server: operations_store(operations),
+             timeout: 60_000
+           ) do
+      Protocol.ok(request, report)
+    else
+      nil -> Protocol.error(request, :operations_destination_required)
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(
+         %{"command" => "operations.store.restore", "body" => body} = request,
+         state,
+         _server
+       ) do
+    with {:ok, audit_anchor} <- require_audit_anchor(state),
+         key when is_binary(key) <- state.audit_export_key,
+         %{path: checkpoint_path, status: status} <-
+           Twelvgaige.Operations.AuditAnchor.status(server: audit_anchor),
+         true <- status in [:healthy, :stale],
+         source when is_binary(source) <- body["source"],
+         destination when is_binary(destination) <- body["destination"],
+         {:ok, report} <-
+           Twelvgaige.Operations.Store.restore_backup(source, destination,
+             audit_checkpoint_path: checkpoint_path,
+             audit_signing_key: key
+           ) do
+      Protocol.ok(request, report)
+    else
+      nil -> Protocol.error(request, :operations_restore_paths_required)
+      false -> Protocol.error(request, :audit_checkpoint_unhealthy)
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "operations.retention.status"} = request, state, _server) do
+    with {:ok, retention} <- require_retention(state) do
+      Protocol.ok(request, Twelvgaige.Operations.RetentionEnforcer.status(server: retention))
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "operations.retention.run"} = request, state, _server) do
+    with {:ok, retention} <- require_retention(state),
+         {:ok, report} <- Twelvgaige.Operations.RetentionEnforcer.run(server: retention) do
+      Protocol.ok(request, report)
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "operations.artifact.inventory"} = request, state, _server) do
+    with {:ok, artifact_store} <- require_artifact_store(state),
+         {:ok, inventory} <- Twelvgaige.Artifact.Store.inventory(server: artifact_store) do
+      Protocol.ok(request, inventory)
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(
+         %{"command" => "operations.artifact.rotate"} = request,
+         state,
+         _server
+       ) do
+    with {:ok, keyring} <- require_keyring(state),
+         {:ok, report} <- Twelvgaige.Operations.Keyring.rotate_artifact(server: keyring) do
+      Protocol.ok(request, report)
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "operations.release.check"} = request, _state, _server) do
+    Protocol.ok(request, Twelvgaige.Operations.ReleaseGate.evaluate(File.cwd!()))
   end
 
   defp execute(%{"command" => "round.list", "body" => body} = request, state, _server) do
@@ -506,6 +808,67 @@ defmodule Twelvgaige.Breech.IPC.Server do
 
   defp execute(request, _state, _server) do
     Protocol.error(request, :unknown_command)
+  end
+
+  defp require_operations(%{operations: operations}) when is_pid(operations),
+    do: {:ok, operations}
+
+  defp require_operations(_state), do: {:error, :operations_control_plane_unavailable}
+
+  defp require_retention(%{retention: retention}) when is_pid(retention), do: {:ok, retention}
+  defp require_retention(_state), do: {:error, :retention_enforcer_unavailable}
+
+  defp require_artifact_store(%{artifact_store: store}) when is_pid(store), do: {:ok, store}
+  defp require_artifact_store(_state), do: {:error, :artifact_store_unavailable}
+
+  defp require_keyring(%{keyring: keyring}) when is_pid(keyring), do: {:ok, keyring}
+  defp require_keyring(_state), do: {:error, :operations_keyring_unavailable}
+
+  defp require_audit_anchor(%{audit_anchor: audit_anchor}) when is_pid(audit_anchor),
+    do: {:ok, audit_anchor}
+
+  defp require_audit_anchor(_state), do: {:error, :audit_anchor_unavailable}
+
+  defp operations_store(operations), do: Twelvgaige.Operations.SessionControl.store(operations)
+
+  defp append_control_audit(%{operations: operations}, event_type, details)
+       when is_pid(operations) do
+    Twelvgaige.Operations.Store.append_audit(
+      %{
+        event_type: event_type,
+        occurred_at: DateTime.utc_now(),
+        details: details
+      },
+      server: operations_store(operations)
+    )
+  catch
+    :exit, reason -> {:error, {:operations_audit_unavailable, reason}}
+  end
+
+  defp append_control_audit(_state, _event_type, _details), do: {:ok, nil}
+
+  defp sha256_text(value) when is_binary(value),
+    do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
+
+  defp keyring_key(nil, _purpose), do: nil
+
+  defp keyring_key(keyring, purpose) do
+    case Twelvgaige.Operations.Keyring.fetch(purpose, server: keyring) do
+      {:ok, key} -> key
+      {:error, _reason} -> nil
+    end
+  catch
+    :exit, _reason -> nil
+  end
+
+  defp parse_session_status(nil), do: nil
+
+  defp parse_session_status(status) when is_binary(status) do
+    try do
+      String.to_existing_atom(status)
+    rescue
+      ArgumentError -> status
+    end
   end
 
   defp safety_decision(request, breech, body, decision) do

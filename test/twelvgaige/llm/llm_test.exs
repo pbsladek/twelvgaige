@@ -39,7 +39,7 @@ defmodule Twelvgaige.LLMTest do
   end
 
   test "first-class provider ids are routable" do
-    for provider <- ["mock", "anthropic", "openai", "gemini", "ollama"] do
+    for provider <- ["mock", "openai", "ollama"] do
       assert LLM.known_provider?(provider)
     end
   end
@@ -75,14 +75,14 @@ defmodule Twelvgaige.LLMTest do
     end
 
     assert {:error, error} =
-             LLM.complete(:anthropic, "claude-test", [%{role: "user", content: "hi"}],
+             LLM.complete(:ollama, "llama-test", [%{role: "user", content: "hi"}],
                response_format: %{"type" => "json_schema"},
                transport: transport
              )
 
     assert error.class == :policy_error
     assert error.reason == :policy_denied
-    assert error.details == %{provider: "anthropic", capability: :json_schema}
+    assert error.details == %{provider: "ollama", capability: :json_schema}
   end
 
   test "provider capability check allows supported native JSON schema mode" do
@@ -138,5 +138,46 @@ defmodule Twelvgaige.LLMTest do
     assert error.retryable
     assert error.details.provider == "mock"
     assert :ok = ResourceLimiter.release(permit)
+  end
+
+  test "an in-flight provider result survives limiter restart during permit cleanup" do
+    {:ok, limiter} = ResourceLimiter.start_link(name: nil, limits: %{llm_call: 1})
+    owner = self()
+
+    transport = fn _request ->
+      send(owner, {:transport_waiting, self()})
+
+      receive do
+        :complete_transport ->
+          {:ok,
+           %{
+             status: 200,
+             headers: [],
+             body: %{
+               "choices" => [
+                 %{
+                   "message" => %{"content" => "completed"},
+                   "finish_reason" => "stop"
+                 }
+               ],
+               "usage" => %{}
+             }
+           }}
+      end
+    end
+
+    task =
+      Task.async(fn ->
+        LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+          limiter: limiter,
+          transport: transport
+        )
+      end)
+
+    assert_receive {:transport_waiting, transport_process}
+    GenServer.stop(limiter)
+    send(transport_process, :complete_transport)
+
+    assert {:ok, %{content: "completed"}} = Task.await(task)
   end
 end

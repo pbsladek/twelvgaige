@@ -77,7 +77,7 @@ defmodule Twelvgaige.Authoring.Scaffold do
          {:ok, workflow} <- expand_workflow(entry, workflow_id),
          workflow <- put_generated_metadata(workflow, entry),
          {:ok, workflow} <- validate_workflow(workflow),
-         agents <- entry.agents ++ maybe_mock_agents(workflow, opts),
+         agents <- entry.agents,
          :ok <- validate_agents(agents) do
       {:ok, %{scaffold: scaffold, workflow: workflow, agents: agents}}
     end
@@ -445,32 +445,6 @@ defmodule Twelvgaige.Authoring.Scaffold do
            details: %{path: path, extension: extension}
          )}
     end
-  end
-
-  defp maybe_mock_agents(workflow, opts) do
-    if Keyword.get(opts, :with_mock_agents?, false) do
-      workflow
-      |> Map.fetch!("shots")
-      |> Enum.map(&Map.get(&1, "agent"))
-      |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
-      |> Enum.map(&mock_agent/1)
-    else
-      []
-    end
-  end
-
-  defp mock_agent(agent_id) do
-    %{
-      "kind" => "agent",
-      "id" => agent_id,
-      "name" => titleize(agent_id),
-      "version" => "1.0.0",
-      "provider" => "mock",
-      "model" => "mock-model",
-      "system_prompt" => "You are #{agent_id}. Return concise JSON matching the shot schema.",
-      "tools" => %{"allowed" => ["kubectl_get", "kubectl_apply"]}
-    }
   end
 
   defp put_generated_metadata(workflow, entry) do

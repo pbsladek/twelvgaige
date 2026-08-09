@@ -12,16 +12,12 @@ defmodule Twelvgaige.LLM.ProviderConfig do
   @config_key :llm_providers
 
   @api_key_envs %{
-    "anthropic" => ["TWELVGAIGE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"],
     "openai" => ["TWELVGAIGE_OPENAI_API_KEY", "OPENAI_API_KEY"],
-    "gemini" => ["TWELVGAIGE_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"],
     "ollama" => []
   }
 
   @base_url_envs %{
-    "anthropic" => ["TWELVGAIGE_ANTHROPIC_BASE_URL"],
     "openai" => ["TWELVGAIGE_OPENAI_BASE_URL"],
-    "gemini" => ["TWELVGAIGE_GEMINI_BASE_URL"],
     "ollama" => ["TWELVGAIGE_OLLAMA_BASE_URL", "OLLAMA_HOST"]
   }
 

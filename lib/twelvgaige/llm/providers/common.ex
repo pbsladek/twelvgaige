@@ -4,6 +4,8 @@ defmodule Twelvgaige.LLM.Providers.Common do
   import Bitwise
 
   alias Twelvgaige.Error
+  alias Twelvgaige.LLM.Conversation
+  alias Twelvgaige.Operations.ProviderLimiter
   alias Twelvgaige.Redactor
 
   @retryable_transport_reasons [
@@ -18,9 +20,7 @@ defmodule Twelvgaige.LLM.Providers.Common do
 
   @max_timeout_ms 120_000
   @official_hosts %{
-    "anthropic" => ["api.anthropic.com"],
-    "openai" => ["api.openai.com"],
-    "gemini" => ["generativelanguage.googleapis.com"]
+    "openai" => ["api.openai.com"]
   }
 
   @spec call_transport(map(), keyword()) :: {:ok, map()} | {:error, Error.t()}
@@ -37,7 +37,9 @@ defmodule Twelvgaige.LLM.Providers.Common do
 
       case result do
         {:ok, %{status: status} = response} when is_integer(status) ->
-          {:ok, response}
+          with :ok <- observe_provider_response(request.provider, response, opts) do
+            {:ok, response}
+          end
 
         {:ok, response} ->
           {:error,
@@ -63,6 +65,42 @@ defmodule Twelvgaige.LLM.Providers.Common do
            reason: Redactor.redact_text(Exception.message(error))
          }
        )}
+  end
+
+  defp observe_provider_response(provider, response, opts) do
+    case provider_limiter(opts) do
+      nil ->
+        :ok
+
+      limiter ->
+        account = Keyword.get(opts, :provider_account, "default")
+
+        case ProviderLimiter.observe_response(provider, account, response, server: limiter) do
+          :ok -> :ok
+          {:ok, _cooldown} -> :ok
+          {:error, reason} -> {:error, provider_control_error(provider, reason)}
+        end
+    end
+  catch
+    :exit, reason -> {:error, provider_control_error(provider, reason)}
+  end
+
+  defp provider_limiter(opts) do
+    case Keyword.fetch(opts, :provider_limiter) do
+      {:ok, limiter} -> if limiter_available?(limiter), do: limiter
+      :error -> if limiter_available?(ProviderLimiter), do: ProviderLimiter
+    end
+  end
+
+  defp limiter_available?(nil), do: false
+  defp limiter_available?(pid) when is_pid(pid), do: Process.alive?(pid)
+  defp limiter_available?(name) when is_atom(name), do: Process.whereis(name) != nil
+
+  defp provider_control_error(provider, reason) do
+    Error.new(:store_error, :store_unavailable, "provider response accounting failed",
+      retryable: false,
+      details: %{provider: provider, reason: safe_inspect(reason)}
+    )
   end
 
   @spec default_transport(map()) :: {:ok, map()} | {:error, term()}
@@ -197,21 +235,22 @@ defmodule Twelvgaige.LLM.Providers.Common do
 
   @spec message_content(map()) :: String.t()
   def message_content(message) do
-    content = Map.get(message, :content, Map.get(message, "content", ""))
-
-    cond do
-      is_binary(content) -> content
-      is_list(content) -> content |> Jason.encode!()
-      true -> to_string(content)
-    end
+    Conversation.content(message)
   end
 
   @spec message_role(map()) :: String.t()
   def message_role(message) do
-    message
-    |> Map.get(:role, Map.get(message, "role", "user"))
-    |> to_string()
+    Conversation.role(message)
   end
+
+  @spec message_tool_calls(map()) :: [Twelvgaige.LLM.Conversation.tool_call()]
+  def message_tool_calls(message), do: Conversation.tool_calls(message)
+
+  @spec message_tool_call_id(map()) :: String.t() | nil
+  def message_tool_call_id(message), do: Conversation.tool_call_id(message)
+
+  @spec message_name(map()) :: String.t() | nil
+  def message_name(message), do: Conversation.name(message)
 
   @spec parse_arguments(term()) :: map()
   def parse_arguments(arguments) when is_map(arguments), do: arguments
@@ -238,21 +277,8 @@ defmodule Twelvgaige.LLM.Providers.Common do
     |> Map.merge(extra)
   end
 
-  defp request_headers("anthropic", api_key, _opts) do
-    [
-      {"content-type", "application/json"},
-      {"user-agent", user_agent()},
-      {"anthropic-version", "2023-06-01"}
-    ] ++ key_header("x-api-key", api_key)
-  end
-
   defp request_headers("openai", api_key, _opts) do
     [{"content-type", "application/json"}, {"user-agent", user_agent()}] ++ bearer_header(api_key)
-  end
-
-  defp request_headers("gemini", api_key, _opts) do
-    [{"content-type", "application/json"}, {"user-agent", user_agent()}] ++
-      key_header("x-goog-api-key", api_key)
   end
 
   defp request_headers("ollama", _api_key, _opts) do
@@ -279,9 +305,6 @@ defmodule Twelvgaige.LLM.Providers.Common do
   defp normalize_headers(headers) do
     Enum.map(headers, fn {key, value} -> {to_string(key), to_string(value)} end)
   end
-
-  defp key_header(_key, nil), do: []
-  defp key_header(key, value), do: [{key, value}]
 
   defp bearer_header(nil), do: []
   defp bearer_header(value), do: [{"authorization", "Bearer #{value}"}]

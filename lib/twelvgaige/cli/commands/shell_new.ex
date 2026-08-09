@@ -88,7 +88,6 @@ defmodule Twelvgaige.CLI.Commands.ShellNew do
       output: nil,
       write?: false,
       force?: false,
-      with_mock_agents?: false,
       root: nil
     )
   end
@@ -116,10 +115,6 @@ defmodule Twelvgaige.CLI.Commands.ShellNew do
   defp parse_opts(["--root", root | rest], opts),
     do: parse_opts(rest, Keyword.put(opts, :root, root))
 
-  defp parse_opts(["--with-mock-agents" | rest], opts) do
-    parse_opts(rest, Keyword.put(opts, :with_mock_agents?, true))
-  end
-
   defp parse_opts(["--write" | rest], opts),
     do: parse_opts(rest, Keyword.put(opts, :write?, true))
 
@@ -136,8 +131,7 @@ defmodule Twelvgaige.CLI.Commands.ShellNew do
   defp scaffold_opts(opts, root) do
     [
       scaffold_paths: opts[:scaffold_paths],
-      root: root[:root],
-      with_mock_agents?: opts[:with_mock_agents?]
+      root: root[:root]
     ]
   end
 

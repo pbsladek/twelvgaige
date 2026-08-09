@@ -11,6 +11,7 @@ E2E_ARTIFACTS="$E2E_TMP/artifacts"
 E2E_TRANSCRIPT="$E2E_ARTIFACTS/transcript.log"
 E2E_STEP=0
 E2E_DAEMON_PID=""
+E2E_OLLAMA_PID=""
 
 export TWELVGAIGE_INSTALL_DIR="$E2E_TMP/install"
 export TWELVGAIGE_STORE_SQLITE="$E2E_TMP/store.sqlite3"
@@ -24,12 +25,14 @@ e2e_setup() {
   printf "e2e temp: %s\n" "$E2E_TMP"
   printf "bin: %s\n" "$E2E_BIN" > "$E2E_TRANSCRIPT"
   require_bin "$E2E_BIN"
+  start_ollama_fixture
 }
 
 e2e_cleanup() {
   status=$?
 
   stop_daemon_if_running
+  stop_ollama_fixture
 
   if [ "$status" -eq 0 ] && [ "${TWELVGAIGE_E2E_KEEP:-0}" != "1" ]; then
     rm -rf "$E2E_TMP"
@@ -38,6 +41,30 @@ e2e_cleanup() {
   fi
 
   exit "$status"
+}
+
+start_ollama_fixture() {
+  require_command elixir
+
+  port_file="$E2E_TMP/ollama.port"
+  TWELVGAIGE_E2E_OLLAMA_PORT_FILE="$port_file" \
+    elixir "$E2E_REPO_ROOT/scripts/e2e_ollama_fixture.exs" \
+    > "$E2E_ARTIFACTS/ollama.stdout" 2> "$E2E_ARTIFACTS/ollama.stderr" &
+  E2E_OLLAMA_PID=$!
+  wait_for_file "$port_file" 100
+
+  ollama_port=$(tr -d '[:space:]' < "$port_file")
+  export TWELVGAIGE_OLLAMA_BASE_URL="http://127.0.0.1:$ollama_port"
+  printf "ollama fixture: %s\n" "$TWELVGAIGE_OLLAMA_BASE_URL" >> "$E2E_TRANSCRIPT"
+}
+
+stop_ollama_fixture() {
+  if [ -n "${E2E_OLLAMA_PID:-}" ] && kill -0 "$E2E_OLLAMA_PID" 2>/dev/null; then
+    kill "$E2E_OLLAMA_PID" 2>/dev/null || true
+    wait "$E2E_OLLAMA_PID" 2>/dev/null || true
+  fi
+
+  E2E_OLLAMA_PID=""
 }
 
 require_bin() {

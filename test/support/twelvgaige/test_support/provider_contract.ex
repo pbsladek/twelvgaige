@@ -33,28 +33,6 @@ defmodule Twelvgaige.TestSupport.ProviderContract do
         expected_tokens: 3
       },
       %{
-        provider: :anthropic,
-        provider_id: "anthropic",
-        model: "claude-contract",
-        opts: [api_key: @secret, max_tokens: 64],
-        success_body: %{
-          "content" => [
-            %{"type" => "text", "text" => "anthropic contract answer"},
-            %{
-              "type" => "tool_use",
-              "id" => "toolu_contract",
-              "name" => "shell_read",
-              "input" => %{"path" => "docs/design/plan.md"}
-            }
-          ],
-          "usage" => %{"input_tokens" => 3, "output_tokens" => 4},
-          "stop_reason" => "tool_use"
-        },
-        expected_content: "anthropic contract answer",
-        expected_tool_name: "shell_read",
-        expected_tokens: 7
-      },
-      %{
         provider: :openai,
         provider_id: "openai",
         model: "gpt-contract",
@@ -83,38 +61,6 @@ defmodule Twelvgaige.TestSupport.ProviderContract do
         expected_content: "openai contract answer",
         expected_tool_name: "http_get",
         expected_tokens: 11
-      },
-      %{
-        provider: :gemini,
-        provider_id: "gemini",
-        model: "gemini-contract",
-        opts: [api_key: @secret],
-        success_body: %{
-          "candidates" => [
-            %{
-              "content" => %{
-                "parts" => [
-                  %{"text" => "gemini contract answer"},
-                  %{
-                    "functionCall" => %{
-                      "name" => "kubectl_get",
-                      "args" => %{"resource" => "pods", "namespace" => "default"}
-                    }
-                  }
-                ]
-              },
-              "finishReason" => "STOP"
-            }
-          ],
-          "usageMetadata" => %{
-            "promptTokenCount" => 7,
-            "candidatesTokenCount" => 8,
-            "totalTokenCount" => 15
-          }
-        },
-        expected_content: "gemini contract answer",
-        expected_tool_name: "kubectl_get",
-        expected_tokens: 15
       },
       %{
         provider: :ollama,

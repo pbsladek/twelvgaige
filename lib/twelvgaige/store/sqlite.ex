@@ -14,8 +14,10 @@ defmodule Twelvgaige.Store.SQLite do
 
   alias Ecto.Adapters.SQL
   alias Twelvgaige.Audit.Event, as: AuditEvent
+  alias Twelvgaige.Audit.Chain, as: AuditChain
   alias Twelvgaige.Redactor
   alias Twelvgaige.Round.ShotRun
+  alias Twelvgaige.Round.Snapshot
   alias Twelvgaige.Security.FileMode
   alias Twelvgaige.Store.Retention
   alias Twelvgaige.Store.SQLite.Migrations.Initial
@@ -184,6 +186,7 @@ defmodule Twelvgaige.Store.SQLite do
 
   @impl true
   def handle_call({:create_round, snapshot, manifest, audit_events}, _from, state) do
+    snapshot = Snapshot.persistable(snapshot)
     round_id = fetch_id!(snapshot, :round)
 
     reply =
@@ -391,7 +394,11 @@ defmodule Twelvgaige.Store.SQLite do
           true ->
             first_seq = next_event_seq(round_id)
             {events, _next_seq} = assign_event_sequences(events, first_seq)
-            next_snapshot = put_value(next_snapshot, :version, expected_version + 1)
+
+            next_snapshot =
+              next_snapshot
+              |> put_value(:version, expected_version + 1)
+              |> Snapshot.persistable()
 
             with :ok <- update_round(round_id, next_snapshot),
                  :ok <- replace_shot_runs(round_id, next_snapshot),
@@ -934,8 +941,11 @@ defmodule Twelvgaige.Store.SQLite do
   defp insert_audit_events(_round_id, []), do: :ok
 
   defp insert_audit_events(round_id, audit_events) do
+    previous_hash = last_audit_chain_hash(round_id)
+
     audit_events
     |> AuditEvent.sanitize_many()
+    |> then(&AuditChain.extend(previous_hash, &1))
     |> Enum.reduce_while(:ok, fn event, :ok ->
       case query_ok("INSERT INTO audit_events (round_id, event) VALUES (?, ?)", [
              round_id,
@@ -945,6 +955,25 @@ defmodule Twelvgaige.Store.SQLite do
         {:error, _reason} = error -> {:halt, error}
       end
     end)
+  end
+
+  defp last_audit_chain_hash(round_id) do
+    case query(
+           "SELECT event FROM audit_events WHERE round_id = ? ORDER BY id DESC LIMIT 1",
+           [round_id]
+         ) do
+      {:ok, %{rows: [[event]]}} ->
+        decoded = decode(event)
+
+        Map.get(
+          decoded,
+          :audit_chain_hash,
+          Map.get(decoded, "audit_chain_hash", String.duplicate("0", 64))
+        )
+
+      _other ->
+        String.duplicate("0", 64)
+    end
   end
 
   defp sanitize_journal(%{} = journal, %{sensitive_retention: :summary}) do

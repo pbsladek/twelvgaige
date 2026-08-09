@@ -13,7 +13,7 @@ defmodule Twelvgaige.CLI.Commands.ShellCreateModulesTest do
     assert Enum.map(workflow.shots, & &1.id) == ["analyze"]
   end
 
-  test "shell new module writes workflow and mock agents with force semantics" do
+  test "shell new module writes a workflow with force semantics" do
     root = tmp_dir!("twelvgaige_shell_new_modules")
     output_path = Path.join(root, "workflows/incident.yaml")
 
@@ -23,14 +23,13 @@ defmodule Twelvgaige.CLI.Commands.ShellCreateModulesTest do
                "inspect-analyze-gate-fix-verify",
                "--output",
                output_path,
-               "--with-mock-agents",
                "--write",
                "--root",
                root
              ])
 
     assert output =~ "created workflow shell: #{output_path}"
-    assert output =~ "created agent shell:"
+    refute output =~ "created agent shell:"
     assert {:ok, workflow} = Twelvgaige.Shell.Loader.load(output_path)
     assert workflow.id == "incident"
 

@@ -1,12 +1,17 @@
 defmodule Twelvgaige.Round.Server do
+  @allow_test_agent_fallback Application.compile_env(
+                               :twelvgaige,
+                               :allow_test_agent_fallback,
+                               false
+                             )
+
   @moduledoc """
   Phase 1 round coordinator process.
 
-  The default path still delegates to `Round.Runner` so durable runner behavior
-  remains stable. Passing `scheduler?: true` enables the GenServer-owned shot
-  scheduler path: ready shots are admitted by `ResourceLimiter`, executed in
-  monitored tasks, and applied back to live round state from task result, crash,
-  timeout, and retry messages.
+  Foreground and detached execution both use this GenServer-owned durable
+  scheduler. Ready shots are admitted by `ResourceLimiter`, executed in
+  monitored tasks, and applied back to live round state from task result,
+  crash, timeout, and retry messages.
   """
 
   use GenServer, restart: :transient
@@ -20,7 +25,6 @@ defmodule Twelvgaige.Round.Server do
   alias Twelvgaige.Round.InputValidator
   alias Twelvgaige.Round.Manifest
   alias Twelvgaige.Round.Recovery
-  alias Twelvgaige.Round.Runner
   alias Twelvgaige.Round.ServerMetrics
   alias Twelvgaige.Round.ServerSafety
   alias Twelvgaige.Round.Snapshot
@@ -57,6 +61,7 @@ defmodule Twelvgaige.Round.Server do
   @spec run_sync(Workflow.t(), map(), keyword()) ::
           {:ok, Snapshot.t()} | {:error, Twelvgaige.Error.t()}
   def run_sync(%Workflow{} = workflow, input, opts \\ []) when is_map(input) do
+    opts = Keyword.put(opts, :scheduler?, true)
     timeout = Keyword.get(opts, :timeout, 30_000)
 
     with {:ok, pid} <- start_round(workflow, input, opts) do
@@ -86,6 +91,13 @@ defmodule Twelvgaige.Round.Server do
           run_recovered_snapshot(workflow, snapshot, opts)
         end
     end
+  end
+
+  @doc "Resumes a snapshot that has already been reconciled by `Round.Recovery`."
+  @spec resume_sync(Workflow.t(), Snapshot.t() | map(), keyword()) ::
+          {:ok, Snapshot.t()} | {:error, Twelvgaige.Error.t()}
+  def resume_sync(%Workflow{} = workflow, snapshot, opts \\ []) when is_list(opts) do
+    run_recovered_snapshot(workflow, Snapshot.new(snapshot), opts)
   end
 
   @spec approve_safety_sync(Workflow.t(), Snapshot.t() | map(), String.t(), keyword()) ::
@@ -229,23 +241,23 @@ defmodule Twelvgaige.Round.Server do
 
   @impl true
   def handle_continue(:run, state) do
-    if Keyword.get(state.opts, :scheduler?, false) do
-      case with_effective_profile(state) do
-        {:ok, state} -> {:noreply, start_scheduled_round(state)}
-        {:error, %Error{} = error} -> {:noreply, finish_result(state, {:error, error})}
-      end
-    else
-      {:noreply, finish_result(state, run_with_round_permit(state))}
+    case with_effective_profile(state) do
+      {:ok, state} -> {:noreply, start_scheduled_round(state)}
+      {:error, %Error{} = error} -> {:noreply, finish_result(state, {:error, error})}
     end
   end
 
   @impl true
   def handle_call(
         :await,
-        _from,
+        from,
         %{result: nil, round_state: %RoundState{status: :awaiting_safety} = round_state} = state
       ) do
-    {:reply, {:ok, RoundState.to_snapshot(round_state)}, state}
+    if inflight_empty?(round_state) do
+      {:reply, {:ok, RoundState.to_snapshot(round_state)}, state}
+    else
+      {:noreply, %{state | awaiters: [from | state.awaiters]}}
+    end
   end
 
   def handle_call(:await, from, %{result: nil} = state) do
@@ -357,6 +369,27 @@ defmodule Twelvgaige.Round.Server do
     end
   end
 
+  def handle_info(
+        {:round_timeout, timeout_ref},
+        %{round_state: %RoundState{round_timeout_ref: timeout_ref}} = state
+      ) do
+    error =
+      Error.new(:timeout_error, :round_timeout, "workflow execution timed out",
+        retryable: false,
+        details: %{round_id: state.round_state.id, timeout_ms: effective_round_timeout_ms(state)}
+      )
+
+    state =
+      state
+      |> cancel_inflight_work()
+      |> cancel_shots_for_timeout()
+      |> fail_from_state(error)
+
+    {:noreply, state}
+  end
+
+  def handle_info({:round_timeout, _stale_ref}, state), do: {:noreply, state}
+
   def handle_info({:retry_ready, shot_id, attempt}, state) do
     case state.round_state do
       %RoundState{shot_states: shot_states} ->
@@ -400,6 +433,38 @@ defmodule Twelvgaige.Round.Server do
     end
   end
 
+  def handle_info({:resource_granted, waiter_id, %ResourceLimiter.Permit{} = permit}, state) do
+    case fetch_waiter(state, waiter_id, permit.resource_kind) do
+      {:ok, %{start_mode: :committed_after_store} = entry} ->
+        state =
+          state
+          |> drop_inflight(entry)
+          |> start_committed_shot(
+            entry.shot,
+            entry.current,
+            entry.attempt,
+            entry.attempt_input,
+            permit
+          )
+          |> chamber()
+
+        {:noreply, state}
+
+      {:ok, entry} ->
+        state =
+          state
+          |> drop_inflight(entry)
+          |> start_admitted_shot(entry.shot, entry.current, entry.attempt, permit)
+          |> chamber()
+
+        {:noreply, state}
+
+      :error ->
+        release_shot_permit(permit)
+        {:noreply, state}
+    end
+  end
+
   def handle_info({:resource_timeout, waiter_id, resource_kind}, state) do
     case fetch_waiter(state, waiter_id, resource_kind) do
       {:ok, entry} ->
@@ -420,6 +485,20 @@ defmodule Twelvgaige.Round.Server do
 
   def handle_info({:retry_store_commit, transition_id}, state) do
     {:noreply, retry_pending_store_commit(state, transition_id)}
+  end
+
+  defp cancel_shots_for_timeout(state) do
+    now = Twelvgaige.Clock.utc_now()
+
+    put_in(
+      state.round_state.shot_states,
+      cancel_shot_states(
+        state.round_state.shot_states,
+        now,
+        "system",
+        "workflow timeout"
+      )
+    )
   end
 
   defp start_round(workflow, input, opts) do
@@ -469,7 +548,10 @@ defmodule Twelvgaige.Round.Server do
 
     case result do
       {:scheduled, permit, round_state} ->
-        state = Map.merge(state, %{round_permit: permit, round_state: round_state})
+        state =
+          state
+          |> Map.merge(%{round_permit: permit, round_state: round_state})
+          |> arm_round_timeout()
 
         with {:ok, state} <- ensure_scheduler_store_round(state) do
           case state.round_state.status do
@@ -512,6 +594,9 @@ defmodule Twelvgaige.Round.Server do
 
       RoundState.all_shots_successful?(round_state) and inflight_empty?(round_state) ->
         complete_from_state(state)
+
+      awaiting_safety?(round_state) and inflight_empty?(round_state) ->
+        reply_awaiters(state, {:ok, RoundState.to_snapshot(round_state)})
 
       true ->
         schedule_ready_or_wait(state)
@@ -672,15 +757,36 @@ defmodule Twelvgaige.Round.Server do
   defp task_supervisor_available?(name) when is_atom(name), do: Process.whereis(name) != nil
   defp task_supervisor_available?(_supervisor), do: false
 
-  defp shot_timeout(%{timeout_ms: nil}, _attempt), do: nil
+  defp shot_timeout(shot, attempt, %Attempt{} = attempt_input) do
+    timeout_ms = effective_attempt_timeout_ms(shot, attempt_input)
 
-  defp shot_timeout(shot, attempt) do
+    if is_nil(timeout_ms) do
+      nil
+    else
+      start_shot_timeout(shot.id, attempt, timeout_ms)
+    end
+  end
+
+  defp start_shot_timeout(shot_id, attempt, timeout_ms) do
     timeout_ref = make_ref()
 
     timer_ref =
-      Process.send_after(self(), {:shot_timeout, shot.id, attempt, timeout_ref}, shot.timeout_ms)
+      Process.send_after(self(), {:shot_timeout, shot_id, attempt, timeout_ref}, timeout_ms)
 
     %{ref: timeout_ref, timer_ref: timer_ref}
+  end
+
+  defp effective_attempt_timeout_ms(shot, %Attempt{} = attempt) do
+    loadout = attempt.loadout || %{}
+    choke = Map.get(loadout, :choke, Map.get(loadout, "choke", %{})) || %{}
+    agent_timeout = Map.get(choke, :timeout_ms, Map.get(choke, "timeout_ms"))
+
+    [shot.timeout_ms, agent_timeout]
+    |> Enum.filter(&(is_integer(&1) and &1 > 0))
+    |> case do
+      [] -> nil
+      limits -> Enum.min(limits)
+    end
   end
 
   defp put_resource_waiter(state, waiter, shot, current, attempt, context, extra \\ []) do
@@ -1243,6 +1349,8 @@ defmodule Twelvgaige.Round.Server do
     audit_event = transition_audit_event(state.round_state, pending, event)
 
     try do
+      :ok = invoke_transition_hook(state, :before_commit, pending)
+
       case store.commit_transition(
              state.round_state.id,
              pending.expected_version,
@@ -1252,6 +1360,8 @@ defmodule Twelvgaige.Round.Server do
              [audit_event]
            ) do
         status when status in [:ok, :already_committed] ->
+          :ok = invoke_transition_hook(state, :after_commit, pending)
+
           committed =
             pending.next_round_state
             |> Map.put(:version, pending.expected_version + 1)
@@ -1269,6 +1379,9 @@ defmodule Twelvgaige.Round.Server do
           block_on_store(state, pending, reason)
       end
     rescue
+      error in Twelvgaige.Round.CrashInjector.InjectedCrash ->
+        reraise error, __STACKTRACE__
+
       error ->
         block_on_store(state, pending, error)
     catch
@@ -1277,7 +1390,22 @@ defmodule Twelvgaige.Round.Server do
     end
   end
 
+  defp invoke_transition_hook(state, stage, pending) do
+    case Keyword.get(state.opts, :transition_hook) do
+      hook when is_function(hook, 3) -> hook.(stage, pending, state.round_state)
+      _other -> :ok
+    end
+  end
+
   defp block_on_store(state, pending, reason) do
+    if state.workflow.policy.on_store_error == :fail_round do
+      fail_on_store(state, pending, reason)
+    else
+      block_and_retry_store(state, pending, reason)
+    end
+  end
+
+  defp block_and_retry_store(state, pending, reason) do
     pending = cleanup_pending_after_store_block(pending)
 
     Process.send_after(
@@ -1300,6 +1428,26 @@ defmodule Twelvgaige.Round.Server do
       |> Map.put(:pending_transition, pending)
 
     %{state | round_state: blocked}
+  end
+
+  defp fail_on_store(state, pending, reason) do
+    pending = cleanup_pending_after_store_block(pending)
+
+    error =
+      store_error("failed to durably commit round transition", state.round_state.id, reason)
+
+    failed = %{
+      state.round_state
+      | status: :failed,
+        completed_at: Twelvgaige.Clock.utc_now(),
+        error: error,
+        pending_transition: pending,
+        store_status: %{status: :failed, reason: inspect(reason)}
+    }
+
+    state
+    |> Map.put(:round_state, failed)
+    |> finish_result({:ok, RoundState.to_snapshot(failed)})
   end
 
   defp cleanup_pending_after_store_block(
@@ -1388,7 +1536,7 @@ defmodule Twelvgaige.Round.Server do
 
     with :ok <- record_attempt_started(attempt_input, state.opts),
          {:ok, task} <- start_shot_task(shot, attempt, attempt_input, state.opts) do
-      timeout = shot_timeout(shot, attempt)
+      timeout = shot_timeout(shot, attempt, attempt_input)
 
       entry = %{
         type: :task,
@@ -1600,7 +1748,7 @@ defmodule Twelvgaige.Round.Server do
   defp fail_from_state(state, %Error{} = error) do
     round_state =
       state.round_state
-      |> Map.put(:status, failed_round_status(state.round_state))
+      |> Map.put(:status, failed_round_status(state, error))
       |> Map.put(:completed_at, Twelvgaige.Clock.utc_now())
       |> Map.put(:error, error)
 
@@ -1612,10 +1760,20 @@ defmodule Twelvgaige.Round.Server do
     )
   end
 
-  defp failed_round_status(%RoundState{status: status}) when status in [:halted, :failed],
-    do: status
+  defp failed_round_status(%{round_state: %RoundState{status: status}}, _error)
+       when status in [:halted, :failed],
+       do: status
 
-  defp failed_round_status(_round_state), do: :failed
+  defp failed_round_status(state, %Error{class: :condition_error}) do
+    policy_failure_status(state.workflow.policy.on_condition_error)
+  end
+
+  defp failed_round_status(state, _error) do
+    policy_failure_status(state.workflow.policy.on_shot_failure)
+  end
+
+  defp policy_failure_status(:halt_round), do: :halted
+  defp policy_failure_status(:fail_round), do: :failed
 
   defp event_type(:failed), do: :round_failed
   defp event_type(:halted), do: :round_halted
@@ -1630,26 +1788,52 @@ defmodule Twelvgaige.Round.Server do
     |> Map.merge(%{result: result, round_permit: nil})
   end
 
+  defp arm_round_timeout(%{round_state: %RoundState{}} = state) do
+    case remaining_round_timeout_ms(state) do
+      nil ->
+        state
+
+      timeout_ms ->
+        timeout_ref = make_ref()
+        Process.send_after(self(), {:round_timeout, timeout_ref}, timeout_ms)
+        put_in(state.round_state.round_timeout_ref, timeout_ref)
+    end
+  end
+
+  defp remaining_round_timeout_ms(state) do
+    case effective_round_timeout_ms(state) do
+      nil ->
+        nil
+
+      timeout_ms ->
+        elapsed_ms =
+          case state.round_state.started_at do
+            %DateTime{} = started_at ->
+              max(DateTime.diff(Twelvgaige.Clock.utc_now(), started_at, :millisecond), 0)
+
+            _other ->
+              0
+          end
+
+        max(timeout_ms - elapsed_ms, 1)
+    end
+  end
+
+  defp effective_round_timeout_ms(state) do
+    [state.workflow.timeout_ms, Keyword.get(state.opts, :round_timeout_ms)]
+    |> Enum.filter(&(is_integer(&1) and &1 > 0))
+    |> case do
+      [] -> nil
+      limits -> Enum.min(limits)
+    end
+  end
+
   defp reply_awaiters(state, result) do
     Enum.each(Enum.reverse(state.awaiters), fn from ->
       GenServer.reply(from, result)
     end)
 
     %{state | awaiters: []}
-  end
-
-  defp run_with_round_permit(state) do
-    case acquire_round_permit(state) do
-      {:ok, permit} ->
-        try do
-          Runner.run(state.workflow, state.input, state.opts)
-        after
-          release_round_permit(permit)
-        end
-
-      {:error, %Error{} = error} ->
-        {:error, error}
-    end
   end
 
   defp acquire_round_permit(state) do
@@ -1685,6 +1869,10 @@ defmodule Twelvgaige.Round.Server do
 
   defp wait_for_round_permit(limiter, context, %ResourceLimiter.Waiter{} = waiter) do
     receive do
+      {:resource_granted, waiter_id, %ResourceLimiter.Permit{} = permit}
+      when waiter_id == waiter.id ->
+        {:ok, permit}
+
       {:resource_available, waiter_id, resource_kind}
       when waiter_id == waiter.id and resource_kind == waiter.resource_kind ->
         acquire_round_permit(limiter, context)
@@ -1849,6 +2037,10 @@ defmodule Twelvgaige.Round.Server do
         ),
       policy: %{
         resource_profile: profile,
+        on_shot_failure: state.workflow.policy.on_shot_failure,
+        on_condition_error: state.workflow.policy.on_condition_error,
+        on_store_error: state.workflow.policy.on_store_error,
+        on_cancel: state.workflow.policy.on_cancel,
         safety_scope: state.workflow.policy.safety_scope,
         on_safety_reject: state.workflow.policy.on_safety_reject,
         queue_timeout_ms: state.workflow.policy.queue_timeout_ms,
@@ -1937,15 +2129,25 @@ defmodule Twelvgaige.Round.Server do
   end
 
   defp compiler_opts(opts) do
-    Keyword.take(opts, [
-      :agents,
-      :agent_ids,
-      :known_tools,
-      :tool_catalog,
-      :validate_tools?,
-      :allow_unsafe_tools_without_safety?
-    ])
+    compiler_opts =
+      Keyword.take(opts, [
+        :agents,
+        :agent_ids,
+        :known_tools,
+        :tool_catalog,
+        :validate_tools?,
+        :allow_unsafe_tools_without_safety?
+      ])
+
+    if allow_test_agent_fallback?(opts) do
+      compiler_opts
+    else
+      Keyword.put_new(compiler_opts, :agent_ids, [])
+    end
   end
+
+  defp allow_test_agent_fallback?(opts),
+    do: Keyword.get(opts, :allow_test_agent_fallback?, @allow_test_agent_fallback)
 
   defp cancel_timer(nil), do: :ok
 

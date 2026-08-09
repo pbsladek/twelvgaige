@@ -5,7 +5,7 @@ defmodule Twelvgaige.API.ServerTest do
   alias Twelvgaige.Breech
   alias Twelvgaige.Store.File, as: FileStore
 
-  @token "http-secret"
+  @token "http-secret-token-32-bytes-minimum"
 
   @workflow %{
     kind: :workflow,
@@ -43,7 +43,7 @@ defmodule Twelvgaige.API.ServerTest do
         {Server, port: 0, breech: breech_name, bearer_token: @token, request_timeout_ms: 1_000}
       )
 
-    %{breech: breech_name, port: Server.port(server)}
+    %{breech: breech_name, server: server, port: Server.port(server)}
   end
 
   test "serves router responses over local HTTP", %{port: port} do
@@ -74,6 +74,34 @@ defmodule Twelvgaige.API.ServerTest do
     assert response.status == 401
     assert response.headers["www-authenticate"] == ~s(Bearer realm="twelvgaige")
     assert %{"reason" => "daemon_auth_failed"} = Jason.decode!(response.body)
+  end
+
+  test "requires local bearer auth and rotates it without retaining the old token", %{
+    server: server,
+    port: port
+  } do
+    assert {:error, :http_local_auth_required} = Server.start(port: 0)
+    assert {:ok, replacement} = Server.rotate_token(server)
+
+    old =
+      http_request(port, """
+      GET /api/v1/health HTTP/1.1\r
+      host: localhost\r
+      authorization: Bearer #{@token}\r
+      \r
+      """)
+
+    assert old.status == 401
+
+    current =
+      http_request(port, """
+      GET /api/v1/health HTTP/1.1\r
+      host: localhost\r
+      authorization: Bearer #{replacement}\r
+      \r
+      """)
+
+    assert current.status == 200
   end
 
   test "accepts POST round creation with fixed content length", %{port: port} do
@@ -273,14 +301,14 @@ defmodule Twelvgaige.API.ServerTest do
     assert is_integer(port)
   end
 
-  test "non-loopback HTTP bind requires explicit opt-in and auth" do
-    assert {:error, {:http_remote_bind_requires_opt_in, {0, 0, 0, 0}}} =
+  test "non-loopback HTTP bind is unsupported even with former remote options" do
+    assert {:error, {:http_non_loopback_bind_unsupported, {0, 0, 0, 0}}} =
              Server.start(ip: {0, 0, 0, 0}, port: 0)
 
-    assert {:error, {:http_remote_bind_requires_auth, {0, 0, 0, 0}}} =
+    assert {:error, {:http_non_loopback_bind_unsupported, {0, 0, 0, 0}}} =
              Server.start(ip: {0, 0, 0, 0}, port: 0, allow_remote?: true)
 
-    assert {:error, {:http_remote_bind_requires_tls_or_proxy, {0, 0, 0, 0}}} =
+    assert {:error, {:http_non_loopback_bind_unsupported, {0, 0, 0, 0}}} =
              Server.start(
                ip: {0, 0, 0, 0},
                port: 0,
@@ -288,16 +316,7 @@ defmodule Twelvgaige.API.ServerTest do
                bearer_token: @token
              )
 
-    assert {:error, {:http_native_tls_not_implemented, {0, 0, 0, 0}}} =
-             Server.start(
-               ip: {0, 0, 0, 0},
-               port: 0,
-               allow_remote?: true,
-               bearer_token: @token,
-               tls_options: [certfile: "server.crt"]
-             )
-
-    assert {:error, {:http_trusted_proxy_requires_cidrs, {0, 0, 0, 0}}} =
+    assert {:error, {:http_non_loopback_bind_unsupported, {0, 0, 0, 0}}} =
              Server.start(
                ip: {0, 0, 0, 0},
                port: 0,
@@ -306,17 +325,7 @@ defmodule Twelvgaige.API.ServerTest do
                behind_tls_proxy?: true
              )
 
-    assert {:error, {:invalid_trusted_proxy_cidr, "not-a-cidr"}} =
-             Server.start(
-               ip: {0, 0, 0, 0},
-               port: 0,
-               allow_remote?: true,
-               bearer_token: @token,
-               behind_tls_proxy?: true,
-               trusted_proxy_cidrs: ["not-a-cidr"]
-             )
-
-    assert {:ok, server} =
+    assert {:error, {:http_non_loopback_bind_unsupported, {0, 0, 0, 0}}} =
              Server.start(
                ip: {0, 0, 0, 0},
                port: 0,
@@ -325,8 +334,6 @@ defmodule Twelvgaige.API.ServerTest do
                behind_tls_proxy?: true,
                trusted_proxy_cidrs: ["127.0.0.1/32"]
              )
-
-    GenServer.stop(server)
   end
 
   test "rejects forwarded identity headers outside trusted proxy mode", %{port: port} do

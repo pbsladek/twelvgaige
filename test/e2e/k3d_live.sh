@@ -432,7 +432,7 @@ cat > "$mock_responses" <<EOF
 EOF
 
 cd "$repo_root"
-MIX_ENV=dev mix escript.build >/dev/null
+MIX_ENV=test mix escript.build >/dev/null
 KUBECONFIG="$reader_kubeconfig" \
   TWELVGAIGE_MOCK_RESPONSES_FILE="$mock_responses" \
   TWELVGAIGE_STORE_SQLITE="$artifact_dir/cli-round.sqlite3" \

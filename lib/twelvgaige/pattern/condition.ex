@@ -93,6 +93,17 @@ defmodule Twelvgaige.Pattern.Condition do
     end
   end
 
+  @spec shot_reference_paths(boolean() | String.t(), [parse_opt()]) ::
+          {:ok, [[String.t()]]} | {:error, Error.t()}
+  def shot_reference_paths(condition, opts \\ [])
+  def shot_reference_paths(condition, _opts) when is_boolean(condition), do: {:ok, []}
+
+  def shot_reference_paths(condition, opts) when is_binary(condition) do
+    with {:ok, ast} <- parse(condition, opts) do
+      {:ok, ast |> collect_shot_reference_paths([]) |> Enum.uniq() |> Enum.sort()}
+    end
+  end
+
   @spec rewrite_shot_reference(String.t(), String.t(), String.t(), [parse_opt()]) ::
           {:ok, String.t()} | {:error, Error.t()}
   def rewrite_shot_reference(condition, old_id, new_id, opts \\ [])
@@ -258,6 +269,26 @@ defmodule Twelvgaige.Pattern.Condition do
 
   defp collect_shot_references({:compare, _path, _op, _literal}, acc), do: acc
   defp collect_shot_references(_ast, acc), do: acc
+
+  defp collect_shot_reference_paths({:not, ast}, acc),
+    do: collect_shot_reference_paths(ast, acc)
+
+  defp collect_shot_reference_paths({:and, left, right}, acc) do
+    collect_shot_reference_paths(right, collect_shot_reference_paths(left, acc))
+  end
+
+  defp collect_shot_reference_paths({:or, left, right}, acc) do
+    collect_shot_reference_paths(right, collect_shot_reference_paths(left, acc))
+  end
+
+  defp collect_shot_reference_paths(
+         {:compare, ["shots", shot_id | segments], _op, _literal},
+         acc
+       ) do
+    [[shot_id | segments] | acc]
+  end
+
+  defp collect_shot_reference_paths(_ast, acc), do: acc
 
   defp rewrite_shot_ast({:not, ast}, old_id, new_id),
     do: {:not, rewrite_shot_ast(ast, old_id, new_id)}

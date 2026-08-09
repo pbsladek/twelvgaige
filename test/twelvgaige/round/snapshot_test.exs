@@ -31,4 +31,21 @@ defmodule Twelvgaige.Round.SnapshotTest do
              }
            } = Snapshot.to_map(snapshot)
   end
+
+  test "persistable snapshots redact secrets at the store boundary" do
+    snapshot =
+      Snapshot.new(%{
+        id: "round_secret",
+        shell_id: "secret",
+        shell_version: "1.0.0",
+        input: %{prompt: "use api_key=very-secret"},
+        shots: [%{id: "only", kind: :slug, output: %{password: "very-secret"}}]
+      })
+
+    persisted = Snapshot.persistable(snapshot)
+
+    refute inspect(persisted) =~ "very-secret"
+    assert persisted.schema_version == 1
+    assert persisted.encoding_version == 1
+  end
 end

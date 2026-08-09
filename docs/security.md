@@ -62,8 +62,10 @@ Provider credentials are resolved from explicit process options, trusted
 application config, or environment variables. See
 [`secrets-and-providers.md`](secrets-and-providers.md).
 
-OpenAI is API-key based. Twelvgaige does not use Codex CLI sessions, ChatGPT
-sessions, browser sessions, or local Codex config as OpenAI credentials.
+OpenAI workflow agents are API-key based. They do not reuse Codex CLI sessions,
+browser sessions, or local Codex configuration. Delegated Codex sessions are a
+separate integration with their own authentication, sandbox, budget, approval,
+and audit boundaries.
 
 Relevant code:
 
@@ -125,6 +127,38 @@ These controls reduce accidental damage and common injection paths. They do not
 make read-only tools harmless: reads can still expose sensitive data or feed
 prompt-injection content back into later model calls.
 
+### Delegated Sessions And Sandboxes
+
+Delegated Codex sessions started through the manager and integration APIs are
+governed by the operations control plane and a separate sandbox contract. The
+operations CLI can then inspect and control those sessions; it does not provide
+a standalone session-start command. Podman is the default backend. Apple
+containers are an explicit macOS backend. Both qualified profiles use an
+isolated workspace, pinned worker image, non-root user, read-only root
+filesystem, bounded CPU and memory, ephemeral credential storage, and either
+no network or broker-only egress. Capabilities are dropped where the runtime
+exposes that control.
+
+The outer container or VM is the authoritative security boundary. Codex runs in
+its externally sandboxed mode inside that boundary; Twelvgaige does not silently
+fall back to a weaker sandbox. OTP owns supervision, deadlines, cancellation,
+accounting, and recovery, but OTP processes alone do not isolate files,
+credentials, processes, or network access.
+
+Interactive delegated sessions may use isolated local account state.
+Unattended sessions reject local-login profiles and require a short-lived
+brokered credential lease constrained by session, principal, model,
+destination, budget, and expiry. Session state stores lease identifiers rather
+than upstream secrets.
+
+Relevant code:
+
+- [`Sandbox.Manager`](../lib/twelvgaige/sandbox/manager.ex)
+- [`Podman backend`](../lib/twelvgaige/sandbox/backend/podman.ex)
+- [`Apple container backend`](../lib/twelvgaige/sandbox/backend/apple_container.ex)
+- [`Codex authentication profiles`](../lib/twelvgaige/delegated_session/codex/auth_profile.ex)
+- [`Credential broker`](../lib/twelvgaige/credential/broker.ex)
+
 ### Local IPC
 
 Breech uses a local control protocol. On macOS/Linux the default control path is
@@ -153,8 +187,10 @@ upload these files with the escript, Mix release, and Burrito artifacts.
 
 Checksums provide transport and publication integrity checks, while build
 metadata records the local target, git SHA, Elixir version, and OTP release.
-They are not a substitute for future signing, notarization, SBOMs, or
-provenance attestations.
+Tagged releases also receive GitHub build-provenance attestations. These are not
+bit-for-bit reproducibility, platform notarization, or a project-managed signing
+key. The separately qualified delegated worker and egress-proxy images have
+their own signed image records, SBOMs, and vulnerability evidence.
 
 ### HTTP API
 
@@ -232,12 +268,13 @@ Verification with `twelvgaige audit verify <checkpoint-path|-> --hmac-env <env>`
 checks both the hash chain and the shared-secret signature. HMAC signatures are
 not public signatures; any verifier needs the same secret.
 
-Current local stores are not encrypted at rest and live audit records are not
-cryptographically signed as they are written. The live store itself is not
-tamper-proof. Use
-full-disk encryption, encrypted home directories, or OS-managed encrypted
-volumes for local secret protection until a SQLCipher/keychain/KMS design is
-implemented. File and SQLite stores plus JSON log files use private POSIX modes
+The default file and SQLite stores are not encrypted at rest, and live audit
+records are not cryptographically signed as they are written. The live store
+itself is not tamper-proof. Use full-disk encryption, encrypted home
+directories, or OS-managed encrypted volumes for default local-store
+protection. A separate fail-closed SQLCipher store is available only when the
+loaded SQLite driver actually supports SQLCipher; it is not a default release
+dependency. File and SQLite stores plus JSON log files use private POSIX modes
 where supported; Windows ACL verification remains tracked in
 [`security-plan.md`](design/security-plan.md).
 
@@ -247,8 +284,9 @@ packaged driver is normal SQLite, the probe reports `unavailable` and does not
 claim encryption. When a SQLCipher-built driver is present and a key is supplied
 through `TWELVGAIGE_SQLCIPHER_SPIKE_KEY` or `--key-env`, the probe creates a
 keyed test database, runs migrations, closes it, reopens it with the key, and
-checks that opening without the key is rejected. This is still a feasibility
-probe, not the production encrypted store.
+checks that opening without the key is rejected. The probe confirms driver
+capability; the separate `Store.SQLiteEncrypted` surface supplies the
+fail-closed encrypted-store implementation.
 
 The current key-manager abstraction includes a test backend plus explicit env
 and file backends for CI/headless development. Env and file key backends are not
@@ -261,9 +299,9 @@ The macOS keychain backend is implemented as a narrow wrapper around
 `/usr/bin/security` generic password items. It stores a JSON payload with key
 metadata and base64 key material in the user's Keychain. Locked keychains may
 prompt or fail depending on the session, keychain policy, and release packaging
-context. Unit tests use an injected command runner; real login-keychain and
-Burrito verification remain tracked before encrypted SQLite can depend on this
-backend.
+context. Unit tests use an injected command runner, and the opt-in live test
+below verifies the login Keychain on the current host. Packaged behavior must
+still be qualified on each supported release target.
 
 Run the opt-in live verification on macOS with:
 
@@ -284,7 +322,7 @@ with current-user DPAPI. The file can be backed up, but it cannot be decrypted
 without the same Windows user profile material. The backend uses a PowerShell
 wrapper and passes plaintext over stdin instead of argv. Unit tests use an
 injected runner; real Windows ACL, user-profile, and release-package
-verification remain pending before encrypted-store support depends on it.
+verification remain pending for a qualified Windows release claim.
 
 The Linux key backend decision is FreeDesktop Secret Service for desktop Linux,
 not a blanket Linux-server promise. `LinuxSecretServiceBackend` wraps
@@ -295,15 +333,13 @@ tests use an injected runner. Headless Linux should use the explicit env/file
 backends only with `allow_insecure_key_backend?: true` until a passphrase,
 external-command, Vault, or KMS backend is implemented.
 
-Backup and rotation semantics are now defined before encrypted SQLite is wired
-in. `BackupPolicy` makes encrypted backup the default, marks redacted exports as
+`BackupPolicy` makes encrypted backup the default, marks redacted exports as
 non-restorable, and rejects plaintext export unless the caller explicitly opts
-in with a plaintext-export allowance. `EnvelopeCipher` wraps store DEKs with
-AES-256-GCM and supports rewrap rotation: decrypt the wrapped DEK with the old
-active key, wrap the same DEK with the new active key, and replace only the
-envelope. A failed rewrap leaves the old envelope valid. Full SQLite backup,
-restore verification, and backup-before-rotation enforcement remain future
-encrypted-store work.
+in. `EnvelopeCipher` wraps store DEKs with AES-256-GCM and supports rewrap
+rotation: decrypt the wrapped DEK with the old active key, wrap the same DEK
+with the new active key, and replace only the envelope. A failed rewrap leaves
+the old envelope valid. SQLite backup, restore, plaintext-to-SQLCipher
+migration, and backup-gated envelope rewrap are exposed through the CLI.
 
 `Store.SQLiteEncrypted` is now a separate fail-closed SQLCipher store surface.
 It requires a key through `:key` or `:key_env`, probes `PRAGMA cipher_version`
@@ -377,7 +413,8 @@ The tracked remediation plan is in [`security-plan.md`](design/security-plan.md)
 For local development:
 
 - Run Twelvgaige as a normal user, not root/admin.
-- Use `mock` or `ollama` agents for untrusted data experiments.
+- Use local Ollama agents for untrusted-data experiments. Repository tests use
+  a deterministic adapter that is not present in production builds.
 - Treat workflow and agent shells as executable policy. Review them before
   running.
 - Avoid `--approve-safety` except in controlled local tests.

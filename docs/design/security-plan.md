@@ -1,5 +1,11 @@
 # Security Plan
 
+Status: ongoing review record. This plan began before the delegated-session
+control plane and preserves its original pass structure. Use
+[`../security.md`](../security.md) for the concise current posture and
+[`delegated-agent-control-plane-design.md`](delegated-agent-control-plane-design.md)
+for the qualified container, credential, and egress boundaries.
+
 This file tracks security review and hardening work for Twelvgaige. The goal is
 zero-trust within reason for a local-first agent orchestration tool: untrusted
 LLM output, untrusted tool output, trusted runtime configuration, narrow host
@@ -13,11 +19,11 @@ signing are tracked separately in
 
 | Pass | Focus | Status | Exit Criteria |
 | --- | --- | --- | --- |
-| 0 | Security boundary inventory and docs | In progress | `security.md` exists, known gaps are listed without overclaiming, and findings are tracked here. |
-| 1 | Control-plane auth, TLS/mTLS, IPC limits, provider transport | In progress | Mutating HTTP routes require auth, remote HTTP requires TLS/mTLS or explicit proxy mode, provider TLS verification is tested, IPC frames are bounded. |
-| 2 | Host, tool, HTTP egress, and Kubernetes authority | In progress | Command runner uses scrubbed env/cwd/output caps, Kubernetes context/namespace/resource policies are runtime allowlists, HTTP tools close DNS-rebinding gaps. |
-| 3 | Storage, logs, redaction, audit integrity | In progress | Stores/logs use private modes, raw sensitive journals are reduced/redacted, canary-secret tests cover logs/audit/store/API, audit integrity design exists. |
-| 4 | Prompt injection, adversarial E2E, packaging, supply chain | Planned | Prompt-injection regression suite exists, k3d least-privilege E2E exists, release artifacts have checksums, dependency/update review is documented. |
+| 0 | Security boundary inventory and docs | Complete | `security.md` documents the current boundary and residual gaps. |
+| 1 | Control-plane auth, TLS/mTLS, IPC limits, provider transport | Partial | Auth, proxy-mode restrictions, and IPC bounds are implemented; native TLS/mTLS and provider invalid-certificate regression tests remain. |
+| 2 | Host, tool, HTTP egress, and Kubernetes authority | Complete with platform residuals | Runtime policy and POSIX controls are implemented; native Windows process-tree verification remains. |
+| 3 | Storage, logs, redaction, audit integrity | Partial | Private modes, redaction, checkpoint integrity, optional SQLCipher, and OS key backends exist; broader canary and Windows qualification remain. |
+| 4 | Prompt injection, adversarial E2E, packaging, supply chain | Partial | k3d, checksums, attestations, and dependency audit exist; prompt-injection coverage and application-package SBOM work remain. |
 
 Each pass should record:
 
@@ -34,9 +40,9 @@ Each pass should record:
 | SEC-001 | High | Mutating loopback HTTP routes can run without bearer auth when no token is configured. | Fixed | 1 |
 | SEC-002 | High | Non-loopback HTTP API uses plaintext `:gen_tcp`; bearer tokens require TLS/mTLS or a trusted proxy. | Mitigated | 1 |
 | SEC-003 | High | `approve_all_safety?` can bypass safety gates through trusted runtime/API paths. | Mitigated | 1 |
-| SEC-004 | High | Provider TLS verification is not explicitly configured/tested in the default transport. | Partial | 1 |
+| SEC-004 | High | Provider TLS policy is configured and covered by transport-policy tests, but deterministic invalid-certificate and hostname-mismatch fixtures remain. | Partial | 1 |
 | SEC-005 | High | Provider endpoint overrides block literal private hosts but do not DNS-resolve before sending credentials. | Fixed | 1 |
-| SEC-006 | High | HTTP tools pre-resolve DNS but connect through original hostnames, leaving DNS rebinding risk. | Fixed | 2 |
+| SEC-006 | High | HTTP tools pre-resolve DNS but connect through original hostnames, leaving DNS rebinding risk. | Mitigated by explicit host policy | 2 |
 | SEC-007 | High | Command subprocesses inherit ambient environment/cwd and lack runner-level streaming output caps. | Fixed | 2 |
 | SEC-008 | High | Kubernetes `context` and `namespace` are model/tool input, not runtime-only allowlisted policy. | Fixed | 2 |
 | SEC-009 | Medium | Workflow-adjacent `agents/` auto-discovery expands trust to nearby repo files. | Fixed | 2 |
@@ -47,7 +53,7 @@ Each pass should record:
 | SEC-014 | Medium | Prompt injection remains a first-class risk when tool/dependency output re-enters model context. | Open | 4 |
 | SEC-015 | Medium | HTTP/IPC connection handlers are linked to listener accept loops more tightly than desired. | Mitigated | 1 |
 | SEC-016 | Medium | IPC auth uses plain equality and IPC envelopes lack explicit max frame limits. | Fixed | 1 |
-| SEC-017 | Medium | Destructive tools do not require a compiler-enforced dependency on a prior safety shot. | Mitigated | 2 |
+| SEC-017 | Medium | Destructive tools do not require a compiler-enforced dependency on a prior safety shot. | Fixed | 2 |
 | SEC-018 | Medium | Kubernetes-specific audit payloads do not yet fully match the spec-level audit claim. | Mitigated | 3 |
 
 ## Pass 1: Control Plane And Transport
@@ -168,8 +174,8 @@ Each pass should record:
 - [x] Add audit export checkpoint format for future external notarization.
 - [x] Add allowlisted tool audit payload projections for Kubernetes target and
       execution metadata without raw command output.
-- [x] Document that there is no encryption at rest until an explicit SQLCipher
-      or OS keychain/KMS design is implemented.
+- [x] Document that default stores are unencrypted and the optional SQLCipher
+      store is fail-closed and depends on a SQLCipher-enabled driver.
 
 ### Acceptance Tests
 
@@ -198,19 +204,21 @@ Each pass should record:
       and dependency outputs.
 - [ ] Add approval views that show exact proposed tool calls, targets, diffs,
       and safety level before human approval.
-- [ ] Add k3d E2E suite with least-privilege kubeconfig.
-- [ ] Add tests proving Kubernetes write tools fail under insufficient RBAC.
+- [x] Add k3d E2E suite with least-privilege kubeconfig.
+- [x] Add tests proving Kubernetes write tools fail under insufficient RBAC.
 - [x] Add release artifact checksums.
-- [ ] Add dependency audit workflow.
-- [ ] Add `mix deps.audit` or equivalent when dependency policy is selected.
-- [ ] Add SBOM/provenance plan for Burrito and Mix release artifacts.
+- [x] Add dependency audit workflow.
+- [x] Add `mix hex.audit` for locked Hex dependency advisories.
+- [~] Add SBOM/provenance coverage. GitHub provenance attestations cover release
+      assets; SBOM and vulnerability evidence currently cover the delegated
+      worker and egress-proxy images, not every application package.
 - [ ] Add Windows named-pipe security verification on real Windows hardware.
 
 ### Acceptance Tests
 
 - [ ] Prompt-injection fixtures cannot cause non-allowlisted tool calls.
 - [ ] Approval output displays tool target and safety metadata.
-- [ ] k3d E2E uses scoped RBAC and cannot access cluster-scope resources unless
+- [x] k3d E2E uses scoped RBAC and cannot access cluster-scope resources unless
       explicitly allowed.
 - [x] Release workflow publishes checksums.
 - [x] Release workflow records build environment.

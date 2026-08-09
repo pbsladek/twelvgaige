@@ -239,11 +239,12 @@ defmodule Twelvgaige.Metrics do
     |> String.downcase()
   end
 
+  defp normalize_label_value(value) when is_boolean(value), do: {:ok, to_string(value)}
+
   defp normalize_label_value(value) when is_atom(value),
     do: normalize_label_value(Atom.to_string(value))
 
   defp normalize_label_value(value) when is_integer(value), do: {:ok, Integer.to_string(value)}
-  defp normalize_label_value(value) when is_boolean(value), do: {:ok, to_string(value)}
 
   defp normalize_label_value(value) when is_binary(value) do
     if byte_size(value) <= @max_label_bytes do

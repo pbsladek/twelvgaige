@@ -1,0 +1,144 @@
+[
+     {
+          "Id": "c350964a72e8908aaa3dc1ebb9546fefa2c2cb818ddb9a8101d72d7bb7f8071f",
+          "Digest": "sha256:c3edda97f103f9db0d61d0873589f4e08c093dae04030adc0c6b90deabc105c4",
+          "RepoTags": [
+               "localhost/twelvgaige/worker:codex-0.146.0"
+          ],
+          "RepoDigests": [
+               "localhost/twelvgaige/worker@sha256:c3edda97f103f9db0d61d0873589f4e08c093dae04030adc0c6b90deabc105c4"
+          ],
+          "Parent": "e1ed8ebb2720837962dfea3f6d682436d38669e6ed87b1ade1d646510131d20f",
+          "Comment": "buildkit.dockerfile.v0",
+          "Created": "2026-08-02T23:37:47.375966754Z",
+          "Config": {
+               "User": "65532:65532",
+               "Env": [
+                    "HOME=/home/worker",
+                    "PATH=/opt/codex/bin:/opt/codex/codex-path:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+               ],
+               "Cmd": [
+                    "/opt/codex/bin/codex",
+                    "--version"
+               ],
+               "WorkingDir": "/workspace",
+               "Labels": {
+                    "io.buildah.version": "1.43.2",
+                    "io.twelvgaige.worker.runtime": "codex",
+                    "io.twelvgaige.worker.uid": "65532",
+                    "org.opencontainers.image.base.digest": "sha256:d858bb5442632a31bd4bca6c5e601dbe6b536fd7942092ea6a08a0a95805693c",
+                    "org.opencontainers.image.revision": "04b7c730d1ae0fe0888a4197d77d5085006af709",
+                    "org.opencontainers.image.title": "Twelvgaige Codex worker",
+                    "org.opencontainers.image.version": "0.146.0"
+               }
+          },
+          "Version": "",
+          "Author": "",
+          "Architecture": "arm64",
+          "Os": "linux",
+          "Size": 473167343,
+          "VirtualSize": 473167343,
+          "GraphDriver": {
+               "Name": "overlay",
+               "Data": {
+                    "LowerDir": "/var/home/core/.local/share/containers/storage/overlay/554749f16009b53c9f9cb21631723e8206acc2f4c6a750f13cf49d9cc631e09b/diff:/var/home/core/.local/share/containers/storage/overlay/83ae955d4f65c60225505c8882ba25e035e3088bd9bfba292cfd9341dcb84507/diff:/var/home/core/.local/share/containers/storage/overlay/91d5cf66444f05b8c72e1b9d725c1752b9b015b68a7918125fc46ecdb7cc46d5/diff",
+                    "UpperDir": "/var/home/core/.local/share/containers/storage/overlay/3e01264d83800d56bcbb243572cfd00b478f26f82216be94e75ae3a1fe8228e1/diff",
+                    "WorkDir": "/var/home/core/.local/share/containers/storage/overlay/3e01264d83800d56bcbb243572cfd00b478f26f82216be94e75ae3a1fe8228e1/work"
+               }
+          },
+          "RootFS": {
+               "Type": "layers",
+               "Layers": [
+                    "sha256:91d5cf66444f05b8c72e1b9d725c1752b9b015b68a7918125fc46ecdb7cc46d5",
+                    "sha256:dba04db7ddcc853e1dd92ec4aae4711d98077e6af37e847661d46a27ab6e09c4",
+                    "sha256:b2b1024bdc06a31e20bef158904e1832cf15a09fb4faf1253d5c5b233fcfb5b4",
+                    "sha256:6e15bec34e9d6cde11d653b1d51f6e3f92725f59100a7d9a035ffabbbe7da666"
+               ]
+          },
+          "Labels": {
+               "io.buildah.version": "1.43.2",
+               "io.twelvgaige.worker.runtime": "codex",
+               "io.twelvgaige.worker.uid": "65532",
+               "org.opencontainers.image.base.digest": "sha256:d858bb5442632a31bd4bca6c5e601dbe6b536fd7942092ea6a08a0a95805693c",
+               "org.opencontainers.image.revision": "04b7c730d1ae0fe0888a4197d77d5085006af709",
+               "org.opencontainers.image.title": "Twelvgaige Codex worker",
+               "org.opencontainers.image.version": "0.146.0"
+          },
+          "Annotations": {
+               "com.docker.official-images.bashbrew.arch": "arm64v8",
+               "org.opencontainers.image.base.digest": "sha256:d858bb5442632a31bd4bca6c5e601dbe6b536fd7942092ea6a08a0a95805693c",
+               "org.opencontainers.image.base.name": "docker.io/library/alpine:3.23",
+               "org.opencontainers.image.created": "2026-08-02T23:37:47.375966754Z",
+               "org.opencontainers.image.revision": "4ad948cca27e7a605aa63ae1c59c22081a2c6d13",
+               "org.opencontainers.image.source": "https://github.com/alpinelinux/docker-alpine.git#4ad948cca27e7a605aa63ae1c59c22081a2c6d13:aarch64",
+               "org.opencontainers.image.url": "https://hub.docker.com/_/alpine",
+               "org.opencontainers.image.version": "3.23.5"
+          },
+          "ManifestType": "application/vnd.oci.image.manifest.v1+json",
+          "User": "65532:65532",
+          "History": [
+               {
+                    "created": "2026-06-22T19:19:57.882771852Z",
+                    "created_by": "ADD alpine-minirootfs-3.23.5-aarch64.tar.gz / # buildkit",
+                    "comment": "buildkit.dockerfile.v0"
+               },
+               {
+                    "created": "2026-06-22T19:19:57.882771852Z",
+                    "created_by": "CMD [\"/bin/sh\"]",
+                    "comment": "buildkit.dockerfile.v0",
+                    "empty_layer": true
+               },
+               {
+                    "created": "2026-08-02T21:51:33.984018515Z",
+                    "created_by": "/bin/sh -c #(nop) ARG CODEX_VERSION",
+                    "comment": "FROM docker.io/library/alpine:3.23",
+                    "empty_layer": true
+               },
+               {
+                    "created": "2026-08-02T21:51:34.006813581Z",
+                    "created_by": "/bin/sh -c #(nop) LABEL org.opencontainers.image.title=\"Twelvgaige Codex worker\"       org.opencontainers.image.version=\"${CODEX_VERSION}\"       org.opencontainers.image.base.digest=\"sha256:d858bb5442632a31bd4bca6c5e601dbe6b536fd7942092ea6a08a0a95805693c\"       io.twelvgaige.worker.runtime=\"codex\"       io.twelvgaige.worker.uid=\"65532\"",
+                    "empty_layer": true
+               },
+               {
+                    "created": "2026-08-02T21:51:38.15388965Z",
+                    "created_by": "|1 CODEX_VERSION=0.146.0 /bin/sh -c apk add --no-cache ca-certificates git"
+               },
+               {
+                    "created": "2026-08-02T21:51:38.523849885Z",
+                    "created_by": "/bin/sh -c #(nop) COPY file:a91957ca990671c52ed3aa50f5edb56de61ea3c71c41fbe492d983b9c6f5db13 in /tmp/codex-linux-arm64.tgz      "
+               },
+               {
+                    "created": "2026-08-02T23:37:46.406781886Z",
+                    "created_by": "|1 CODEX_VERSION=0.146.0 /bin/sh -c mkdir -p /opt/codex /workspace /artifacts /home/worker     && tar -xzf /tmp/codex-linux-arm64.tgz -C /tmp     && cp -R /tmp/package/vendor/aarch64-unknown-linux-musl/. /opt/codex/     && rm -rf /tmp/codex-linux-arm64.tgz /tmp/package     && addgroup -g 65532 -S worker     && adduser -u 65532 -S -D -G worker -h /home/worker -s /bin/sh worker     && chown 65532:65532 /workspace /artifacts /home/worker"
+               },
+               {
+                    "created": "2026-08-02T23:37:47.28968118Z",
+                    "created_by": "/bin/sh -c #(nop) ENV HOME=/home/worker     PATH=/opt/codex/bin:/opt/codex/codex-path:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                    "empty_layer": true
+               },
+               {
+                    "created": "2026-08-02T23:37:47.310212951Z",
+                    "created_by": "/bin/sh -c #(nop) USER 65532:65532",
+                    "empty_layer": true
+               },
+               {
+                    "created": "2026-08-02T23:37:47.331662188Z",
+                    "created_by": "/bin/sh -c #(nop) WORKDIR /workspace",
+                    "empty_layer": true
+               },
+               {
+                    "created": "2026-08-02T23:37:47.353022882Z",
+                    "created_by": "/bin/sh -c #(nop) CMD [\"/opt/codex/bin/codex\", \"--version\"]",
+                    "empty_layer": true
+               },
+               {
+                    "created": "2026-08-02T23:37:47.376040254Z",
+                    "created_by": "/bin/sh -c #(nop) LABEL \"org.opencontainers.image.revision\"=\"04b7c730d1ae0fe0888a4197d77d5085006af709\"",
+                    "empty_layer": true
+               }
+          ],
+          "NamesHistory": [
+               "localhost/twelvgaige/worker:codex-0.146.0"
+          ]
+     }
+]

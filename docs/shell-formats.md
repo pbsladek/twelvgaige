@@ -51,13 +51,13 @@ edge cases and preserve a strict object/list shape.
     {
       "id": "first",
       "kind": "slug",
-      "agent": "mock_agent",
+      "agent": "local_agent",
       "prompt": "first prompt"
     },
     {
       "id": "second",
       "kind": "slug",
-      "agent": "mock_agent",
+      "agent": "local_agent",
       "depends_on": ["first"],
       "prompt": "second prompt"
     }
@@ -70,12 +70,12 @@ edge cases and preserve a strict object/list shape.
 ```json
 {
   "kind": "agent",
-  "id": "mock_agent",
-  "name": "Mock Agent",
+  "id": "local_agent",
+  "name": "Local Ollama Agent",
   "version": "1.0.0",
-  "provider": "mock",
-  "model": "mock-model",
-  "system_prompt": "Run the mock shot."
+  "provider": "ollama",
+  "model": "llama3.2",
+  "system_prompt": "Run the local shot."
 }
 ```
 
@@ -93,13 +93,13 @@ version = "1.0.0"
 [[shots]]
 id = "first"
 kind = "slug"
-agent = "mock_agent"
+agent = "local_agent"
 prompt = "first prompt"
 
 [[shots]]
 id = "second"
 kind = "slug"
-agent = "mock_agent"
+agent = "local_agent"
 depends_on = ["first"]
 prompt = "second prompt"
 ```
@@ -108,12 +108,12 @@ prompt = "second prompt"
 
 ```toml
 kind = "agent"
-id = "mock_agent"
-name = "Mock Agent"
+id = "local_agent"
+name = "Local Ollama Agent"
 version = "1.0.0"
-provider = "mock"
-model = "mock-model"
-system_prompt = "Run the mock shot."
+provider = "ollama"
+model = "llama3.2"
+system_prompt = "Run the local shot."
 ```
 
 ## Nested Policy Example
@@ -134,7 +134,7 @@ on_safety_reject = "halt_round"
 [[shots]]
 id = "review"
 kind = "slug"
-agent = "mock_agent"
+agent = "local_agent"
 prompt = "Review the input and summarize risk."
 
 [shots.choke]
@@ -159,7 +159,7 @@ The equivalent JSON shape is:
     {
       "id": "review",
       "kind": "slug",
-      "agent": "mock_agent",
+      "agent": "local_agent",
       "prompt": "Review the input and summarize risk.",
       "choke": {
         "max_iterations": 2,
@@ -194,7 +194,7 @@ explicitly:
 ```bash
 twelvgaige round run ./downloaded/workflow.json \
   --untrusted-root \
-  --agent-shell ./reviewed-agents/mock_agent.toml
+  --agent-shell ./reviewed-agents/local_agent.toml
 ```
 
 ## Rules

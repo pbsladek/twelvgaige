@@ -279,9 +279,9 @@ defmodule Twelvgaige.Tool.CommandRunner do
         ]
 
     {executable, port_args, process_group?} =
-      case waitable_setsid() do
+      case session_launcher(env_binary, command_args) do
         nil -> {env_binary, command_args, false}
-        setsid -> {setsid, ["--wait", env_binary | command_args], true}
+        {launcher, launcher_args, group?} -> {launcher, launcher_args, group?}
       end
 
     port_opts =
@@ -316,6 +316,40 @@ defmodule Twelvgaige.Tool.CommandRunner do
       setsid
     else
       _other -> nil
+    end
+  rescue
+    _error -> nil
+  end
+
+  defp session_launcher(env_binary, command_args) do
+    case waitable_setsid() do
+      setsid when is_binary(setsid) ->
+        {setsid, ["--wait", env_binary | command_args], true}
+
+      nil ->
+        perl_session_launcher(env_binary, command_args)
+    end
+  end
+
+  defp perl_session_launcher(env_binary, command_args) do
+    case System.find_executable("perl") do
+      nil ->
+        nil
+
+      perl ->
+        script =
+          "my $pid = fork(); defined($pid) or die qq(fork failed: $!\\n); " <>
+            "if ($pid == 0) { POSIX::setsid() != -1 or die qq(setsid failed: $!\\n); " <>
+            "exec { $ARGV[0] } @ARGV; die qq(exec failed: $!\\n); } " <>
+            "$SIG{TERM} = sub { kill q(TERM), -$pid; waitpid($pid, 0); exit 143; }; " <>
+            "$SIG{INT} = sub { kill q(INT), -$pid; waitpid($pid, 0); exit 130; }; " <>
+            "waitpid($pid, 0); my $status = $?; " <>
+            "exit(($status & 127) ? 128 + ($status & 127) : ($status >> 8));"
+
+        # The port owns the waiting Perl parent, while its child is the new
+        # session leader. Mark this as a tree launcher rather than claiming the
+        # port PID itself is the process-group identity.
+        {perl, ["-MPOSIX", "-e", script, env_binary | command_args], false}
     end
   rescue
     _error -> nil
@@ -371,9 +405,28 @@ defmodule Twelvgaige.Tool.CommandRunner do
   end
 
   defp terminate_port(%{process_group?: true, os_pid: pid, port: port}) when is_integer(pid) do
+    # `setsid --wait` may retain a wrapper process whose PID is not the session
+    # leader used by the command. Signal the observed descendant tree as well
+    # as the process group so neither layout can escape the deadline.
+    pids = process_tree(pid)
+    signal_processes(Enum.reverse(pids), "TERM")
     signal_process_group(pid, "TERM")
-    Process.sleep(25)
+    Process.sleep(50)
+    signal_processes(Enum.reverse(pids), "KILL")
     signal_process_group(pid, "KILL")
+    close_port(port)
+  end
+
+  defp terminate_port(%{process_group?: false, os_pid: pid, port: port}) when is_integer(pid) do
+    # macOS does not ship `setsid`, so closing the Erlang port alone can leave
+    # the executed CLI (and any children it spawned) alive. Snapshot the tree
+    # before TERM, signal descendants before their parent, and then apply KILL
+    # to the same identities. This is deliberately host-side; no sandbox
+    # capability or guest control channel is involved.
+    pids = process_tree(pid)
+    signal_processes([pid | Enum.reverse(List.delete(pids, pid))], "TERM")
+    Process.sleep(50)
+    signal_processes(Enum.reverse(pids), "KILL")
     close_port(port)
   end
 
@@ -385,6 +438,84 @@ defmodule Twelvgaige.Tool.CommandRunner do
     case System.find_executable("kill") do
       nil -> :ok
       kill -> System.cmd(kill, ["-#{signal}", "-#{pid}"], stderr_to_stdout: true)
+    end
+
+    :ok
+  rescue
+    _error -> :ok
+  end
+
+  defp process_tree(root_pid) do
+    case System.find_executable("pgrep") do
+      pgrep when is_binary(pgrep) ->
+        [root_pid | descendants_with_pgrep(root_pid, pgrep)]
+
+      nil ->
+        process_tree_from_ps(root_pid)
+    end
+  rescue
+    _error -> [root_pid]
+  end
+
+  defp descendants_with_pgrep(pid, pgrep) do
+    children =
+      case System.cmd(pgrep, ["-P", Integer.to_string(pid)], stderr_to_stdout: true) do
+        {output, status} when status in [0, 1] ->
+          output
+          |> String.split()
+          |> Enum.flat_map(fn value ->
+            case Integer.parse(value) do
+              {child, ""} -> [child]
+              _invalid -> []
+            end
+          end)
+
+        _other ->
+          []
+      end
+
+    Enum.flat_map(children, fn child -> [child | descendants_with_pgrep(child, pgrep)] end)
+  end
+
+  defp process_tree_from_ps(root_pid) do
+    case System.find_executable("ps") do
+      nil ->
+        [root_pid]
+
+      ps ->
+        case System.cmd(ps, ["-axo", "pid=,ppid="], stderr_to_stdout: true) do
+          {output, 0} -> [root_pid | descendants(root_pid, parse_process_table(output))]
+          _other -> [root_pid]
+        end
+    end
+  end
+
+  defp parse_process_table(output) do
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.reduce(%{}, fn line, acc ->
+      case line |> String.split() |> Enum.map(&Integer.parse/1) do
+        [{pid, ""}, {ppid, ""}] -> Map.update(acc, ppid, [pid], &[pid | &1])
+        _invalid -> acc
+      end
+    end)
+  end
+
+  defp descendants(pid, table) do
+    table
+    |> Map.get(pid, [])
+    |> Enum.flat_map(fn child -> [child | descendants(child, table)] end)
+  end
+
+  defp signal_processes(pids, signal) do
+    case System.find_executable("kill") do
+      nil ->
+        :ok
+
+      kill ->
+        Enum.each(Enum.uniq(pids), fn pid ->
+          _ = System.cmd(kill, ["-#{signal}", Integer.to_string(pid)], stderr_to_stdout: true)
+        end)
     end
 
     :ok

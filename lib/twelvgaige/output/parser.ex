@@ -23,6 +23,14 @@ defmodule Twelvgaige.Output.Parser do
     end
   end
 
+  def parse(_content, %Schema{}) do
+    {:error,
+     Error.new(:output_error, :output_parse_error, "shot output content must be a string",
+       retryable: true,
+       details: %{expected: "string"}
+     )}
+  end
+
   def parse(content, schema) when is_map(schema) do
     with {:ok, %Schema{} = schema} <- Schema.from_map(schema) do
       parse(content, schema)
@@ -33,14 +41,6 @@ defmodule Twelvgaige.Output.Parser do
            details: error.details
          )}
     end
-  end
-
-  def parse(_content, %Schema{}) do
-    {:error,
-     Error.new(:output_error, :output_parse_error, "shot output content must be a string",
-       retryable: true,
-       details: %{expected: "string"}
-     )}
   end
 
   defp decode_content(content) do

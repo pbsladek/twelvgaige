@@ -18,11 +18,12 @@ defmodule Twelvgaige.Authoring.ShellDraft do
   alias Twelvgaige.Shell.Lint
   alias Twelvgaige.Shell.Workflow
 
-  @hosted_providers MapSet.new(~w(anthropic openai gemini))
-  @local_providers MapSet.new(~w(mock ollama))
+  @test_providers Application.compile_env(:twelvgaige, :test_provider_ids, [])
+  @hosted_providers MapSet.new(~w(openai))
+  @local_providers MapSet.new(~w(ollama) ++ @test_providers)
   @default_max_input_bytes 64 * 1024
-  @default_provider "mock"
-  @default_model "mock-model"
+  @default_provider if("mock" in @test_providers, do: "mock", else: "ollama")
+  @default_model if("mock" in @test_providers, do: "mock-model", else: "llama3.2")
   @draft_workflow_id "drafted_workflow"
 
   @type report :: %{

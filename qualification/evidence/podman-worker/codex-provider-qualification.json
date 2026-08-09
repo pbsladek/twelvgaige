@@ -1,0 +1,44 @@
+{
+  "artifacts": {
+    "events": {
+      "digest": "sha256:fbc24be53bdef41633299445a53f62e880350614d74c41b57d1bb78c5a2a22af",
+      "path": "artifacts/qualification/podman-worker/codex-provider-20260803T002407Z-48777.jsonl"
+    },
+    "patch": {
+      "digest": "sha256:7b8002b235cc3698b7f1444c5fdf2850858fe83c9b0cdc352ed31de9f98e5089",
+      "path": "artifacts/qualification/podman-worker/codex-provider-20260803T002407Z-48777.patch"
+    }
+  },
+  "auth": {
+    "container_storage": "tmpfs",
+    "destroyed_after_run": true,
+    "persisted_in_workspace": false,
+    "profile": "local_user_login_ephemeral_tmpfs",
+    "secret_value_scan": "pass"
+  },
+  "fixture": {
+    "exact_content_verified": true,
+    "expected_file": "codex-qualified.txt",
+    "git_diff_recorded": true,
+    "workspace": "/Users/pbsladek/Library/Application Support/Twelvgaige/workspaces/codex-provider-20260803T002407Z-48777"
+  },
+  "generated_at": "2026-08-03T00:24:21Z",
+  "image": {
+    "digest": "sha256:c3edda97f103f9db0d61d0873589f4e08c093dae04030adc0c6b90deabc105c4",
+    "reference": "localhost/twelvgaige/worker:codex-0.146.0"
+  },
+  "result": "pass",
+  "sandbox": {
+    "capabilities": "drop_all",
+    "codex_approval_mode": "automatic_inside_outer_boundary",
+    "gid": 65532,
+    "inner": "disabled_for_externally_sandboxed_worker",
+    "inner_disable_reason": "the compatibility fixture makes the attested outer container authoritative and does not add an unqualified nested sandbox",
+    "network": "explicit_unrestricted_qualification_flag",
+    "no_new_privileges": true,
+    "outer": "podman_authoritative",
+    "rootfs": "read_only",
+    "uid": 65532
+  },
+  "schema_version": 1
+}

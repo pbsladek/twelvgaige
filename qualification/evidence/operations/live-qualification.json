@@ -1,0 +1,259 @@
+{
+  "scope": "single-user local qualification",
+  "result": "pass",
+  "profiles": {
+    "podman_macos_arm64": {
+      "slo": {
+        "profile": "podman_macos_arm64",
+        "status": "pass",
+        "version": 1,
+        "checks": {
+          "queue_admission": {
+            "status": "pass",
+            "target": 5000,
+            "observed": 0.008
+          },
+          "availability": {
+            "status": "pass",
+            "target": 99.5,
+            "observed": 100.0
+          },
+          "cancellation_latency": {
+            "status": "pass",
+            "target": 3000,
+            "observed": 1205
+          },
+          "launch_latency": {
+            "status": "pass",
+            "target": 1000,
+            "observed": 304
+          },
+          "launch_success": {
+            "status": "pass",
+            "target": 99.0,
+            "observed": 100.0
+          },
+          "recovery_latency": {
+            "status": "pass",
+            "target": 10000,
+            "observed": 75
+          },
+          "recovery_success": {
+            "status": "pass",
+            "target": 99.0,
+            "observed": 100.0
+          },
+          "retention_lag": {
+            "status": "pass",
+            "target": 86400,
+            "observed": 0
+          },
+          "retention_success": {
+            "status": "pass",
+            "target": 99.0,
+            "observed": 100.0
+          }
+        },
+        "error_budgets": {
+          "availability_percent": {
+            "allowed_failure_percent": 0.5,
+            "exhausted": false,
+            "remaining_percentage_points": 0.5
+          },
+          "launch_success_percent": {
+            "allowed_failure_percent": 1.0,
+            "exhausted": false,
+            "remaining_percentage_points": 1.0
+          },
+          "recovery_success_percent": {
+            "allowed_failure_percent": 1.0,
+            "exhausted": false,
+            "remaining_percentage_points": 1.0
+          },
+          "retention_run_success_percent": {
+            "allowed_failure_percent": 1.0,
+            "exhausted": false,
+            "remaining_percentage_points": 1.0
+          }
+        }
+      },
+      "launch_attempts": 5,
+      "observations": {
+        "availability_percent": 100.0,
+        "launch_success_percent": 100.0,
+        "launch_p95_ms": 304,
+        "cancellation_p95_ms": 1205,
+        "recovery_success_percent": 100.0,
+        "recovery_p95_ms": 75,
+        "queue_admission_p95_ms": 0.008,
+        "retention_run_success_percent": 100.0,
+        "retention_max_lag_seconds": 0
+      },
+      "backend_evidence_generated_at": "2026-08-08T06:04:44Z"
+    },
+    "apple_container_macos_arm64": {
+      "slo": {
+        "profile": "apple_container_macos_arm64",
+        "status": "pass",
+        "version": 1,
+        "checks": {
+          "queue_admission": {
+            "status": "pass",
+            "target": 5000,
+            "observed": 0.008
+          },
+          "availability": {
+            "status": "pass",
+            "target": 99.5,
+            "observed": 100.0
+          },
+          "cancellation_latency": {
+            "status": "pass",
+            "target": 5000,
+            "observed": 2899
+          },
+          "launch_latency": {
+            "status": "pass",
+            "target": 6000,
+            "observed": 2997
+          },
+          "launch_success": {
+            "status": "pass",
+            "target": 99.0,
+            "observed": 100.0
+          },
+          "recovery_latency": {
+            "status": "pass",
+            "target": 15000,
+            "observed": 563
+          },
+          "recovery_success": {
+            "status": "pass",
+            "target": 99.0,
+            "observed": 100.0
+          },
+          "retention_lag": {
+            "status": "pass",
+            "target": 86400,
+            "observed": 0
+          },
+          "retention_success": {
+            "status": "pass",
+            "target": 99.0,
+            "observed": 100.0
+          }
+        },
+        "error_budgets": {
+          "availability_percent": {
+            "allowed_failure_percent": 0.5,
+            "exhausted": false,
+            "remaining_percentage_points": 0.5
+          },
+          "launch_success_percent": {
+            "allowed_failure_percent": 1.0,
+            "exhausted": false,
+            "remaining_percentage_points": 1.0
+          },
+          "recovery_success_percent": {
+            "allowed_failure_percent": 1.0,
+            "exhausted": false,
+            "remaining_percentage_points": 1.0
+          },
+          "retention_run_success_percent": {
+            "allowed_failure_percent": 1.0,
+            "exhausted": false,
+            "remaining_percentage_points": 1.0
+          }
+        }
+      },
+      "launch_attempts": 5,
+      "observations": {
+        "availability_percent": 100.0,
+        "launch_success_percent": 100.0,
+        "launch_p95_ms": 2997,
+        "cancellation_p95_ms": 2899,
+        "recovery_success_percent": 100.0,
+        "recovery_p95_ms": 563,
+        "queue_admission_p95_ms": 0.008,
+        "retention_run_success_percent": 100.0,
+        "retention_max_lag_seconds": 0
+      },
+      "backend_evidence_generated_at": "2026-08-08T06:06:09Z"
+    }
+  },
+  "schema_version": 1,
+  "slo_version": 1,
+  "generated_at": "2026-08-09T20:50:48Z",
+  "samples": {
+    "retention": {
+      "status": "healthy",
+      "attempts": 10,
+      "successes": 10,
+      "p95_ms": 8.554,
+      "success_percent": 100.0,
+      "lag_seconds": 0
+    },
+    "queue_admission": {
+      "attempts": 25,
+      "successes": 25,
+      "p95_ms": 0.008,
+      "max_ms": 0.049,
+      "measurements_ms": [
+        0.049,
+        0.007,
+        0.005,
+        0.003,
+        0.008,
+        0.003,
+        0.003,
+        0.003,
+        0.003,
+        0.002,
+        0.004,
+        0.002,
+        0.003,
+        0.002,
+        0.003,
+        0.003,
+        0.002,
+        0.006,
+        0.005,
+        0.005,
+        0.002,
+        0.003,
+        0.004,
+        0.002,
+        0.003
+      ]
+    }
+  },
+  "security_contract": {
+    "sources": {
+      "test/twelvgaige/operations/audit_anchor_test.exs": "sha256:5aa0c60b66fd979fda4ef21234f5204cb3d38a53e1c81259a07f88daa0198456",
+      "test/twelvgaige/operations/cross_session_isolation_test.exs": "sha256:75c9bb7a8dde515413cb8c279f8e7285bfeba422ca5677b62367fd8a2643a50f",
+      "test/twelvgaige/operations/operator_ipc_test.exs": "sha256:de29f77869867835493bf3a84c83f5e1c24c8b41d9a0b1e059257f6ecb08d4f6",
+      "test/twelvgaige/operations/protocol_conformance_test.exs": "sha256:49476e32902a4bc38f47be2377e8792c2e0bc1ed46bb8684f6694740027c7790",
+      "test/twelvgaige/operations/provider_limiter_test.exs": "sha256:7c2a07ef2596a3337fb12daf3327c7ff22e30c3694519eeb24ccc5660a39f521",
+      "test/twelvgaige/operations/provider_runtime_integration_test.exs": "sha256:7d20900fa11ce6749dbb61747d46c95c145a34b131e713d0580ab691114995e9",
+      "test/twelvgaige/operations/retention_integration_test.exs": "sha256:d76ec3413dee5ad18321b344a93cf4dd8f4fbb09fe2ba9b2843abe6c3f0a179e",
+      "test/twelvgaige/operations/scheduler_durability_test.exs": "sha256:dd63245aa718be19652a36aed8805b1cf34befbd057cbab83029e2c131f47440",
+      "test/twelvgaige/operations/session_control_test.exs": "sha256:589ea5e0f931981d9d0e210e921b41308145b305e205eee595705cb418139028",
+      "test/twelvgaige/operations/store_test.exs": "sha256:4e7a3f573da44dd87a4dd7f024d06a7f5ce7e4def9e1dd83a8f6d3196dd70c58",
+      "test/twelvgaige/workspace/set_test.exs": "sha256:bfdc51b99323ade0155d160cd68573f2e63fb3f5f4cb752892b3c01da6f15cb1"
+    },
+    "result": "pass",
+    "checks": {
+      "local_user_and_loopback_binding": "pass",
+      "backup_authority_stripping": "pass",
+      "signed_audit_checkpoint_health": "pass",
+      "audit_and_artifact_retention": "pass",
+      "orphan_and_lease_reconciliation": "pass",
+      "cross_session_isolation": "pass",
+      "provider_rate_and_backoff": "pass",
+      "scheduler_restart_and_replay": "pass",
+      "cross_repository_commit_provenance": "pass",
+      "authenticated_operator_protocol": "pass"
+    },
+    "suite": "make check"
+  }
+}

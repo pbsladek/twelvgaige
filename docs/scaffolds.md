@@ -17,8 +17,7 @@ Create a workflow from a scaffold:
 twelvgaige shell new release-check \
   --scaffold platform/release-readiness \
   --root docs/traphouse \
-  --output traphouse/workflows/release-check.yaml \
-  --with-mock-agents \
+  --output docs/traphouse/workflows/release-check.yaml \
   --write
 ```
 

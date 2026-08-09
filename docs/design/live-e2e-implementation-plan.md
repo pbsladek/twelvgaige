@@ -1,5 +1,8 @@
 # Live E2E Implementation Plan
 
+Status: implemented locally and in workflow configuration; manual confirmation
+of every remote credentialed job remains an external qualification step.
+
 Live E2E proves integration boundaries that the normal offline suite must not
 touch: disposable Kubernetes clusters, hosted LLM providers, SQLCipher-linked
 SQLite, and OS key storage. These checks are intentionally opt-in because they
@@ -19,7 +22,7 @@ setup.
 | Suite | Trigger | Environment | Purpose |
 | --- | --- | --- | --- |
 | k3d | weekly schedule or manual | none | Build a disposable Kubernetes cluster and run `:k8s_live` tests. |
-| providers | manual only | `live-providers` | Call selected live Anthropic/OpenAI/Gemini/Ollama providers. |
+| providers | manual only | `live-providers` | Call selected live OpenAI/Ollama providers. |
 | sqlcipher | manual only | `live-sqlcipher` | Rebuild SQLite driver against SQLCipher and run encrypted-store tests. |
 | keychain | manual only | `live-keychain` | Verify macOS Keychain backend creates, rotates, and deletes test keys. |
 

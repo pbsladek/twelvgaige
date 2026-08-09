@@ -21,7 +21,9 @@ defmodule Twelvgaige.Application do
         {Task.Supervisor, name: Twelvgaige.Breech.TaskSupervisor},
         {Twelvgaige.Breech, store: store_module}
       ]
+      |> maybe_add_operations_control_plane()
       |> maybe_add_scheduler()
+      |> maybe_add_manager_control_plane()
       |> maybe_add_http_listener()
 
     with {:ok, supervisor} <-
@@ -37,7 +39,57 @@ defmodule Twelvgaige.Application do
     if jobs == [] do
       children
     else
-      children ++ [{Twelvgaige.Scheduler, jobs: jobs}]
+      scheduler_opts =
+        case Application.get_env(:twelvgaige, :operations_control_plane, false) do
+          opts when is_list(opts) ->
+            [
+              jobs: jobs,
+              operations_store: Keyword.get(opts, :store_name, Twelvgaige.Operations.Store)
+            ]
+
+          _other ->
+            [jobs: jobs]
+        end
+
+      children ++ [{Twelvgaige.Scheduler, scheduler_opts}]
+    end
+  end
+
+  defp maybe_add_operations_control_plane(children) do
+    case Application.get_env(:twelvgaige, :operations_control_plane, false) do
+      false -> children
+      nil -> children
+      opts when is_list(opts) -> children ++ [{Twelvgaige.Operations.Supervisor, opts}]
+    end
+  end
+
+  defp maybe_add_manager_control_plane(children) do
+    case Application.get_env(:twelvgaige, :manager_control_plane, false) do
+      false ->
+        children
+
+      nil ->
+        children
+
+      opts when is_list(opts) ->
+        opts =
+          case Application.get_env(:twelvgaige, :operations_control_plane, false) do
+            operations_opts when is_list(operations_opts) ->
+              opts
+              |> Keyword.put_new(
+                :operations_store,
+                Keyword.get(operations_opts, :store_name, Twelvgaige.Operations.Store)
+              )
+              |> Keyword.put_new(
+                :workspace_root,
+                Twelvgaige.Operations.Paths.workspaces(operations_opts)
+              )
+
+            _other ->
+              opts
+          end
+
+        children ++ [{Twelvgaige.Manager.Supervisor, opts}]
     end
   end
 

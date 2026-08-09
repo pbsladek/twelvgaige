@@ -5,15 +5,9 @@ defmodule Twelvgaige.LLM.ProviderConfigTest do
   alias Twelvgaige.LLM.ProviderConfig
 
   @env_names [
-    "TWELVGAIGE_ANTHROPIC_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "TWELVGAIGE_ANTHROPIC_BASE_URL",
     "TWELVGAIGE_OPENAI_API_KEY",
     "OPENAI_API_KEY",
     "TWELVGAIGE_OPENAI_BASE_URL",
-    "TWELVGAIGE_GEMINI_API_KEY",
-    "GEMINI_API_KEY",
-    "GOOGLE_API_KEY",
     "TWELVGAIGE_OLLAMA_BASE_URL",
     "OLLAMA_HOST"
   ]
@@ -60,17 +54,6 @@ defmodule Twelvgaige.LLM.ProviderConfigTest do
     assert Keyword.fetch!(opts, :api_key) == "sk-specific"
   end
 
-  test "resolves Anthropic API key and base URL from app-specific environment" do
-    System.put_env("ANTHROPIC_API_KEY", "anthropic-standard")
-    System.put_env("TWELVGAIGE_ANTHROPIC_API_KEY", "anthropic-specific")
-    System.put_env("TWELVGAIGE_ANTHROPIC_BASE_URL", "https://api.example.test/v1/messages")
-
-    opts = ProviderConfig.resolve(:anthropic, [])
-
-    assert Keyword.fetch!(opts, :api_key) == "anthropic-specific"
-    assert Keyword.fetch!(opts, :base_url) == "https://api.example.test/v1/messages"
-  end
-
   test "application runtime config wins over environment defaults" do
     System.put_env("OPENAI_API_KEY", "sk-env")
 
@@ -113,14 +96,6 @@ defmodule Twelvgaige.LLM.ProviderConfigTest do
     opts = ProviderConfig.resolve(:openai, api_key: "sk-explicit")
 
     assert Keyword.fetch!(opts, :api_key) == "sk-explicit"
-  end
-
-  test "Gemini accepts Google API key fallback" do
-    System.put_env("GOOGLE_API_KEY", "google-secret")
-
-    opts = ProviderConfig.resolve(:gemini, [])
-
-    assert Keyword.fetch!(opts, :api_key) == "google-secret"
   end
 
   test "Ollama host resolves as a base URL but no API key is required" do

@@ -11,8 +11,13 @@ defmodule Twelvgaige.Round.Snapshot do
   alias Twelvgaige.Round
   alias Twelvgaige.Shot
 
+  @schema_version 1
+  @encoding_version 1
+
   @type t :: %__MODULE__{
           id: String.t(),
+          schema_version: pos_integer(),
+          encoding_version: pos_integer(),
           shell_id: String.t(),
           shell_version: String.t(),
           status: Round.State.status(),
@@ -33,6 +38,8 @@ defmodule Twelvgaige.Round.Snapshot do
     :id,
     :shell_id,
     :shell_version,
+    schema_version: @schema_version,
+    encoding_version: @encoding_version,
     status: :queued,
     version: 0,
     input: %{},
@@ -57,6 +64,8 @@ defmodule Twelvgaige.Round.Snapshot do
 
     %__MODULE__{
       id: required!(attrs, :id),
+      schema_version: value(attrs, :schema_version, @schema_version),
+      encoding_version: value(attrs, :encoding_version, @encoding_version),
       shell_id: required!(attrs, :shell_id),
       shell_version: required!(attrs, :shell_version),
       status: status,
@@ -102,6 +111,8 @@ defmodule Twelvgaige.Round.Snapshot do
   @spec to_map(t()) :: map()
   def to_map(%__MODULE__{} = snapshot) do
     %{
+      schema_version: snapshot.schema_version,
+      encoding_version: snapshot.encoding_version,
       id: snapshot.id,
       shell_id: snapshot.shell_id,
       shell_version: snapshot.shell_version,
@@ -118,6 +129,31 @@ defmodule Twelvgaige.Round.Snapshot do
       store_status: stringify_status(snapshot.store_status)
     }
     |> Redactor.redact_json()
+  end
+
+  @doc "Returns the canonical recovery snapshot accepted by a store boundary."
+  @spec persistable(t() | map()) :: t()
+  def persistable(%__MODULE__{} = snapshot) do
+    %{
+      snapshot
+      | input: Redactor.redact_json(snapshot.input),
+        error: Redactor.redact_json(snapshot.error),
+        awaiting_safety: Redactor.redact_json(snapshot.awaiting_safety),
+        policy: Redactor.redact_json(snapshot.policy),
+        shots: Enum.map(snapshot.shots, &persistable_shot/1)
+    }
+  end
+
+  def persistable(snapshot) when is_map(snapshot), do: Redactor.redact_json(snapshot)
+
+  defp persistable_shot(%Shot.State{} = shot) do
+    %{
+      shot
+      | condition: Redactor.redact_json(shot.condition),
+        output: Redactor.redact_json(shot.output),
+        error: Redactor.redact_json(shot.error),
+        history: Redactor.redact_json(shot.history)
+    }
   end
 
   defp normalize_shots(shots) do

@@ -10,6 +10,10 @@ defmodule Twelvgaige.CLI.Commands.ShellDraft do
 
   import Twelvgaige.CLI.CommandHelpers, only: [format_command_error: 2, root_opts: 1]
 
+  @test_providers Application.compile_env(:twelvgaige, :test_provider_ids, [])
+  @default_provider if("mock" in @test_providers, do: "mock", else: "ollama")
+  @default_model if("mock" in @test_providers, do: "mock-model", else: "llama3.2")
+
   @spec draft([String.t()]) :: {:ok, String.t(), non_neg_integer()}
   def draft(args) do
     with {:ok, opts} <- parse_opts(args),
@@ -71,8 +75,8 @@ defmodule Twelvgaige.CLI.Commands.ShellDraft do
   defp parse_opts(args) do
     parse_opts(args,
       from: nil,
-      provider: "mock",
-      model: "mock-model",
+      provider: @default_provider,
+      model: @default_model,
       allow_remote?: false,
       max_input_bytes: 64 * 1024,
       format: :yaml,

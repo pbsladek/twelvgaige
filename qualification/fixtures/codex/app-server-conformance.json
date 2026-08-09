@@ -1,0 +1,85 @@
+{
+  "approval": {
+    "method": "item/commandExecution/requestApproval",
+    "params": {
+      "command": "mix test",
+      "itemId": "approval_fixture",
+      "startedAtMs": 1,
+      "threadId": "thread_fixture",
+      "turnId": "turn_fixture"
+    }
+  },
+  "cli_version": "0.146.0",
+  "driver": "codex_app_server",
+  "exchanges": [
+    {
+      "method": "initialize",
+      "params": {
+        "capabilities": {
+          "experimentalApi": false
+        },
+        "clientInfo": {
+          "name": "twelvgaige",
+          "version": "0.0.3"
+        }
+      },
+      "result": {
+        "codexHome": "/run/codex-home",
+        "platformFamily": "unix",
+        "platformOs": "linux",
+        "userAgent": "codex-cli/0.146.0"
+      }
+    },
+    {
+      "method": "thread/start",
+      "params": {
+        "approvalPolicy": "on-request",
+        "cwd": "/workspace",
+        "sandbox": "workspace-write"
+      },
+      "result": {
+        "thread": {
+          "id": "thread_fixture"
+        }
+      }
+    },
+    {
+      "method": "thread/resume",
+      "params": {
+        "approvalPolicy": "on-request",
+        "cwd": "/workspace",
+        "sandbox": "workspace-write",
+        "threadId": "thread_fixture"
+      },
+      "result": {
+        "thread": {
+          "id": "thread_fixture"
+        }
+      }
+    },
+    {
+      "method": "turn/start",
+      "params": {
+        "approvalPolicy": "on-request",
+        "input": [
+          {
+            "text": "Run the verification.",
+            "type": "text"
+          }
+        ],
+        "sandboxPolicy": {
+          "type": "workspaceWrite"
+        },
+        "threadId": "thread_fixture"
+      },
+      "result": {
+        "turn": {
+          "id": "turn_fixture"
+        }
+      }
+    }
+  ],
+  "expected_resume_thread_id": "thread_fixture",
+  "schema_digest": "2d40289dea67cdef56c4de0b4f8caba4a4dcf4c1b73d16bb3711e88988e732f2",
+  "schema_version": 1
+}

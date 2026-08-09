@@ -35,11 +35,35 @@ defmodule Twelvgaige.Round.RunnerJournalTest do
       end)
     end
 
+    def create_round(_snapshot, _manifest, _events), do: :ok
+
+    def commit_transition(
+          _round_id,
+          _expected_version,
+          _transition_id,
+          _snapshot,
+          _events,
+          _audit_events
+        ),
+        do: :ok
+
     def attempts, do: Agent.get(__MODULE__, & &1.attempts)
     def intents, do: Agent.get(__MODULE__, & &1.intents)
   end
 
   defmodule FailingStore do
+    def create_round(_snapshot, _manifest, _events), do: :ok
+
+    def commit_transition(
+          _round_id,
+          _expected_version,
+          _transition_id,
+          _snapshot,
+          _events,
+          _audit_events
+        ),
+        do: :ok
+
     def record_attempt_started(_attempt, _audit_events), do: {:error, :store_down}
   end
 
@@ -133,7 +157,7 @@ defmodule Twelvgaige.Round.RunnerJournalTest do
         ]
       })
 
-    assert {:error, error} =
+    assert {:ok, %{status: :failed, error: error}} =
              Runner.run(workflow, %{},
                round_id: "round_journal_failure",
                response: "would have succeeded",

@@ -5,7 +5,7 @@ version: 1.0.0
 description: Summarize prior shot outputs for human review.
 shot:
   kind: slug
-  agent: mock_agent
+  agent: local_agent
   prompt: Summarize the previous shot outputs and call out follow-up risks.
   output_schema:
     type: object
@@ -17,4 +17,3 @@ shot:
         type: array
         items:
           type: string
-

@@ -25,7 +25,8 @@ defmodule Twelvgaige.Round.ManifestTest do
         source: %{type: :path, path: "/tmp/workflow.yaml"}
       )
 
-    assert manifest.schema_version == 1
+    assert manifest.schema_version == 2
+    assert manifest.encoding_version == 1
     assert manifest.round_id == "round_1"
     assert manifest.shell_id == "manifest_workflow"
     assert manifest.shell_version == "1.0.0"
@@ -84,6 +85,8 @@ defmodule Twelvgaige.Round.ManifestTest do
 
     assert manifest.agent_hashes == Manifest.agent_hashes([agent])
     assert manifest.agent_hashes["agent"]
+    assert {:ok, %{"agent" => ^agent}} = Manifest.agents(manifest)
+    assert {:ok, %{model: "mock-model"}} = Manifest.loadout(manifest, "only")
 
     assert [%{type: :path, path: expanded, format: "json", content_hash: hash}] =
              manifest.agent_sources
@@ -113,6 +116,26 @@ defmodule Twelvgaige.Round.ManifestTest do
       )
 
     assert {:error, :manifest_hash_mismatch} = Manifest.workflow(manifest)
+  end
+
+  test "rejects stored agent hash mismatches" do
+    workflow = workflow!(@workflow_map)
+
+    {:ok, agent} =
+      Agent.from_map(%{
+        kind: :agent,
+        id: "agent",
+        version: "1.0.0",
+        provider: "mock",
+        model: "mock-model",
+        system_prompt: "test"
+      })
+
+    manifest = Manifest.new(round_id: "round_1", workflow: workflow, agents: [agent])
+    tampered = put_in(manifest.agent_snapshots["agent"].model, "tampered")
+
+    assert {:error, :manifest_agent_hash_mismatch} = Manifest.agents(tampered)
+    assert {:error, :manifest_agent_hash_mismatch} = Manifest.verify(tampered)
   end
 
   defp workflow!(map) do

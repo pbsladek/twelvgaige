@@ -1,0 +1,15 @@
+{
+  "catalog_revision": "qualification-2026-08-02",
+  "images": [
+    {
+      "digest": "sha256:c3edda97f103f9db0d61d0873589f4e08c093dae04030adc0c6b90deabc105c4",
+      "provenance": "image-record.json",
+      "reference": "localhost/twelvgaige/worker:codex-0.146.0",
+      "sbom_digest": "sha256:52587323f1a82f1a906e9e5f738e76bd3a53ad2255b20e4ed8ff974aebbf6c90",
+      "signature_verified": true,
+      "support_status": "supported",
+      "vulnerability_result": "pass"
+    }
+  ],
+  "schema_version": 1
+}

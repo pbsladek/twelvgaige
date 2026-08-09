@@ -1,0 +1,94 @@
+[
+     {
+          "Id": "a0cb81ee41a395394dece236f9e5c34a996cc979f4863b5cc8dcc17c72805ebf",
+          "Digest": "sha256:061cc11b9b215f5940bec7975430ccf67f15030742df1a92daa36369f4d654a3",
+          "RepoTags": [
+               "localhost/twelvgaige/egress-proxy:1"
+          ],
+          "RepoDigests": [
+               "localhost/twelvgaige/egress-proxy@sha256:061cc11b9b215f5940bec7975430ccf67f15030742df1a92daa36369f4d654a3"
+          ],
+          "Parent": "0f719484caeeb48b2ab86967f5d4fd9a663b04115fa9d08e31531edf5ec79511",
+          "Comment": "",
+          "Created": "2026-08-08T05:52:04.904453029Z",
+          "Config": {
+               "User": "65532:65532",
+               "Env": [
+                    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+               ],
+               "Entrypoint": [
+                    "/usr/local/bin/egress-proxy"
+               ],
+               "WorkingDir": "/",
+               "Labels": {
+                    "io.buildah.version": "1.43.2",
+                    "io.twelvgaige.component": "egress-proxy",
+                    "io.twelvgaige.uid": "65532",
+                    "org.opencontainers.image.revision": "04b7c730d1ae0fe0888a4197d77d5085006af709",
+                    "org.opencontainers.image.title": "Twelvgaige egress proxy"
+               }
+          },
+          "Version": "",
+          "Author": "",
+          "Architecture": "arm64",
+          "Os": "linux",
+          "Size": 4135000,
+          "VirtualSize": 4135000,
+          "GraphDriver": {
+               "Name": "overlay",
+               "Data": {
+                    "UpperDir": "/var/home/core/.local/share/containers/storage/overlay/b6d15a309102809f97fcb9a3141be8b431b9c9aa56f3c5eef479c2439e6eea7f/diff",
+                    "WorkDir": "/var/home/core/.local/share/containers/storage/overlay/b6d15a309102809f97fcb9a3141be8b431b9c9aa56f3c5eef479c2439e6eea7f/work"
+               }
+          },
+          "RootFS": {
+               "Type": "layers",
+               "Layers": [
+                    "sha256:b6d15a309102809f97fcb9a3141be8b431b9c9aa56f3c5eef479c2439e6eea7f"
+               ]
+          },
+          "Labels": {
+               "io.buildah.version": "1.43.2",
+               "io.twelvgaige.component": "egress-proxy",
+               "io.twelvgaige.uid": "65532",
+               "org.opencontainers.image.revision": "04b7c730d1ae0fe0888a4197d77d5085006af709",
+               "org.opencontainers.image.title": "Twelvgaige egress proxy"
+          },
+          "Annotations": {
+               "org.opencontainers.image.base.digest": "",
+               "org.opencontainers.image.base.name": "",
+               "org.opencontainers.image.created": "2026-08-08T05:52:04.904453029Z"
+          },
+          "ManifestType": "application/vnd.oci.image.manifest.v1+json",
+          "User": "65532:65532",
+          "History": [
+               {
+                    "created": "2026-08-08T05:29:35.319222425Z",
+                    "created_by": "/bin/sh -c #(nop) LABEL org.opencontainers.image.title=\"Twelvgaige egress proxy\"       io.twelvgaige.component=\"egress-proxy\"       io.twelvgaige.uid=\"65532\"",
+                    "empty_layer": true
+               },
+               {
+                    "created": "2026-08-08T05:52:04.812432357Z",
+                    "created_by": "/bin/sh -c #(nop) COPY file:995129a6c6e9a1b1c4263ac9add692c80fc6b2fd7391be2d78c54cbe7739a520 in /usr/local/bin/egress-proxy      "
+               },
+               {
+                    "created": "2026-08-08T05:52:04.862516829Z",
+                    "created_by": "/bin/sh -c #(nop) USER 65532:65532",
+                    "empty_layer": true
+               },
+               {
+                    "created": "2026-08-08T05:52:04.883891181Z",
+                    "created_by": "/bin/sh -c #(nop) ENTRYPOINT [\"/usr/local/bin/egress-proxy\"]",
+                    "empty_layer": true
+               },
+               {
+                    "created": "2026-08-08T05:52:04.904484821Z",
+                    "created_by": "/bin/sh -c #(nop) LABEL \"org.opencontainers.image.revision\"=\"04b7c730d1ae0fe0888a4197d77d5085006af709\"",
+                    "empty_layer": true
+               }
+          ],
+          "NamesHistory": [
+               "localhost/twelvgaige/egress-proxy:1"
+          ]
+     }
+]

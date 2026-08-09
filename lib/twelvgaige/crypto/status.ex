@@ -281,7 +281,7 @@ defmodule Twelvgaige.Crypto.Status do
     %{
       "hosted_tls_verification" => "configured",
       "tls_regression_tests" => "policy_tests_present",
-      "hosted_providers" => ["anthropic", "openai", "gemini"],
+      "hosted_providers" => ["openai"],
       "local_providers" => ["ollama"],
       "policy" => %{
         "hosted_https_required" => true,

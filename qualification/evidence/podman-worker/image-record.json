@@ -1,0 +1,43 @@
+{
+  "evidence": {
+    "image_inspect_digest": "sha256:b34a21a94eaa4bb3387906d2d77c66479cea6adc5241b7bf46ce0320ea0ffcee",
+    "oci_archive_digest": "sha256:5c93a10c8c6c742d16b1624667618ad37f559c2e64261592cf464c747d902625",
+    "sbom_digest": "sha256:52587323f1a82f1a906e9e5f738e76bd3a53ad2255b20e4ed8ff974aebbf6c90",
+    "security_review_digest": "sha256:a9c6bf7144bbf9024f37468a88893bb478c1255f16e13942399373930581ef13",
+    "vulnerability_digest": "sha256:c3dd676cb392051190662c621cf9a280bbaadde659668235dcd1b6cc995b170f"
+  },
+  "generated_at": "2026-08-02T23:37:55Z",
+  "image": {
+    "architecture": "linux/arm64",
+    "base_digest": "sha256:d858bb5442632a31bd4bca6c5e601dbe6b536fd7942092ea6a08a0a95805693c",
+    "digest": "sha256:c3edda97f103f9db0d61d0873589f4e08c093dae04030adc0c6b90deabc105c4",
+    "reference": "localhost/twelvgaige/worker:codex-0.146.0"
+  },
+  "provenance": {
+    "builder": "podman",
+    "containerfile_digest": "sha256:25c4719b726022c6e8f9cc6dabcae943588b5cf6d0bdbb1c633f68ca09cfd11e",
+    "network_during_build": true,
+    "repository_dirty": true,
+    "repository_revision": "04b7c730d1ae0fe0888a4197d77d5085006af709"
+  },
+  "runtime": {
+    "artifact_sha512": "aa2603c649041675c6ee3a1a7495ba43e5dc8320d70a919da5af6793f73e8b4804a26babd63edb1efc75d8d7d658217fcbc4eaae2e9acbe14bb82d8c8dd7a1b4",
+    "name": "codex",
+    "version": "0.146.0"
+  },
+  "schema_version": 1,
+  "tools": {
+    "grype": "0.112.0",
+    "syft": "1.44.0"
+  },
+  "vulnerability_gate": {
+    "counts": {
+      "critical": 0,
+      "high": 1,
+      "medium": 4,
+      "unreviewed_high": 0
+    },
+    "policy": "zero known critical and zero unreviewed high findings",
+    "result": "pass"
+  }
+}

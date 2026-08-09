@@ -1,0 +1,133 @@
+{
+  "host": {
+    "hostname": "Pauls-MacBook-Pro",
+    "memory_bytes": 68719476736,
+    "macos_version": "26.6",
+    "architecture": "arm64",
+    "logical_cpus": 18
+  },
+  "result": "pass",
+  "image": {
+    "reference": "localhost/twelvgaige/worker:codex-0.146.0",
+    "digest": "sha256:c3edda97f103f9db0d61d0873589f4e08c093dae04030adc0c6b90deabc105c4"
+  },
+  "security": {
+    "uid": 65532,
+    "gid": 65532,
+    "no_new_privileges": "not exposed or claimed",
+    "guest_control_channels": "denied",
+    "launch_attestation": "pass",
+    "distinct_vm_identity": "pass",
+    "vm_identity_recovery": "resume",
+    "vm_identity_drift": "quarantine",
+    "mount_write": "pass",
+    "network_none": "pass",
+    "host_credentials": "not mounted",
+    "rootfs": "read_only",
+    "capabilities": "drop_all",
+    "credential_revocation": "pass",
+    "cancellation_cleanup": "pass",
+    "copy_snapshot": "pass",
+    "copy_snapshot_no_writable_host_mount": "pass",
+    "copy_snapshot_import_read_only": "pass",
+    "copy_snapshot_declared_export": "pass",
+    "copy_snapshot_volume_bootstrap": "host_controlled_ephemeral_vm",
+    "copy_snapshot_export_bytes": 10
+  },
+  "performance": {
+    "cancellation_ms": 2899,
+    "recovery_ms": 563,
+    "repeated_samples": [
+      {
+        "machine_id": "sbx_v7Vt7_Sa95ymQA8s",
+        "guest_memory_bytes": 3497984,
+        "host_vm_rss_bytes": 38862848,
+        "launch_ms": 2997
+      },
+      {
+        "machine_id": "sbx_NRiWAIflBf_To8dN",
+        "guest_memory_bytes": 3768320,
+        "host_vm_rss_bytes": 38846464,
+        "launch_ms": 2994
+      },
+      {
+        "machine_id": "sbx_8CuojGUGdufuQoAb",
+        "guest_memory_bytes": 3768320,
+        "host_vm_rss_bytes": 38813696,
+        "launch_ms": 2954
+      },
+      {
+        "machine_id": "sbx_mLyLLtn3x1LxrGOR",
+        "guest_memory_bytes": 3489792,
+        "host_vm_rss_bytes": 38764544,
+        "launch_ms": 2948
+      },
+      {
+        "machine_id": "sbx_9J3MuyI8d-hf_qyt",
+        "guest_memory_bytes": 3760128,
+        "host_vm_rss_bytes": 38830080,
+        "launch_ms": 2943
+      }
+    ],
+    "concurrent_samples": [
+      {
+        "machine_id": "sbx_S3PbZzwzu0ZUGJ2e",
+        "guest_memory_bytes": 3772416,
+        "host_vm_rss_bytes": 77611008,
+        "launch_ms": 3660
+      },
+      {
+        "machine_id": "sbx_1FDVvEU3nYDYrjeq",
+        "guest_memory_bytes": 3510272,
+        "host_vm_rss_bytes": 77611008,
+        "launch_ms": 3701
+      }
+    ],
+    "repeated_count": 5,
+    "concurrent_count": 2,
+    "concurrent_elapsed_ms": 10918,
+    "guest_memory_envelope": {
+      "status": "within_envelope",
+      "declared_bytes": 268435456,
+      "high_water_bytes": 335544320,
+      "peak_bytes": 3768320
+    },
+    "host_vm_peak_rss_bytes": 77611008,
+    "host_high_water_bytes": 671088640,
+    "backend_restart_policy": "within_high_water",
+    "all_resources_destroyed": true
+  },
+  "schema_version": 1,
+  "generated_at": "2026-08-08T06:06:09Z",
+  "backend": {
+    "version": "1.2.0",
+    "available": true,
+    "backend": "apple_container",
+    "capabilities": {
+      "network_none": true,
+      "copy_snapshot": true,
+      "cap_drop": true,
+      "inspect_json": true,
+      "oci": true,
+      "read_only_rootfs": true,
+      "rlimit_nproc": true,
+      "vm_per_session": true
+    },
+    "macos_version": "26.6",
+    "architecture": "arm64",
+    "code_signature": {
+      "identifier": "com.apple.container.cli",
+      "team_identifier": "UPBK2H6LZM",
+      "verified": true
+    },
+    "documentation_release": "https://github.com/apple/container/tree/1.2.0",
+    "pinned_version": "1.2.0",
+    "service_status": "running"
+  },
+  "security_contract": {
+    "process_limit": "RLIMIT_NPROC inside a per-session VM",
+    "authority": "one Apple lightweight VM per worker",
+    "no_new_privileges": "not exposed by Apple container 1.2.0; not claimed",
+    "guest_control_channels": "denied"
+  }
+}

@@ -48,8 +48,8 @@ defmodule Twelvgaige.BreechFileStoreTest do
              match?({:ok, %{status: :complete}}, Breech.get_round(round_id, server: breech_name))
            end)
 
-    assert {:ok, [%{event_type: :round_completed}]} =
-             Breech.list_round_events(round_id, server: breech_name)
+    assert {:ok, events} = Breech.list_round_events(round_id, server: breech_name)
+    assert List.last(events).event_type == :round_completed
 
     stop_supervised!(Breech)
     stop_supervised!(FileStore)
@@ -64,8 +64,9 @@ defmodule Twelvgaige.BreechFileStoreTest do
     assert {:ok, rounds} = Breech.list_rounds(server: breech_name, status: :complete)
     assert Enum.any?(rounds, &(&1.id == round_id))
 
-    assert {:ok, [%{event_type: :round_completed, seq: 1}]} =
-             Breech.list_round_events(round_id, server: breech_name)
+    assert {:ok, reloaded_events} = Breech.list_round_events(round_id, server: breech_name)
+    assert List.last(reloaded_events).event_type == :round_completed
+    assert List.last(reloaded_events).seq == length(reloaded_events)
   end
 
   test "awaiting safety rounds resume after Breech and file store restart", %{path: path} do
@@ -363,7 +364,7 @@ defmodule Twelvgaige.BreechFileStoreTest do
     assert {:ok, completed} = Breech.get_round(round_id, server: breech_name)
     shots = Map.new(completed.shots, &{&1.id, &1})
 
-    assert completed.version == 3
+    assert completed.version == 5
     assert shots["first"].status == :complete
     assert shots["first"].output == %{"content" => "already completed"}
     assert shots["second"].status == :complete

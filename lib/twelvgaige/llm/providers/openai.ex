@@ -63,15 +63,60 @@ defmodule Twelvgaige.LLM.Providers.OpenAI do
       "messages" => Enum.map(messages, &provider_message/1)
     }
     |> maybe_put("max_tokens", Keyword.get(opts, :max_tokens))
-    |> maybe_put("tools", Keyword.get(opts, :tools))
+    |> maybe_put("tools", openai_tools(Keyword.get(opts, :tools)))
     |> maybe_put("response_format", Keyword.get(opts, :response_format))
   end
 
   defp provider_message(message) do
-    %{
-      "role" => Common.message_role(message),
-      "content" => Common.message_content(message)
-    }
+    case Common.message_role(message) do
+      "assistant" ->
+        %{"role" => "assistant", "content" => Common.message_content(message)}
+        |> maybe_put("tool_calls", openai_tool_calls(Common.message_tool_calls(message)))
+
+      "tool" ->
+        %{
+          "role" => "tool",
+          "content" => Common.message_content(message),
+          "tool_call_id" => Common.message_tool_call_id(message)
+        }
+        |> maybe_put("name", Common.message_name(message))
+
+      role ->
+        %{"role" => role, "content" => Common.message_content(message)}
+    end
+  end
+
+  defp openai_tool_calls(calls) do
+    Enum.map(calls, fn call ->
+      %{
+        "id" => call.id,
+        "type" => "function",
+        "function" => %{"name" => call.name, "arguments" => Jason.encode!(call.input)}
+      }
+    end)
+  end
+
+  defp openai_tools(nil), do: nil
+
+  defp openai_tools(tools) when is_list(tools) do
+    Enum.map(tools, fn tool ->
+      if Map.get(tool, "type") == "function" do
+        tool
+      else
+        %{
+          "type" => "function",
+          "function" => %{
+            "name" => value(tool, :name),
+            "description" => value(tool, :description, ""),
+            "parameters" => value(tool, :input_schema, %{"type" => "object"})
+          }
+        }
+      end
+    end)
+  end
+
+  defp value(map, key, default \\ nil) do
+    Map.get(map, key, Map.get(map, Atom.to_string(key), default))
   end
 
   defp maybe_put(body, _key, nil), do: body

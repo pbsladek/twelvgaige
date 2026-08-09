@@ -37,12 +37,12 @@ version: 1.0.0
 shots:
   - id: first
     kind: slug
-    agent: mock_agent
+    agent: local_agent
     prompt: first prompt
 
   - id: second
     kind: slug
-    agent: mock_agent
+    agent: local_agent
     depends_on: [first]
     prompt: second prompt
 ```
@@ -62,17 +62,17 @@ Agent shells define provider, model, prompt, and policy defaults:
 
 ```yaml
 kind: agent
-id: mock_agent
+id: local_agent
 version: 1.0.0
-provider: mock
-model: mock-model
+provider: ollama
+model: llama3.2
 system_prompt: Keep responses short and factual.
 ```
 
-Supported provider IDs include `mock`, `anthropic`, `openai`, `gemini`, and
-`ollama`. Normal tests and examples should use `mock` so they never call a live
-provider. Live provider credentials are runtime configuration, not shell fields;
-see [Secrets And Providers](secrets-and-providers.md).
+Supported provider IDs are `openai` and `ollama`. Tests use an internal,
+deterministic adapter that is not compiled into production builds. Live provider
+credentials are runtime configuration, not shell fields; see
+[Secrets And Providers](secrets-and-providers.md).
 
 ## Tools
 
@@ -86,6 +86,9 @@ Current tool names:
 - `http_get`, `http_post`
 - `shell_read`
 - `git_commit`
+- `shell_validate`, `shell_graph`, `shell_lint`, `shell_inventory`,
+  `shell_impact`, `shell_diff`, `shell_normalize`, `tool_catalog_read`, and
+  `patch_plan` for read-only assisted authoring
 
 Each tool declares safety level and input schema. A shot must explicitly allow
 the tool and the active choke must allow the tool safety level.
@@ -142,3 +145,17 @@ or SQLite stores. SQLite is the local laptop-oriented durable path.
 On restart, in-flight OS processes are gone. Twelvgaige reconciles durable state
 instead of pretending old shot tasks still exist. Ambiguous side effects move to
 manual reconciliation rather than being retried blindly.
+
+## Delegated Agent Sessions
+
+The optional single-user manager and operations APIs can delegate a bounded
+coding task to Codex. The delegated runtime manages its own context, tools, and
+native subagents inside an outer Podman or Apple container boundary. Twelvgaige
+retains authority over admission, workspace isolation, credentials, network
+access, budgets, approvals, cancellation, recovery, and result verification.
+The current CLI manages registered sessions but does not provide a standalone
+`session start` command.
+
+Delegated sessions complement provider-native shots; they do not silently
+replace them or act as a fallback. Podman is the default backend. Apple
+containers are selected explicitly on qualified macOS hosts.

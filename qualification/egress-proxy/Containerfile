@@ -1,0 +1,10 @@
+FROM scratch
+
+LABEL org.opencontainers.image.title="Twelvgaige egress proxy" \
+      io.twelvgaige.component="egress-proxy" \
+      io.twelvgaige.uid="65532"
+
+COPY egress-proxy /usr/local/bin/egress-proxy
+
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/egress-proxy"]

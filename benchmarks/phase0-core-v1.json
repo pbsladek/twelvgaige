@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "suite": "phase0-core",
+  "recorded_on": "2026-08-02",
+  "host": {
+    "os": "{:unix, :darwin}",
+    "os_version": "25.6.0",
+    "architecture": "aarch64-apple-darwin25.6.0",
+    "erlang": "29",
+    "elixir": "1.20.2",
+    "schedulers": 18,
+    "model": "Mac17,9",
+    "memory_bytes": "68719476736"
+  },
+  "cases": [
+    {
+      "name": "duplicate_scan_old_quadratic",
+      "iterations": 3,
+      "best_us": 91359,
+      "median_us": 92576,
+      "worst_us": 93020,
+      "samples_us": [91359, 92327, 92401, 92576, 92652, 92928, 93020]
+    },
+    {
+      "name": "duplicate_scan_mapset",
+      "iterations": 30,
+      "best_us": 690,
+      "median_us": 696,
+      "worst_us": 739,
+      "samples_us": [690, 691, 696, 696, 697, 699, 739]
+    },
+    {
+      "name": "condition_shot_references",
+      "iterations": 30,
+      "best_us": 286,
+      "median_us": 293,
+      "worst_us": 316,
+      "samples_us": [286, 289, 289, 293, 297, 301, 316]
+    },
+    {
+      "name": "pattern_compile_chain",
+      "iterations": 10,
+      "best_us": 53809,
+      "median_us": 56071,
+      "worst_us": 56252,
+      "samples_us": [53809, 53915, 53976, 56071, 56134, 56153, 56252]
+    },
+    {
+      "name": "value_validator_wide_object",
+      "iterations": 20,
+      "best_us": 257,
+      "median_us": 266,
+      "worst_us": 279,
+      "samples_us": [257, 260, 261, 266, 268, 273, 279]
+    },
+    {
+      "name": "retention_stats_many_rounds",
+      "iterations": 30,
+      "best_us": 1350,
+      "median_us": 1356,
+      "worst_us": 1396,
+      "samples_us": [1350, 1351, 1351, 1356, 1365, 1367, 1396]
+    },
+    {
+      "name": "output_parser_candidates",
+      "iterations": 100,
+      "best_us": 3,
+      "median_us": 3,
+      "worst_us": 4,
+      "samples_us": [3, 3, 3, 3, 3, 3, 4]
+    }
+  ]
+}

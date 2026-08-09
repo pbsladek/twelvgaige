@@ -25,6 +25,18 @@ defmodule Twelvgaige.Store.FileTest do
     }
   end
 
+  test "rejects a restricted external term with the wrong persisted shape", %{
+    name: name,
+    path: path
+  } do
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, :erlang.term_to_binary(%{path: path}))
+    previous_trap_exit = Process.flag(:trap_exit, true)
+
+    assert {:error, :store_corrupt} = FileStore.start_link(name: name, path: path)
+    Process.flag(:trap_exit, previous_trap_exit)
+  end
+
   @tag :posix_only
   test "creates private store directory and file", %{name: name, path: path} do
     posix_only(fn ->

@@ -35,12 +35,10 @@ events, metrics, or audit output.
 | Provider | Secret Variables | Endpoint Variables |
 | --- | --- | --- |
 | `openai` | `TWELVGAIGE_OPENAI_API_KEY`, then `OPENAI_API_KEY` | `TWELVGAIGE_OPENAI_BASE_URL` |
-| `anthropic` | `TWELVGAIGE_ANTHROPIC_API_KEY`, then `ANTHROPIC_API_KEY` | `TWELVGAIGE_ANTHROPIC_BASE_URL` |
-| `gemini` | `TWELVGAIGE_GEMINI_API_KEY`, `GEMINI_API_KEY`, then `GOOGLE_API_KEY` | `TWELVGAIGE_GEMINI_BASE_URL` |
 | `ollama` | none by default | `TWELVGAIGE_OLLAMA_BASE_URL`, then `OLLAMA_HOST` |
 
 The `TWELVGAIGE_*` variables let an operator give this tool scoped credentials
-without affecting other OpenAI, Anthropic, or Google tooling in the same shell.
+without affecting other OpenAI tooling in the same shell.
 Provider-standard variables are supported because they are familiar and work
 well in local development.
 
@@ -91,16 +89,51 @@ twelvgaige daemon stop
 OPENAI_API_KEY='sk-...' twelvgaige daemon serve
 ```
 
-## Does This Use Codex Credentials?
+## Ollama How-To
 
-No. The OpenAI provider calls the OpenAI API with an API key. It does not read a
-Codex CLI login, browser session, ChatGPT session, or local Codex config.
+Ollama is the default provider for authoring commands and bundled examples. It
+does not require a key and is restricted to loopback by default. Start Ollama
+and make the example model available:
 
-Codex can help develop Twelvgaige, and Twelvgaige can call OpenAI models through
-the OpenAI API, but those are separate credential paths. Do not copy Codex
-session material into Twelvgaige. If a future integration treats Codex as a
-separate local tool, it should be modeled as an explicit tool with its own
-policy and audit boundary, not as hidden provider auth.
+```bash
+ollama pull llama3.2
+```
+
+The desktop application may already run the Ollama service. Otherwise, start it
+with `ollama serve`. To use another local endpoint, set
+`TWELVGAIGE_OLLAMA_BASE_URL` or `OLLAMA_HOST` before starting Twelvgaige.
+
+An Ollama agent shell looks like this:
+
+```yaml
+kind: agent
+id: local_reviewer
+version: 1.0.0
+provider: ollama
+model: llama3.2
+system_prompt: Return factual JSON. Do not decide workflow routing.
+```
+
+## Codex Authentication Is Separate
+
+The OpenAI workflow provider and delegated Codex sessions use separate
+credential paths. The OpenAI provider calls the API with the key described
+above. It does not read a Codex CLI login, browser session, or local Codex
+configuration.
+
+The delegated-session integration supports two explicit authentication
+profiles:
+
+- Interactive sessions may use an isolated local Codex home and supported local
+  account login.
+- Unattended sessions require brokered service credentials. Twelvgaige issues a
+  short-lived, session-scoped lease constrained by principal, model,
+  destination, budget, and expiry, and revokes it with the session.
+
+Local account state is rejected for unattended mode. Durable session records
+hold profile and lease identifiers rather than upstream secrets. See the
+[delegated-agent control-plane design](design/delegated-agent-control-plane-design.md)
+for the complete sandbox, credential, egress, and approval model.
 
 ## Security Properties
 
@@ -108,8 +141,6 @@ policy and audit boundary, not as hidden provider auth.
 - Provider keys are held in process memory and sent only as provider HTTP auth
   headers.
 - OpenAI uses `Authorization: Bearer ...`.
-- Anthropic uses `x-api-key`.
-- Gemini uses `x-goog-api-key`.
 - Ollama uses no credential by default.
 - Logs and provider response metadata redact common secret fields, auth headers,
   cookies, URL query secrets, tokens, passwords, and API keys.
@@ -143,8 +174,8 @@ workflow shells or unreviewed repository files.
 - Prefer `TWELVGAIGE_*` variables on shared workstations to avoid accidental
   reuse by other tools.
 - Restart Breech after rotating a key.
-- Keep live provider tests opt-in. Normal `mix test` uses mock providers and
-  fake transports.
+- Keep live provider tests opt-in. Normal `mix test` uses a test-only
+  deterministic provider and fake transports.
 - Treat Kubernetes, cloud, Git, and shell credentials as tool credentials. They
   are not provider credentials and must be scoped by tool policy, local config,
   and safety shots.

@@ -5,13 +5,13 @@ defmodule Twelvgaige.MixProject do
     [
       app: :twelvgaige,
       version: "0.0.3",
-      elixir: "~> 1.19",
+      elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       dialyzer: dialyzer(),
       test_coverage: test_coverage(),
-      escript: [main_module: Twelvgaige.CLI.Main, app: nil, include_priv_for: [:exqlite]],
+      escript: escript(),
       default_release: :twelvgaige_native,
       releases: releases()
     ]
@@ -24,17 +24,43 @@ defmodule Twelvgaige.MixProject do
     ]
   end
 
+  def cli do
+    [
+      preferred_envs: [
+        coveralls: :test,
+        "coveralls.cobertura": :test,
+        "coveralls.detail": :test,
+        "coveralls.html": :test,
+        "coveralls.json": :test,
+        "coveralls.lcov": :test,
+        "coveralls.multiple": :test
+      ]
+    ]
+  end
+
   defp deps do
     [
       {:burrito, "~> 1.5", runtime: false},
+      {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ecto_sql, "~> 3.12"},
       {:ecto_sqlite3, "~> 0.17"},
       {:jason, "~> 1.4"},
+      {:excoveralls, "~> 0.18.5", only: :test},
+      {:sobelow, "~> 0.14.1", only: [:dev, :test], runtime: false, warn_if_outdated: true},
       {:stream_data, "~> 1.1", only: :test},
       {:toml_elixir, "~> 3.1"},
       {:yamerl, "~> 0.10"}
     ]
+  end
+
+  defp escript do
+    options = [main_module: Twelvgaige.CLI.Main, app: nil, include_priv_for: [:exqlite]]
+
+    case System.get_env("TWELVGAIGE_ESCRIPT_PATH") do
+      path when is_binary(path) and path != "" -> Keyword.put(options, :path, path)
+      _unset -> options
+    end
   end
 
   defp dialyzer do
@@ -44,12 +70,20 @@ defmodule Twelvgaige.MixProject do
     ]
   end
 
-  defp test_coverage do
+  def test_coverage do
     [
-      summary: [threshold: 70],
-      ignore_modules: [
-        ~r/^Twelvgaige\.TestSupport\./
-      ]
+      summary: [threshold: 75],
+      ignore_modules: coverage_ignore_modules()
+    ]
+  end
+
+  def coverage_ignore_modules do
+    [
+      ~r/^Twelvgaige\.TestSupport\./,
+      ~r/^Twelvgaige\.Store\.SQLite\.Schema\./,
+      Twelvgaige.Store.SQLite.Repo,
+      Twelvgaige.Store.SQLite.Migration.Repo,
+      Twelvgaige.Crypto.SQLCipherSpike.Repo
     ]
   end
 

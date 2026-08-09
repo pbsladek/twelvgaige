@@ -11,9 +11,10 @@ twelvgaige shell patch verify patch.json --root traphouse --approval approval.js
 twelvgaige shell patch apply patch.json --root traphouse --approval approval.json
 ```
 
-`shell author review` is read-only. It can ask a mock, local, or hosted model to
-review shell structure and propose changes, but it does not edit files. Hosted
-providers require `--allow-remote`.
+`shell author review` is read-only. It can ask local Ollama or hosted OpenAI to
+review shell structure and propose changes, but it does not edit files. OpenAI
+requires `--allow-remote`. Tests use a deterministic adapter that is not
+compiled into production builds.
 
 Use single-shell refactors for precise edits:
 
@@ -42,4 +43,6 @@ make authoring-check
 
 That target builds the CLI, copies `docs/traphouse` to a temporary directory,
 runs strict lint, inventory, shot-library verification, scaffold verification,
-read-only author review, and patch verify/apply dry-run.
+read-only author review, and patch verify/apply dry-run. It builds the test
+escript for this gate so author review uses the test-only deterministic adapter
+and never requires Ollama or hosted credentials.

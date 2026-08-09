@@ -8,7 +8,7 @@ shots:
     description: "Review before continuing"
   - id: after
     kind: slug
-    agent: mock_agent
+    agent: local_agent
     depends_on:
       - approval
     prompt: "run after approval"

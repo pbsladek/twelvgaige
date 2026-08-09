@@ -35,6 +35,18 @@ defmodule Twelvgaige.Round.ServerJournalTest do
       end)
     end
 
+    def create_round(_snapshot, _manifest, _events), do: :ok
+
+    def commit_transition(
+          _round_id,
+          _expected_version,
+          _transition_id,
+          _snapshot,
+          _events,
+          _audit_events
+        ),
+        do: :ok
+
     def attempts, do: Agent.get(__MODULE__, & &1.attempts)
     def intents, do: Agent.get(__MODULE__, & &1.intents)
   end

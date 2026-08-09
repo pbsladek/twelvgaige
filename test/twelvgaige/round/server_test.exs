@@ -1018,6 +1018,88 @@ defmodule Twelvgaige.Round.ServerTest do
     assert :ok = ResourceLimiter.release(held)
   end
 
+  test "enforces the workflow timeout as a durable round deadline" do
+    {:ok, workflow} =
+      Workflow.from_map(%{
+        kind: :workflow,
+        id: "server_workflow_timeout",
+        version: "1.0.0",
+        timeout: "20ms",
+        shots: [%{id: "only", kind: :slug, agent: "agent"}]
+      })
+
+    handler = fn _model, _messages, _opts ->
+      Process.sleep(200)
+      "too late"
+    end
+
+    assert {:ok, snapshot} = Server.run_sync(workflow, %{}, mock_handler: handler)
+    assert snapshot.status == :failed
+    assert snapshot.error.reason == :round_timeout
+    assert [%{status: :cancelled}] = snapshot.shots
+  end
+
+  test "applies shot and condition failure policies" do
+    {:ok, halt_on_shot} =
+      Workflow.from_map(%{
+        kind: :workflow,
+        id: "server_halt_shot",
+        version: "1.0.0",
+        policy: %{on_shot_failure: :halt_round},
+        shots: [%{id: "only", kind: :slug, agent: "agent"}]
+      })
+
+    assert {:ok, shot_snapshot} =
+             Server.run_sync(halt_on_shot, %{}, error: :llm_timeout)
+
+    assert shot_snapshot.status == :halted
+
+    {:ok, halt_on_condition} =
+      Workflow.from_map(%{
+        kind: :workflow,
+        id: "server_halt_condition",
+        version: "1.0.0",
+        policy: %{on_condition_error: :halt_round},
+        shots: [
+          %{id: "first", kind: :slug, agent: "agent"},
+          %{
+            id: "second",
+            kind: :slug,
+            agent: "agent",
+            depends_on: ["first"],
+            condition: "shots.first.output.missing == true"
+          }
+        ]
+      })
+
+    assert {:ok, condition_snapshot} = Server.run_sync(halt_on_condition, %{})
+    assert condition_snapshot.status == :halted
+    assert condition_snapshot.error.class == :condition_error
+  end
+
+  test "fail-round store policy terminates instead of retrying a failed commit" do
+    start_supervised!(TransitionStore)
+    TransitionStore.fail_event_types([:round_started])
+
+    {:ok, workflow} =
+      Workflow.from_map(%{
+        kind: :workflow,
+        id: "server_fail_store",
+        version: "1.0.0",
+        policy: %{on_store_error: :fail_round},
+        shots: [%{id: "only", kind: :slug, agent: "agent"}]
+      })
+
+    assert {:ok, snapshot} =
+             Server.run_sync(workflow, %{},
+               round_id: "round_server_fail_store",
+               store: TransitionStore
+             )
+
+    assert snapshot.status == :failed
+    assert snapshot.error.class == :store_error
+  end
+
   defp workflow!(id) do
     {:ok, workflow} =
       Workflow.from_map(%{

@@ -1,0 +1,29 @@
+FROM docker.io/library/alpine@sha256:d858bb5442632a31bd4bca6c5e601dbe6b536fd7942092ea6a08a0a95805693c
+
+ARG CODEX_VERSION=0.146.0
+
+LABEL org.opencontainers.image.title="Twelvgaige Codex worker" \
+      org.opencontainers.image.version="${CODEX_VERSION}" \
+      org.opencontainers.image.base.digest="sha256:d858bb5442632a31bd4bca6c5e601dbe6b536fd7942092ea6a08a0a95805693c" \
+      io.twelvgaige.worker.runtime="codex" \
+      io.twelvgaige.worker.uid="65532"
+
+RUN apk add --no-cache ca-certificates git
+
+COPY codex-linux-arm64.tgz /tmp/codex-linux-arm64.tgz
+
+RUN mkdir -p /opt/codex /workspace /artifacts /home/worker \
+    && tar -xzf /tmp/codex-linux-arm64.tgz -C /tmp \
+    && cp -R /tmp/package/vendor/aarch64-unknown-linux-musl/. /opt/codex/ \
+    && rm -rf /tmp/codex-linux-arm64.tgz /tmp/package \
+    && addgroup -g 65532 -S worker \
+    && adduser -u 65532 -S -D -G worker -h /home/worker -s /bin/sh worker \
+    && chown 65532:65532 /workspace /artifacts /home/worker
+
+ENV HOME=/home/worker \
+    PATH=/opt/codex/bin:/opt/codex/codex-path:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+USER 65532:65532
+WORKDIR /workspace
+
+CMD ["/opt/codex/bin/codex", "--version"]

@@ -7,13 +7,13 @@
     {
       "id": "first",
       "kind": "slug",
-      "agent": "mock_agent",
+      "agent": "local_agent",
       "prompt": "first prompt"
     },
     {
       "id": "second",
       "kind": "slug",
-      "agent": "mock_agent",
+      "agent": "local_agent",
       "depends_on": ["first"],
       "prompt": "second prompt"
     }

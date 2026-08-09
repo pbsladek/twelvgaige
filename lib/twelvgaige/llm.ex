@@ -4,28 +4,31 @@ defmodule Twelvgaige.LLM do
   """
 
   alias Twelvgaige.Error
+  alias Twelvgaige.LLM.Conversation
   alias Twelvgaige.LLM.Provider
-  alias Twelvgaige.LLM.Providers.Anthropic
-  alias Twelvgaige.LLM.Providers.Gemini
-  alias Twelvgaige.LLM.Providers.Mock
   alias Twelvgaige.LLM.Providers.Ollama
   alias Twelvgaige.LLM.Providers.OpenAI
   alias Twelvgaige.LLM.ProviderConfig
   alias Twelvgaige.Metrics
+  alias Twelvgaige.Operations.ProviderLimiter
   alias Twelvgaige.ResourceLimiter
 
-  @providers %{
-    "mock" => Mock,
-    "anthropic" => Anthropic,
+  @production_providers %{
     "openai" => OpenAI,
-    "gemini" => Gemini,
     "ollama" => Ollama,
-    mock: Mock,
-    anthropic: Anthropic,
     openai: OpenAI,
-    gemini: Gemini,
     ollama: Ollama
   }
+
+  @test_providers if("mock" in Application.compile_env(:twelvgaige, :test_provider_ids, []),
+                    do: %{
+                      "mock" => Twelvgaige.LLM.Providers.Mock,
+                      mock: Twelvgaige.LLM.Providers.Mock
+                    },
+                    else: %{}
+                  )
+
+  @providers Map.merge(@production_providers, @test_providers)
 
   @spec complete(String.t() | atom(), String.t(), [map()], keyword()) ::
           {:ok, Twelvgaige.LLM.Response.t()} | {:error, Error.t()}
@@ -34,11 +37,14 @@ defmodule Twelvgaige.LLM do
     provider_opts = ProviderConfig.resolve(provider, opts)
 
     result =
-      with {:ok, module} <- provider_module(provider),
+      with {:ok, messages} <- Conversation.normalize_messages(messages),
+           {:ok, module} <- provider_module(provider),
            :ok <- validate_provider_module(module),
            :ok <- validate_capabilities(module, provider_opts) do
         with_llm_permit(provider, model, provider_opts, fn ->
-          module.complete(model, messages, provider_opts)
+          with_provider_budget(provider, model, messages, provider_opts, fn ->
+            module.complete(model, messages, provider_opts)
+          end)
         end)
       end
 
@@ -192,6 +198,133 @@ defmodule Twelvgaige.LLM do
     case ResourceLimiter.release(permit) do
       :ok -> :ok
       {:error, _reason} -> :ok
+    end
+  catch
+    :exit, _reason -> :ok
+  end
+
+  defp with_provider_budget(provider, model, messages, opts, fun) do
+    case acquire_provider_budget(provider, model, messages, opts) do
+      {:ok, nil} ->
+        fun.()
+
+      {:ok, permit, limiter} ->
+        result = fun.()
+
+        case ProviderLimiter.complete(permit, provider_usage(result, opts), server: limiter) do
+          :ok ->
+            result
+
+          {:error, reason} ->
+            {:error,
+             Error.new(:store_error, :store_unavailable, "provider usage accounting failed",
+               retryable: false,
+               details: %{
+                 provider: stringify(provider),
+                 model: model,
+                 permit_id: permit.id,
+                 reason: inspect(reason)
+               }
+             )}
+        end
+
+      {:error, _error} = error ->
+        error
+    end
+  catch
+    :exit, reason ->
+      {:error,
+       Error.new(:store_error, :store_unavailable, "provider control plane unavailable",
+         retryable: false,
+         details: %{provider: stringify(provider), model: model, reason: inspect(reason)}
+       )}
+  end
+
+  defp acquire_provider_budget(provider, model, messages, opts) do
+    case provider_limiter(opts) do
+      nil ->
+        {:ok, nil}
+
+      limiter ->
+        account = Keyword.get(opts, :provider_account, "default")
+        tokens = estimated_tokens(messages, opts)
+        cost = non_negative_option(opts, :estimated_cost_micros, 0)
+
+        case ProviderLimiter.acquire(provider, account, tokens, cost, server: limiter) do
+          {:ok, permit} ->
+            {:ok, permit, limiter}
+
+          {:wait, wait} ->
+            {:error,
+             Error.new(:llm_error, :llm_rate_limited, "provider request is rate limited",
+               retryable: true,
+               details: %{
+                 provider: stringify(provider),
+                 model: model,
+                 account: to_string(account),
+                 control_reason: wait.reason,
+                 retry_after_ms: wait.retry_after_ms
+               }
+             )}
+
+          {:error, reason} ->
+            {:error,
+             Error.new(:policy_error, :policy_denied, "provider request admission failed",
+               retryable: false,
+               details: %{
+                 provider: stringify(provider),
+                 model: model,
+                 account: to_string(account),
+                 reason: inspect(reason)
+               }
+             )}
+        end
+    end
+  end
+
+  defp provider_limiter(opts) do
+    case Keyword.fetch(opts, :provider_limiter) do
+      {:ok, limiter} -> if limiter_available?(limiter), do: limiter
+      :error -> if limiter_available?(ProviderLimiter), do: ProviderLimiter
+    end
+  end
+
+  defp estimated_tokens(messages, opts) do
+    case Keyword.get(opts, :estimated_tokens) do
+      value when is_integer(value) and value >= 0 ->
+        value
+
+      _other ->
+        input =
+          messages
+          |> Enum.map(&Conversation.content/1)
+          |> Enum.reduce(0, &(byte_size(&1) + &2))
+          |> then(&ceil(&1 / 4))
+
+        input + non_negative_option(opts, :max_tokens, 0)
+    end
+  end
+
+  defp provider_usage({:ok, %{usage: usage}}, opts) when is_map(usage) do
+    %{
+      tokens:
+        usage_value(usage, :total_tokens) ||
+          usage_value(usage, :input_tokens, 0) + usage_value(usage, :output_tokens, 0),
+      cost_micros:
+        usage_value(usage, :cost_micros) || non_negative_option(opts, :actual_cost_micros, 0)
+    }
+  end
+
+  defp provider_usage({:error, _error}, _opts), do: %{tokens: 0, cost_micros: 0}
+  defp provider_usage(_result, _opts), do: %{tokens: 0, cost_micros: 0}
+
+  defp usage_value(usage, key, default \\ nil),
+    do: Map.get(usage, key, Map.get(usage, Atom.to_string(key), default))
+
+  defp non_negative_option(opts, key, default) do
+    case Keyword.get(opts, key, default) do
+      value when is_integer(value) and value >= 0 -> value
+      _other -> default
     end
   end
 

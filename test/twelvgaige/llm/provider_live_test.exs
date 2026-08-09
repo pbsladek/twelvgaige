@@ -6,7 +6,7 @@ defmodule Twelvgaige.LLM.ProviderLiveTest do
   alias Twelvgaige.LLM
   alias Twelvgaige.LLM.Response
 
-  @providers ["anthropic", "openai", "gemini", "ollama"]
+  @providers ["openai", "ollama"]
 
   test "selected live providers complete a minimal prompt" do
     assert System.get_env("TWELVGAIGE_PROVIDER_LIVE") == "1",
@@ -83,13 +83,6 @@ defmodule Twelvgaige.LLM.ProviderLiveTest do
     end
   end
 
-  defp live_opts("gemini") do
-    [
-      timeout_ms: timeout_ms(),
-      generation_config: %{"maxOutputTokens" => 16}
-    ]
-  end
-
   defp live_opts("ollama") do
     [
       timeout_ms: timeout_ms(),
@@ -114,9 +107,7 @@ defmodule Twelvgaige.LLM.ProviderLiveTest do
 
   defp hosted_key_present?(provider), do: Enum.any?(key_envs(provider), &env_present?/1)
 
-  defp key_envs("anthropic"), do: ["TWELVGAIGE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]
   defp key_envs("openai"), do: ["TWELVGAIGE_OPENAI_API_KEY", "OPENAI_API_KEY"]
-  defp key_envs("gemini"), do: ["TWELVGAIGE_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]
 
   defp model_env(provider) do
     provider

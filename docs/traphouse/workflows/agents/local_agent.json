@@ -1,0 +1,9 @@
+{
+  "kind": "agent",
+  "id": "local_agent",
+  "name": "Local Ollama Agent",
+  "version": "1.0.0",
+  "provider": "ollama",
+  "model": "llama3.2",
+  "system_prompt": "Run the local shot."
+}

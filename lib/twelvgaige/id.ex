@@ -7,7 +7,20 @@ defmodule Twelvgaige.ID do
   """
 
   @type prefix ::
-          :round | :shot | :attempt | :tool_call | :event | :transition | :audit | :daemon
+          :round
+          | :shot
+          | :attempt
+          | :tool_call
+          | :event
+          | :transition
+          | :audit
+          | :daemon
+          | :artifact
+          | :workspace
+          | :session
+          | :sandbox
+          | :manager_plan
+          | :manager_child
 
   @callback new(prefix()) :: String.t()
 
@@ -19,7 +32,13 @@ defmodule Twelvgaige.ID do
     event: "evt",
     transition: "tr",
     audit: "aud",
-    daemon: "daemon"
+    daemon: "daemon",
+    artifact: "art",
+    workspace: "ws",
+    session: "sess",
+    sandbox: "sbx",
+    manager_plan: "mgr",
+    manager_child: "child"
   }
 
   @spec new(prefix()) :: String.t()

@@ -1,5 +1,10 @@
 # Shot Authoring And Management Plan
 
+Status: completed implementation record. Early sections describe the proposed
+sequence at the time this plan was written. Current public examples use Ollama
+or OpenAI; the deterministic LLM adapter is test-only and is not a supported
+runtime provider. See [`../authoring.md`](../authoring.md) for current usage.
+
 Twelvgaige workflow shells are intentionally explicit: every shot has a clear
 agent, dependencies, tools, chokes, safety requirements, and output shape. That
 is good for auditability and production behavior, but it can become tedious to
@@ -81,7 +86,7 @@ The first implementation slice should stay narrow:
 - SAM1 graph inspection.
 - SAM2a workflow-only lint that does not depend on metadata or contextual
   agent/tool discovery.
-- SAM3a local scaffolding with deterministic mock agents and no provenance
+- SAM3a local scaffolding with deterministic test agents and no provenance
   metadata until SAM0b exists.
 
 The following are intentionally later work unless a phase explicitly depends on
@@ -127,7 +132,7 @@ one-time generation.
 - **LLM assistance is optional.** The deterministic local authoring tools must
   be useful without hosted provider credentials.
 - **Hosted model use is explicit.** Any authoring command or authoring round
-  that sends data to Anthropic, OpenAI, Gemini, or another hosted provider must
+  that sends data to OpenAI must
   require `--allow-remote` and print a provider/data disclosure summary before
   transport.
 
@@ -167,14 +172,13 @@ twelvgaige round run traphouse/workflows/k8s-incident.yaml --input incident.json
 ```
 
 Default behavior should print the candidate shell. Writing requires `--write`.
-For a runnable local demo, the command can create adjacent mock agents when
-`--with-mock-agents` is supplied:
+Scaffolds that bundle agents write those adjacent agent shells with the workflow:
 
 ```bash
 twelvgaige shell new demo \
-  --scaffold single-shot \
-  --output traphouse/workflows/demo.yaml \
-  --with-mock-agents \
+  --scaffold platform/release-readiness \
+  --root docs/traphouse \
+  --output docs/traphouse/workflows/demo.yaml \
   --write
 ```
 
@@ -221,8 +225,8 @@ twelvgaige shell draft \
 The draft command never runs a workflow. It emits a candidate shell to stdout by
 default, or writes a candidate file only when `--output` and `--write` are both
 present. Hosted providers always require explicit `--allow-remote`. Draft input
-is byte-bounded and redacted before provider transport. Local Ollama and mock
-providers can be used without that flag.
+is byte-bounded and redacted before provider transport. Local Ollama does not
+require that flag.
 
 ### Flow 6 - Use Twelvgaige To Improve Twelvgaige Shells
 
@@ -326,7 +330,7 @@ twelvgaige shell new k8s-incident --scaffold inspect-analyze-gate-fix-verify --o
 Behavior:
 
 - Creates a valid workflow shell with stable IDs and placeholders.
-- For runnable local examples, creates or references companion mock agent shells
+- For runnable local examples, creates or references companion Ollama agent shells
   under an adjacent `agents/` directory. Workflow shells themselves only
   reference agents; provider configuration lives in agent shells.
 - Adds safety shots for write-capable scaffolds.
@@ -385,7 +389,7 @@ twelvgaige shell draft --from prompt.txt --output workflow.yaml --write
 Behavior:
 
 - Optional. Uses configured providers through the existing provider system.
-- Defaults to the mock provider for offline development and tests.
+- Defaults to the local Ollama provider; tests substitute a deterministic adapter.
 - Always emits a candidate shell, never directly runs it.
 - `--output` is accepted only with `--write`; stdout remains the default dry-run
   path.
@@ -881,8 +885,8 @@ shots:
     prompt: "Rerun validation and lint after the write."
 ```
 
-This is intentionally just another workflow. It can run locally with mock or
-Ollama agents, or against a hosted provider when the user opts in with
+This is intentionally just another workflow. It can run locally with Ollama
+agents, or against hosted OpenAI when the user opts in with
 `--allow-remote`.
 
 ### Feedback Loop
@@ -996,7 +1000,7 @@ global traphouse-wide agent discovery:
 
 1. Workflow-adjacent agents under `<workflow-dir>/agents/`.
 2. Explicit agent shell paths when a command supplies them.
-3. Built-in or test/mock example agents where the existing loader already
+3. Test fixture agents where the existing loader already
    supports them.
 
 Shared `traphouse/agents/` is authoring and inventory-only until explicit loader
@@ -1010,7 +1014,7 @@ digest, enabled agent roots in order, resolved agent digests, tool catalog
 digest, provider/loadout digest, library lock digest, namespace decisions, and
 duplicate or skipped entries.
 
-Generated mock agents should be deterministic and live under the workflow's
+Generated example agents should be deterministic and live under the workflow's
 adjacent `agents/` directory unless the user supplies a different explicit
 agent output root.
 
@@ -1298,7 +1302,7 @@ CLI tests:
 
 Integration tests:
 
-- Generated shells run with mock agents.
+- Generated shells run with test-only deterministic agents in integration tests.
 - Built-in scaffolds run against repository examples with `--root
   docs/traphouse`, and against project-local `traphouse` layouts in fixtures.
 - CI strict lint catches unsafe write tools without safety gates.
@@ -1449,10 +1453,10 @@ libraries and shared lockfile provenance are implemented through
 
 Acceptance:
 
-- `shell new simple --scaffold single-shot` creates a runnable mock workflow.
+- `shell new simple --scaffold single-shot` creates a valid workflow.
 - `shell new incident --scaffold inspect-analyze-gate-fix-verify` creates a
   valid workflow with a safety shot.
-- Runnable local scaffolds either create companion mock agent shells or document
+- Runnable local scaffolds either create companion Ollama agent shells or document
   required adjacent agents.
 - Scaffold output validates immediately.
 - Scaffold output includes provenance metadata only after SAM0b metadata support
@@ -1483,8 +1487,8 @@ Acceptance:
 
 ### Phase SAM5 - Read-Only Agent-Assisted Authoring
 
-Status: implemented for local/mock authoring. The read-only authoring tools,
-catalog entries, safety classifications, mock authoring agents, example review
+Status: implemented for local Ollama authoring. The read-only authoring tools,
+catalog entries, safety classifications, example authoring agents, example review
 shell, and an end-to-end review round fixture that emits graph, lint, and
 patch-plan artifacts are implemented. Hosted-provider authoring remains blocked
 until explicit `--allow-remote` consent and disclosure UX are added in a later
@@ -1497,7 +1501,7 @@ drafting phase.
   any authoring round references them.
 - Add example `shell_authoring_review_readonly` workflow under this repository's
   `docs/traphouse/workflows`.
-- Add mock agents for shell architecture, safety review, schema review, and shot
+- Add example agents for shell architecture, safety review, schema review, and shot
   editing.
 - Keep all tools read-only.
 
@@ -1584,7 +1588,7 @@ still intentionally blocked pending a dedicated RFC.
 
 Acceptance:
 
-- Done: mock provider tests cover draft generation.
+- Done: the test-only deterministic provider covers draft generation.
 - Done: unsafe write shots are rejected unless safety-gated.
 - Done: generated shells are never executed by the draft command.
 - Done: hosted-provider drafting is impossible without explicit `--allow-remote`.

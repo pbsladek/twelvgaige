@@ -2,7 +2,6 @@ defmodule Twelvgaige.Authoring.ScaffoldTest do
   use ExUnit.Case, async: true
 
   alias Twelvgaige.Authoring.Scaffold
-  alias Twelvgaige.Shell.Agent
   alias Twelvgaige.Shell.Graph
   alias Twelvgaige.Shell.Lint
   alias Twelvgaige.Shell.Workflow
@@ -40,14 +39,6 @@ defmodule Twelvgaige.Authoring.ScaffoldTest do
     assert remediate.depends_on == ["approval"]
     assert remediate.tools == ["kubectl_apply"]
     assert Lint.run(workflow, strict?: true).status == :ok
-  end
-
-  test "can generate deterministic mock agents" do
-    assert {:ok, expansion} =
-             Scaffold.expand("single-shot", "demo", with_mock_agents?: true)
-
-    assert [%{"id" => "demo_agent"} = agent] = expansion.agents
-    assert {:ok, %Agent{provider: "mock", model: "mock-model"}} = Agent.from_map(agent)
   end
 
   test "rejects unknown scaffolds" do
@@ -149,8 +140,8 @@ defmodule Twelvgaige.Authoring.ScaffoldTest do
       - kind: agent
         id: reviewer
         version: 1.0.0
-        provider: mock
-        model: mock-model
+        provider: ollama
+        model: llama3.2
         system_prompt: Review agent
     """
   end

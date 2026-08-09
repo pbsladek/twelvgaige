@@ -12,6 +12,7 @@ defmodule Twelvgaige.Round.Event do
           transition_id: String.t() | nil,
           round_version: non_neg_integer() | nil,
           event_type: atom() | String.t(),
+          event_class: :critical | :operational | :presentation,
           shot_id: String.t() | nil,
           payload: map(),
           occurred_at: DateTime.t() | nil
@@ -25,6 +26,7 @@ defmodule Twelvgaige.Round.Event do
     :transition_id,
     :round_version,
     :event_type,
+    :event_class,
     :shot_id,
     payload: %{},
     occurred_at: nil
@@ -39,13 +41,16 @@ defmodule Twelvgaige.Round.Event do
       raise ArgumentError, "round event payload must be a map"
     end
 
+    event_type = normalize_event_type(required!(attrs, :event_type))
+
     %__MODULE__{
       id: value(attrs, :id, nil),
       round_id: required!(attrs, :round_id),
       seq: value(attrs, :seq, nil),
       transition_id: value(attrs, :transition_id, nil),
       round_version: value(attrs, :round_version, nil),
-      event_type: normalize_event_type(required!(attrs, :event_type)),
+      event_type: event_type,
+      event_class: value(attrs, :event_class, classify(event_type)),
       shot_id: value(attrs, :shot_id, nil),
       payload: payload,
       occurred_at: value(attrs, :occurred_at, nil)
@@ -62,10 +67,32 @@ defmodule Twelvgaige.Round.Event do
       transition_id: event.transition_id,
       round_version: event.round_version,
       event_type: stringify_event_type(event.event_type),
+      event_class: Atom.to_string(event.event_class),
       shot_id: event.shot_id,
       payload: normalize_value(event.payload),
       occurred_at: format_time(event.occurred_at)
     }
+  end
+
+  @doc "Classifies delivery priority independently from provider-specific event names."
+  @spec classify(atom() | String.t()) :: :critical | :operational | :presentation
+  def classify(event_type) when is_atom(event_type), do: classify(Atom.to_string(event_type))
+
+  def classify(event_type) when is_binary(event_type) do
+    cond do
+      event_type in ~w(
+        safety_awaiting safety_approved safety_rejected approval_requested approval_resolved
+        round_cancelled round_completed round_failed round_halted round_awaiting_reconciliation
+        session_cancelled session_completed session_failed session_awaiting_reconciliation
+      ) ->
+        :critical
+
+      String.ends_with?(event_type, "_delta") or event_type in ~w(text_delta progress_delta) ->
+        :presentation
+
+      true ->
+        :operational
+    end
   end
 
   defp required!(attrs, key) do

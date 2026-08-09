@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "allowed_public_key_sha256": [
+    "sha256:1ee74ff5eb7f1792f67aebf63a01c2a8a447472b8c5dfad6bf765f40ba08416c"
+  ],
+  "rotation_policy": "explicit human-reviewed policy change"
+}

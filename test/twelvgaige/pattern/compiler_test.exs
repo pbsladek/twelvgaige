@@ -71,6 +71,52 @@ defmodule Twelvgaige.Pattern.CompilerTest do
     assert error.details.known_agents == ["known_agent"]
   end
 
+  test "conditions may reference only declared ancestors" do
+    shell =
+      workflow([
+        %{id: "a", kind: :slug, agent: "agent"},
+        %{id: "b", kind: :slug, agent: "agent"},
+        %{
+          id: "c",
+          kind: :slug,
+          agent: "agent",
+          depends_on: ["a"],
+          condition: "shots.b.ok == true"
+        }
+      ])
+
+    assert {:error, error} = Compiler.compile(shell)
+    assert error.reason == :missing_dependency
+    assert error.details.shot_id == "c"
+    assert error.details.referenced_shot == "b"
+  end
+
+  test "conditions validate paths against an ancestor output schema" do
+    shell =
+      workflow([
+        %{
+          id: "a",
+          kind: :slug,
+          agent: "agent",
+          output_schema: %{
+            type: "object",
+            properties: %{ok: %{type: "boolean"}}
+          }
+        },
+        %{
+          id: "b",
+          kind: :slug,
+          agent: "agent",
+          depends_on: ["a"],
+          condition: "shots.a.missing == true"
+        }
+      ])
+
+    assert {:error, error} = Compiler.compile(shell)
+    assert error.reason == :condition_missing_path
+    assert error.details.path == ["missing"]
+  end
+
   test "rejects unknown tools against the tool catalog by default" do
     assert {:error, error} =
              workflow([

@@ -173,12 +173,10 @@ defmodule Twelvgaige.ResourceLimiterTest do
     assert ResourceLimiter.snapshot(limiter).queue_depth.llm_call == 1
 
     assert :ok = ResourceLimiter.release(permit)
-    assert_receive {:resource_available, waiter_id, :llm_call}
+    assert_receive {:resource_granted, waiter_id, %Permit{} = queued_permit}
     assert waiter_id == waiter.id
     assert ResourceLimiter.snapshot(limiter).queue_depth.llm_call == 0
-
-    assert {:ok, queued_permit} =
-             ResourceLimiter.acquire(:llm_call, %{round_id: "round-2"}, server: limiter)
+    assert ResourceLimiter.snapshot(limiter).used.llm_call == 1
 
     assert :ok = ResourceLimiter.release(queued_permit)
   end
@@ -198,7 +196,7 @@ defmodule Twelvgaige.ResourceLimiterTest do
     assert :ok = ResourceLimiter.cancel_waiter(waiter)
     assert ResourceLimiter.snapshot(limiter).queue_depth.tool_exec == 0
     assert :ok = ResourceLimiter.release(permit)
-    refute_receive {:resource_available, _waiter_id, _resource_kind}, 20
+    refute_receive {:resource_granted, _waiter_id, _permit}, 20
   end
 
   test "queued waiters can expire independently from execution timeouts" do
@@ -224,7 +222,7 @@ defmodule Twelvgaige.ResourceLimiterTest do
            ] = ResourceLimiter.snapshot(limiter).denials
 
     assert :ok = ResourceLimiter.release(permit)
-    refute_receive {:resource_available, ^waiter_id, :llm_call}, 20
+    refute_receive {:resource_granted, ^waiter_id, _permit}, 20
   end
 
   test "cancelled waiter timeouts are ignored after cancellation" do
@@ -298,7 +296,7 @@ defmodule Twelvgaige.ResourceLimiterTest do
     assert eventually(fn -> ResourceLimiter.snapshot(limiter).queue_depth.llm_call == 0 end)
 
     assert :ok = ResourceLimiter.release(permit)
-    refute_receive {:resource_available, _waiter_id, _resource_kind}, 20
+    refute_receive {:resource_granted, _waiter_id, _permit}, 20
   end
 
   test "owner process down releases held permits, drops its waiters, and notifies next owner" do
@@ -343,14 +341,15 @@ defmodule Twelvgaige.ResourceLimiterTest do
 
     assert eventually(fn ->
              snapshot = ResourceLimiter.snapshot(limiter)
-             snapshot.used.active_shot == 0 and snapshot.queue_depth.active_shot == 0
+             snapshot.used.active_shot == 1 and snapshot.queue_depth.active_shot == 0
            end)
 
-    assert_receive {:resource_available, waiter_id, :active_shot}, 100
+    assert_receive {:resource_granted, waiter_id, %Permit{} = next_permit}, 100
     assert waiter_id == next_waiter.id
+    assert :ok = ResourceLimiter.release(next_permit)
 
     owner_waiter_id = owner_waiter.id
-    refute_receive {:resource_available, ^owner_waiter_id, :active_shot}, 20
+    refute_receive {:resource_granted, ^owner_waiter_id, _permit}, 20
   end
 
   test "active shot queue notifications are round-robin across rounds and FIFO within a round" do
@@ -380,17 +379,64 @@ defmodule Twelvgaige.ResourceLimiterTest do
              )
 
     assert :ok = ResourceLimiter.release(held)
-    assert_receive {:resource_available, waiter_id, :active_shot}
+    assert_receive {:resource_granted, waiter_id, %Permit{} = round_1_permit}
     assert waiter_id == round_1_a.id
 
-    assert {:ok, round_1_permit} =
-             ResourceLimiter.acquire(:active_shot, %{round_id: "round-1", shot_id: "a"},
-               server: limiter
-             )
-
     assert :ok = ResourceLimiter.release(round_1_permit)
-    assert_receive {:resource_available, waiter_id, :active_shot}
+    assert_receive {:resource_granted, waiter_id, %Permit{} = round_2_permit}
     assert waiter_id == round_2_a.id
+    assert :ok = ResourceLimiter.release(round_2_permit)
+  end
+
+  test "one capacity release event atomically grants every eligible waiter up to capacity" do
+    limiter = start_limiter(limits: %{llm_call: 3})
+    parent = self()
+
+    holder =
+      spawn(fn ->
+        permits =
+          for index <- 1..3 do
+            {:ok, permit} =
+              ResourceLimiter.acquire(:llm_call, %{round_id: "holder-#{index}"}, server: limiter)
+
+            permit
+          end
+
+        send(parent, {:holder_ready, permits})
+
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    assert_receive {:holder_ready, [_first, _second, _third]}
+
+    waiters =
+      for index <- 1..3 do
+        assert {:queued, waiter} =
+                 ResourceLimiter.acquire(:llm_call, %{round_id: "waiting-#{index}"},
+                   server: limiter,
+                   queue?: true
+                 )
+
+        waiter
+      end
+
+    send(holder, :stop)
+
+    grants =
+      for _index <- 1..3 do
+        assert_receive {:resource_granted, waiter_id, %Permit{} = permit}, 200
+        {waiter_id, permit}
+      end
+
+    assert Enum.sort(Enum.map(grants, &elem(&1, 0))) == Enum.sort(Enum.map(waiters, & &1.id))
+    assert ResourceLimiter.snapshot(limiter).used.llm_call == 3
+    assert ResourceLimiter.snapshot(limiter).queue_depth.llm_call == 0
+
+    Enum.each(grants, fn {_waiter_id, permit} ->
+      assert :ok = ResourceLimiter.release(permit)
+    end)
   end
 
   test "unknown resources are counted as denials" do

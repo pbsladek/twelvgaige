@@ -128,6 +128,13 @@ defmodule Twelvgaige.Breech.IPCTest do
     assert error.class == :policy_error
   end
 
+  test "rotates the control token and invalidates the old token immediately", %{address: address} do
+    assert {:ok, replacement} = Client.rotate_token(address, token: @token)
+    refute replacement == @token
+    assert {:error, %{reason: :daemon_auth_failed}} = Client.status(address, token: @token)
+    assert {:ok, _status} = Client.status(address, token: replacement)
+  end
+
   test "rejects oversized IPC envelopes before JSON decode" do
     server =
       start_supervised!(
@@ -197,8 +204,9 @@ defmodule Twelvgaige.Breech.IPCTest do
     assert {:ok, rounds} = Client.list_rounds(address, token: @token, status: :complete)
     assert Enum.any?(rounds, &(&1.id == round_id))
 
-    assert {:ok, [event]} = Client.list_round_events(address, round_id, token: @token)
-    assert event.seq == 1
+    assert {:ok, events} = Client.list_round_events(address, round_id, token: @token)
+    event = List.last(events)
+    assert Enum.map(events, & &1.seq) == Enum.to_list(1..length(events))
     assert event.event_type == :round_completed
     assert event.payload["status"] == "complete"
   end
@@ -219,7 +227,9 @@ defmodule Twelvgaige.Breech.IPCTest do
              )
            end)
 
-    assert {:ok, [awaiting_event]} = Client.list_round_events(address, round_id, token: @token)
+    assert {:ok, awaiting_events} = Client.list_round_events(address, round_id, token: @token)
+    awaiting_event = List.last(awaiting_events)
+    assert awaiting_event.event_type == :safety_awaiting
 
     waiter =
       Task.async(fn ->
@@ -238,8 +248,7 @@ defmodule Twelvgaige.Breech.IPCTest do
              )
 
     assert {:ok, [event]} = Task.await(waiter)
-    assert event.event_type == :round_completed
-    assert event.payload["status"] == "complete"
+    assert event.event_type == :safety_approved
 
     assert eventually(fn ->
              match?(

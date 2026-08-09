@@ -1,5 +1,9 @@
 # Twelvgaige Plan
 
+Status: historical direction. This document predates the normative
+[`spec.md`](spec.md). Use the spec, operator guides, and CLI help for current
+behavior.
+
 > Infrastructure-grade agent orchestration in Elixir, exposed through a pragmatic CLI.
 > The BEAM owns the action. LLMs take assigned shots. Policies decide when to chamber, fire, retry, safe, or eject a round.
 
@@ -271,8 +275,8 @@ Agent definitions describe a loadout.
 ```yaml
 id: k8s_inspector
 name: Kubernetes Inspector
-provider: anthropic
-model: claude-opus-4-20250514
+provider: openai
+model: gpt-5.2
 system_prompt: |
   You inspect Kubernetes infrastructure. Report observed state clearly.
   Do not recommend actions.
@@ -336,11 +340,11 @@ end
 
 First-class provider targets:
 
-- `mock` for deterministic tests
-- `anthropic`
 - `openai`
-- `gemini`
 - `ollama`
+
+Normal tests compile a deterministic provider that is not shipped or admitted
+by development and production builds.
 
 Execution constraints:
 
@@ -353,7 +357,8 @@ Execution constraints:
 - Provider capability checks decide whether native tools, native structured output, streaming, and token usage are available.
 - Ollama is treated as a local runtime and defaults to lower laptop concurrency than hosted providers.
 
-The current implementation supports a mock provider plus fixture-tested adapters for Anthropic, OpenAI, Gemini, and Ollama. Normal tests must not call live providers.
+The current implementation supports OpenAI and Ollama, with a test-only
+deterministic adapter and injected transports keeping normal tests offline.
 
 ## 12. Local Resource Model
 
@@ -687,7 +692,7 @@ Initial dependencies should stay small:
 - a small in-project resource limiter for Phase 1
 - `nimble_options` for internal option validation
 - `req` or `finch` for HTTP provider calls
-- `mox` for provider/tool mocks in tests
+- hand-written provider and tool test doubles
 - `stream_data` for property tests after the compiler exists
 
 Added in Phase 4:
@@ -755,9 +760,7 @@ twelvgaige/
 |       |   +-- router.ex
 |       |   +-- response.ex
 |       |   +-- providers/
-|       |       +-- anthropic.ex
 |       |       +-- openai.ex
-|       |       +-- gemini.ex
 |       |       +-- ollama.ex
 |       +-- tool/
 |       |   +-- behaviour.ex
@@ -810,7 +813,7 @@ Milestone: `mix test` passes and `twelvgaige --help` works from source.
 
 ### Phase 1 - In-Memory Round Engine
 
-Goal: run a deterministic foreground workflow with a mock LLM and no daemon.
+Goal: run a deterministic foreground workflow with a test-double LLM and no daemon.
 
 - Workflow shell structs.
 - YAML loader.
@@ -819,7 +822,7 @@ Goal: run a deterministic foreground workflow with a mock LLM and no daemon.
 - Resource permit cleanup, opt-in waiter queueing, queue timeouts, cancellation, owner-death cleanup, and fairness tests.
 - Pattern compiler with cycle detection.
 - RoundServer state machine.
-- ShotExecutor with mock provider.
+- ShotExecutor with deterministic test-provider coverage.
 - Provider router with explicit provider IDs.
 - Phase 1 schema subset validation.
 - RFC 8259 JSON output and RFC 3339 timestamp output.
@@ -843,7 +846,7 @@ Goal: execute safe read-only tools under explicit shot permissions.
 - [x] Read-only Kubernetes tools with structured `kubectl` argv and fake-runner tests.
 - [x] Kubernetes write tools, including runtime-gated `kubectl_exec`, with structured `kubectl` argv and fake-runner tests.
 - [x] Tool output size limits and redaction.
-- [x] Provider fixture tests for Anthropic, OpenAI, Gemini, and Ollama adapters.
+- [x] Provider fixture tests for OpenAI and Ollama adapters.
 - [x] Opt-in local-cluster Kubernetes tests gated by `:k8s_live` and `TWELVGAIGE_K8S_LIVE=1`.
 
 Milestone: a local inspection workflow gathers real read-only Kubernetes data and produces structured output.
@@ -993,7 +996,7 @@ Test priority:
 - Shell format parsers normalize YAML, JSON, and TOML fixtures to the same maps.
 - Programmatic shell sandbox tests deny host access before that format can be enabled.
 
-Use mocks for LLM providers. Do not make real LLM calls in normal tests.
+Use provider test doubles. Do not make real LLM calls in normal tests.
 
 Normal `mix test` excludes live or slow tags:
 

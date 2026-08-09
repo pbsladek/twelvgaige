@@ -47,7 +47,7 @@ jobs:
         uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
         with:
           otp-version: "28"
-          elixir-version: "1.19.5"
+          elixir-version: "1.20.3"
 
       - name: Cache Mix
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -104,7 +104,7 @@ jobs:
         uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
         with:
           otp-version: "28"
-          elixir-version: "1.19.5"
+          elixir-version: "1.20.3"
 
       - name: Cache Mix
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -122,13 +122,9 @@ jobs:
           PROVIDER_LIVE: "1"
           PROVIDER_LIVE_PROVIDERS: ${{ inputs.providers }}
           TWELVGAIGE_PROVIDER_LIVE_TIMEOUT_MS: "60000"
-          TWELVGAIGE_ANTHROPIC_API_KEY: ${{ secrets.TWELVGAIGE_ANTHROPIC_API_KEY }}
           TWELVGAIGE_OPENAI_API_KEY: ${{ secrets.TWELVGAIGE_OPENAI_API_KEY }}
-          TWELVGAIGE_GEMINI_API_KEY: ${{ secrets.TWELVGAIGE_GEMINI_API_KEY }}
           TWELVGAIGE_OLLAMA_BASE_URL: ${{ vars.TWELVGAIGE_OLLAMA_BASE_URL }}
-          TWELVGAIGE_ANTHROPIC_LIVE_MODEL: ${{ vars.TWELVGAIGE_ANTHROPIC_LIVE_MODEL }}
           TWELVGAIGE_OPENAI_LIVE_MODEL: ${{ vars.TWELVGAIGE_OPENAI_LIVE_MODEL }}
-          TWELVGAIGE_GEMINI_LIVE_MODEL: ${{ vars.TWELVGAIGE_GEMINI_LIVE_MODEL }}
           TWELVGAIGE_OLLAMA_LIVE_MODEL: ${{ vars.TWELVGAIGE_OLLAMA_LIVE_MODEL }}
         run: make e2e-provider-live
 
@@ -156,7 +152,7 @@ jobs:
         uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
         with:
           otp-version: "28"
-          elixir-version: "1.19.5"
+          elixir-version: "1.20.3"
 
       - name: Install SQLCipher
         run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
@@ -201,7 +197,7 @@ jobs:
         uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
         with:
           otp-version: "28"
-          elixir-version: "1.19.5"
+          elixir-version: "1.20.3"
 
       - name: Cache Mix
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830

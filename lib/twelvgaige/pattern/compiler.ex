@@ -20,7 +20,7 @@ defmodule Twelvgaige.Pattern.Compiler do
 
     with :ok <- validate_unique_ids(workflow.shots),
          :ok <- validate_dependencies(workflow.shots, shot_by_id),
-         :ok <- validate_conditions(workflow.shots),
+         :ok <- validate_conditions(workflow.shots, shot_by_id),
          :ok <- validate_agent_references(workflow.shots, opts),
          :ok <- validate_tool_references(workflow.shots, opts),
          :ok <- validate_agent_tool_policy(workflow.shots, opts),
@@ -420,9 +420,9 @@ defmodule Twelvgaige.Pattern.Compiler do
     %{"input" => input, "shots" => shots}
   end
 
-  defp validate_conditions(shots) do
+  defp validate_conditions(shots, shot_by_id) do
     Enum.reduce_while(shots, :ok, fn shot, :ok ->
-      case Condition.validate(shot.condition) do
+      case validate_condition(shot, shot_by_id) do
         :ok ->
           {:cont, :ok}
 
@@ -436,6 +436,80 @@ defmodule Twelvgaige.Pattern.Compiler do
       end
     end)
   end
+
+  defp validate_condition(shot, shot_by_id) do
+    with :ok <- Condition.validate(shot.condition),
+         {:ok, paths} <- Condition.shot_reference_paths(shot.condition),
+         :ok <- validate_condition_ancestors(shot, paths, shot_by_id),
+         :ok <- validate_condition_schema_paths(shot, paths, shot_by_id) do
+      :ok
+    end
+  end
+
+  defp validate_condition_ancestors(shot, paths, shot_by_id) do
+    ancestors = transitive_ancestors(shot, shot_by_id, %{})
+
+    case Enum.find(paths, fn [shot_id | _segments] -> not Map.has_key?(ancestors, shot_id) end) do
+      nil ->
+        :ok
+
+      [referenced_shot | _segments] ->
+        {:error,
+         Error.new(
+           :compile_error,
+           :missing_dependency,
+           "condition references a shot that is not a declared ancestor",
+           details: %{shot_id: shot.id, referenced_shot: referenced_shot}
+         )}
+    end
+  end
+
+  defp transitive_ancestors(shot, shot_by_id, seen) do
+    Enum.reduce(shot.depends_on, seen, fn dependency, acc ->
+      if Map.has_key?(acc, dependency) do
+        acc
+      else
+        dependency_shot = Map.fetch!(shot_by_id, dependency)
+        transitive_ancestors(dependency_shot, shot_by_id, Map.put(acc, dependency, true))
+      end
+    end)
+  end
+
+  defp validate_condition_schema_paths(shot, paths, shot_by_id) do
+    case Enum.find(paths, fn [shot_id | segments] ->
+           referenced = Map.fetch!(shot_by_id, shot_id)
+           not schema_path?(referenced.output_schema, segments)
+         end) do
+      nil ->
+        :ok
+
+      [referenced_shot | segments] ->
+        {:error,
+         Error.new(
+           :compile_error,
+           :condition_missing_path,
+           "condition path is not in output schema",
+           details: %{shot_id: shot.id, referenced_shot: referenced_shot, path: segments}
+         )}
+    end
+  end
+
+  defp schema_path?(nil, _segments), do: true
+  defp schema_path?(_schema, []), do: true
+
+  defp schema_path?(%Twelvgaige.Shell.Schema{root: root}, segments),
+    do: schema_path?(root, segments)
+
+  defp schema_path?(%{} = schema, [segment | rest]) do
+    properties = Map.get(schema, "properties", Map.get(schema, :properties, %{}))
+
+    case Map.fetch(properties, segment) do
+      {:ok, child} -> schema_path?(child, rest)
+      :error -> false
+    end
+  end
+
+  defp schema_path?(_schema, _segments), do: false
 
   defp validate_unique_ids(shots) do
     case first_duplicate_id(shots) do

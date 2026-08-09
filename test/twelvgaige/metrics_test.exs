@@ -103,8 +103,9 @@ defmodule Twelvgaige.MetricsTest do
              ResourceLimiter.acquire(:llm_call, %{}, server: limiter, queue?: true)
 
     assert :ok = ResourceLimiter.release(permit)
-    assert_receive {:resource_available, waiter_id, :llm_call}, 100
+    assert_receive {:resource_granted, waiter_id, permit}, 100
     assert waiter_id == waiter.id
+    assert :ok = ResourceLimiter.release(permit)
 
     assert eventually(fn ->
              snapshot = Metrics.snapshot(metrics)

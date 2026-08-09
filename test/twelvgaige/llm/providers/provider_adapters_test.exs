@@ -3,69 +3,43 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
 
   alias Twelvgaige.LLM
   alias Twelvgaige.LLM.Providers.Common
-  alias Twelvgaige.LLM.Response
 
-  describe "anthropic adapter" do
-    test "serializes normalized messages and normalizes text, tools, and usage" do
-      parent = self()
+  test "preserves assistant tool calls and tool result identity for OpenAI" do
+    messages = [
+      %{role: "user", content: "inspect"},
+      %{
+        role: "assistant",
+        content: "checking",
+        tool_calls: [%{id: "call_original", name: "shell_read", input: %{path: "README.md"}}]
+      },
+      %{
+        role: "tool",
+        name: "shell_read",
+        tool_call_id: "call_original",
+        content: ~s({"content":"ok"})
+      }
+    ]
 
-      transport = fn request ->
-        send(parent, {:request, request})
+    parent = self()
 
-        {:ok,
-         %{
-           status: 200,
-           headers: [],
-           body: %{
-             "content" => [
-               %{"type" => "text", "text" => "checking"},
-               %{
-                 "type" => "tool_use",
-                 "id" => "toolu_1",
-                 "name" => "shell_read",
-                 "input" => %{"path" => "docs/design/plan.md"}
-               }
-             ],
-             "usage" => %{"input_tokens" => 3, "output_tokens" => 5},
-             "stop_reason" => "tool_use"
-           }
-         }}
-      end
+    transport = fn request ->
+      send(parent, {:request, request.provider, request.body})
 
-      assert {:ok, %Response{} = response} =
-               LLM.complete(
-                 :anthropic,
-                 "claude-test",
-                 [
-                   %{role: "system", content: "keep control flow deterministic"},
-                   %{role: "user", content: "inspect the plan"}
-                 ],
-                 api_key: "sk-secret",
-                 max_tokens: 128,
-                 transport: transport
-               )
-
-      assert_receive {:request, request}
-      assert request.url == "https://api.anthropic.com/v1/messages"
-      assert request.body["system"] == "keep control flow deterministic"
-      assert request.body["max_tokens"] == 128
-      assert [%{"role" => "user", "content" => "inspect the plan"}] = request.body["messages"]
-
-      assert response.provider == "anthropic"
-      assert response.content == "checking"
-      assert response.finish_reason == "tool_use"
-      assert response.usage.total_tokens == 8
-
-      assert response.tool_calls == [
-               %{
-                 "id" => "toolu_1",
-                 "name" => "shell_read",
-                 "input" => %{"path" => "docs/design/plan.md"}
-               }
-             ]
-
-      assert {"x-api-key", "[REDACTED]"} in response.raw_redacted.headers
+      {:ok,
+       %{status: 200, headers: [], body: %{"choices" => [%{"message" => %{"content" => "done"}}]}}}
     end
+
+    assert {:ok, _response} =
+             LLM.complete(:openai, "test-model", messages,
+               transport: transport,
+               api_key: "secret"
+             )
+
+    assert_receive {:request, "openai", openai}
+    openai_assistant = Enum.at(openai["messages"], 1)
+    openai_result = Enum.at(openai["messages"], 2)
+    assert get_in(openai_assistant, ["tool_calls", Access.at(0), "id"]) == "call_original"
+    assert openai_result["tool_call_id"] == "call_original"
   end
 
   describe "openai adapter" do
@@ -164,12 +138,12 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
   describe "provider error classifier" do
     test "maps common HTTP failures into stable reasons" do
       cases = [
-        {:anthropic, 401, %{"error" => %{"message" => "bad key"}}, :llm_auth_failed, false},
+        {:openai, 401, %{"error" => %{"message" => "bad key"}}, :llm_auth_failed, false},
         {:openai, 408, %{"error" => %{"message" => "timeout"}}, :llm_timeout, true},
-        {:gemini, 400, %{"error" => %{"message" => "maximum context exceeded"}},
+        {:openai, 400, %{"error" => %{"message" => "maximum context exceeded"}},
          :llm_context_too_large, false},
         {:ollama, 503, %{"error" => "service unavailable"}, :llm_provider_unavailable, true},
-        {:anthropic, 599, %{"error" => "unexpected"}, :llm_unknown, true}
+        {:openai, 599, %{"error" => "unexpected"}, :llm_unknown, true}
       ]
 
       for {provider, status, body, reason, retryable} <- cases do
@@ -189,7 +163,7 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
       transport = fn _request -> {:error, :timeout} end
 
       assert {:error, error} =
-               LLM.complete(:anthropic, "claude-test", [%{role: "user", content: "hi"}],
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
                  transport: transport
                )
 
@@ -277,8 +251,8 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
       end
 
       assert {:error, error} =
-               LLM.complete(:anthropic, "claude-test", [%{role: "user", content: "hi"}],
-                 base_url: "https://key@example.com/v1/messages",
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 base_url: "https://key@example.com/v1/chat/completions",
                  transport: transport
                )
 
@@ -384,11 +358,10 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
       end
 
       assert {:error, error} =
-               LLM.complete(:gemini, "gemini-test", [%{role: "user", content: "hi"}],
-                 base_url:
-                   "https://generativelanguage.example.com/v1beta/models/gemini:generateContent",
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 base_url: "https://api.example.com/v1/chat/completions",
                  allow_remote_provider_url: true,
-                 dns_resolver: fn "generativelanguage.example.com" ->
+                 dns_resolver: fn "api.example.com" ->
                    {:ok, [{0xFE80, 0, 0, 0, 0, 0, 0, 1}]}
                  end,
                  transport: transport
@@ -481,99 +454,6 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
       assert Keyword.fetch!(ssl_opts, :versions) == [:"tlsv1.3", :"tlsv1.2"]
       assert Keyword.has_key?(ssl_opts, :cacerts)
       assert Keyword.has_key?(ssl_opts, :customize_hostname_check)
-    end
-  end
-
-  describe "gemini adapter" do
-    test "serializes contents and normalizes function calls" do
-      parent = self()
-
-      transport = fn request ->
-        send(parent, {:request, request})
-
-        {:ok,
-         %{
-           status: 200,
-           headers: [],
-           body: %{
-             "candidates" => [
-               %{
-                 "content" => %{
-                   "parts" => [
-                     %{"text" => "state gathered"},
-                     %{
-                       "functionCall" => %{
-                         "name" => "kubectl_get",
-                         "args" => %{"resource" => "pods", "namespace" => "default"}
-                       }
-                     }
-                   ]
-                 },
-                 "finishReason" => "STOP"
-               }
-             ],
-             "usageMetadata" => %{
-               "promptTokenCount" => 4,
-               "candidatesTokenCount" => 5,
-               "totalTokenCount" => 9
-             }
-           }
-         }}
-      end
-
-      assert {:ok, response} =
-               LLM.complete(
-                 :gemini,
-                 "gemini-test",
-                 [
-                   %{role: "system", content: "inspect only"},
-                   %{role: "assistant", content: "previous"},
-                   %{role: "user", content: "list pods"}
-                 ],
-                 api_key: "google-secret",
-                 transport: transport
-               )
-
-      assert_receive {:request, request}
-      assert String.ends_with?(request.url, "/gemini-test:generateContent")
-      assert request.body["system_instruction"]["parts"] == [%{"text" => "inspect only"}]
-      assert Enum.at(request.body["contents"], 0)["role"] == "model"
-      assert Enum.at(request.body["contents"], 1)["role"] == "user"
-
-      assert response.provider == "gemini"
-      assert response.content == "state gathered"
-      assert response.finish_reason == "STOP"
-      assert response.usage.total_tokens == 9
-
-      assert response.tool_calls == [
-               %{
-                 "id" => "function_call_2",
-                 "name" => "kubectl_get",
-                 "input" => %{"resource" => "pods", "namespace" => "default"}
-               }
-             ]
-
-      assert {"x-goog-api-key", "[REDACTED]"} in response.raw_redacted.headers
-    end
-
-    test "maps safety blocks to safety-required errors" do
-      transport = fn _request ->
-        {:ok,
-         %{
-           status: 200,
-           headers: [],
-           body: %{"candidates" => [%{"finishReason" => "SAFETY"}]}
-         }}
-      end
-
-      assert {:error, error} =
-               LLM.complete(:gemini, "gemini-test", [%{role: "user", content: "hi"}],
-                 transport: transport
-               )
-
-      assert error.reason == :llm_bad_request
-      assert error.safety_required
-      refute error.retryable
     end
   end
 

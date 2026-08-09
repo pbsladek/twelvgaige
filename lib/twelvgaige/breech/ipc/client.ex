@@ -33,6 +33,94 @@ defmodule Twelvgaige.Breech.IPC.Client do
     end
   end
 
+  @spec rotate_token(address(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  def rotate_token(address, opts \\ []) do
+    case call(address, "daemon.token.rotate", %{}, opts) do
+      {:ok, %{"status" => "rotated", "token" => token}} when is_binary(token) -> {:ok, token}
+      {:ok, _body} -> {:error, :invalid_response}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  def list_sessions(address, opts \\ []) do
+    body = maybe_put(%{}, "status", Keyword.get(opts, :status))
+    call(address, "session.list", body, opts)
+  end
+
+  def get_session(address, session_id, opts \\ []),
+    do: call(address, "session.show", %{"session_id" => session_id}, opts)
+
+  def attach_session(address, session_id, opts \\ []),
+    do: call(address, "session.attach", %{"session_id" => session_id}, opts)
+
+  def takeover_session(address, session_id, expected_epoch, opts \\ []) do
+    call(
+      address,
+      "session.takeover",
+      %{"session_id" => session_id, "expected_epoch" => expected_epoch},
+      opts
+    )
+  end
+
+  def revoke_session(address, session_id, opts \\ []),
+    do: call(address, "session.revoke", %{"session_id" => session_id}, opts)
+
+  def sandbox_health(address, opts \\ []), do: call(address, "sandbox.health", %{}, opts)
+
+  def reconcile_sandboxes(address, opts \\ []) do
+    call(
+      address,
+      "sandbox.reconcile",
+      %{
+        "apply" => Keyword.get(opts, :apply?, false),
+        "destroy_orphans" => Keyword.get(opts, :destroy_orphans?, false)
+      },
+      opts
+    )
+  end
+
+  def operations_dashboard(address, opts \\ []),
+    do: call(address, "operations.dashboard", %{}, opts)
+
+  def operations_audit_status(address, opts \\ []),
+    do: call(address, "operations.audit.status", %{}, opts)
+
+  def checkpoint_operations_audit(address, opts \\ []),
+    do: call(address, "operations.audit.checkpoint", %{}, opts)
+
+  def export_operations_audit(address, destination, opts \\ []),
+    do: call(address, "operations.audit.export", %{"destination" => destination}, opts)
+
+  def operations_store_stats(address, opts \\ []),
+    do: call(address, "operations.store.stats", %{}, opts)
+
+  def backup_operations_store(address, destination, opts \\ []),
+    do: call(address, "operations.store.backup", %{"destination" => destination}, opts)
+
+  def restore_operations_store(address, source, destination, opts \\ []),
+    do:
+      call(
+        address,
+        "operations.store.restore",
+        %{"source" => source, "destination" => destination},
+        opts
+      )
+
+  def retention_status(address, opts \\ []),
+    do: call(address, "operations.retention.status", %{}, opts)
+
+  def run_retention(address, opts \\ []),
+    do: call(address, "operations.retention.run", %{}, opts)
+
+  def artifact_inventory(address, opts \\ []),
+    do: call(address, "operations.artifact.inventory", %{}, opts)
+
+  def rotate_artifact_key(address, opts \\ []),
+    do: call(address, "operations.artifact.rotate", %{}, opts)
+
+  def operations_release_check(address, opts \\ []),
+    do: call(address, "operations.release.check", %{}, opts)
+
   @spec start_round(address(), Path.t(), map(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def start_round(address, workflow_path, input, opts \\ []) do
     body = %{

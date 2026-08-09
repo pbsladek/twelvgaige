@@ -5,6 +5,11 @@ loadout sketches, and CLI flows for Twelvgaige. Some snippets are intentionally
 templates. Adjust providers, models, tool policies, namespaces, chokes, and
 safety shots before running them against real systems.
 
+Workflow and input filenames shown inside an individual drill are illustrative
+unless that drill explicitly says a checked-in fixture exists. Save the shown
+shells under your own traphouse before running those CLI flows. The small files
+under [`../workflows/`](../workflows/) are the checked-in runnable examples.
+
 ## Drills
 
 - [Kubernetes Incident Response](kubernetes-incident-response.md)
@@ -41,7 +46,8 @@ mix escript.build
 ./twelvgaige round run docs/traphouse/workflows/simple.toml
 ```
 
-Those shells use the `mock` provider, so they never call a live LLM.
+Those shells use local Ollama with the `llama3.2` model. Validation is offline,
+but running a round requires the local Ollama service and model.
 
 ## Traphouse Rules
 

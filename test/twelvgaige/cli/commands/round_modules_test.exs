@@ -39,13 +39,12 @@ defmodule Twelvgaige.CLI.Commands.RoundModulesTest do
 
     assert {:ok, output, 0} = RoundQuery.watch(round_id, ["--format", "ndjson"])
 
-    assert [event] =
-             output
-             |> String.split("\n", trim: true)
-             |> Enum.map(&Jason.decode!/1)
+    events = output |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
+    event = List.last(events)
 
     assert event["round_id"] == round_id
     assert event["event_type"] == "round_completed"
+    assert Enum.map(events, & &1["seq"]) == Enum.to_list(1..length(events))
   end
 
   test "round query module preserves not-found and watch option errors" do

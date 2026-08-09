@@ -244,7 +244,7 @@ defmodule Twelvgaige.Breech do
   def handle_call({:safety_decision, round_id, shot_id, decision, opts}, _from, state) do
     state = clear_dead_active_round(round_id, state)
 
-    with {:ok, workflow} <- workflow_for_round(state.store, round_id),
+    with {:ok, workflow, agents} <- workflow_for_round(state.store, round_id),
          {:ok, snapshot} <- fetch_snapshot(state.store, round_id),
          :ok <- ensure_awaiting_safety(snapshot, shot_id),
          :ok <- ensure_not_active(round_id, state),
@@ -257,7 +257,7 @@ defmodule Twelvgaige.Breech do
              shot_id,
              decision,
              state.store,
-             opts
+             put_manifest_agents(opts, agents)
            ) do
       monitor_ref = Process.monitor(pid)
 
@@ -558,8 +558,11 @@ defmodule Twelvgaige.Breech do
   end
 
   defp workflow_for_round(store, round_id) do
-    with {:ok, manifest} <- store.get_manifest(round_id) do
-      Manifest.workflow(manifest)
+    with {:ok, manifest} <- store.get_manifest(round_id),
+         :ok <- Manifest.verify(manifest),
+         {:ok, workflow} <- Manifest.workflow(manifest),
+         {:ok, agents} <- Manifest.agents(manifest) do
+      {:ok, workflow, agents}
     end
   end
 
@@ -766,9 +769,16 @@ defmodule Twelvgaige.Breech do
   end
 
   defp resume_recovered_round(%Snapshot{} = snapshot, state) do
-    with {:ok, workflow} <- workflow_for_round(state.store, snapshot.id),
+    with {:ok, workflow, agents} <- workflow_for_round(state.store, snapshot.id),
          {:ok, pid} <-
-           start_round_task(self(), snapshot.id, workflow, snapshot.input, state.store, []) do
+           start_round_task(
+             self(),
+             snapshot.id,
+             workflow,
+             snapshot.input,
+             state.store,
+             put_manifest_agents([], agents)
+           ) do
       monitor_ref = Process.monitor(pid)
 
       put_active_round(state, snapshot.id, pid, monitor_ref, persist_result?: true)
@@ -788,7 +798,7 @@ defmodule Twelvgaige.Breech do
   end
 
   defp resume_scheduler_recovered_round(%Snapshot{} = snapshot, journals, state) do
-    with {:ok, workflow} <- workflow_for_round(state.store, snapshot.id),
+    with {:ok, workflow, agents} <- workflow_for_round(state.store, snapshot.id),
          {:ok, pid} <-
            start_scheduler_recover_task(
              self(),
@@ -796,7 +806,8 @@ defmodule Twelvgaige.Breech do
              workflow,
              snapshot,
              journals,
-             state.store
+             state.store,
+             put_manifest_agents([], agents)
            ) do
       monitor_ref = Process.monitor(pid)
 
@@ -829,9 +840,16 @@ defmodule Twelvgaige.Breech do
   end
 
   defp resume_recovered_snapshot(%Snapshot{} = snapshot, state) do
-    with {:ok, workflow} <- workflow_for_round(state.store, snapshot.id),
+    with {:ok, workflow, agents} <- workflow_for_round(state.store, snapshot.id),
          {:ok, pid} <-
-           start_recover_task(self(), snapshot.id, workflow, snapshot, state.store, []) do
+           start_recover_task(
+             self(),
+             snapshot.id,
+             workflow,
+             snapshot,
+             state.store,
+             put_manifest_agents([], agents)
+           ) do
       monitor_ref = Process.monitor(pid)
 
       put_active_round(state, snapshot.id, pid, monitor_ref, persist_result?: true)
@@ -850,14 +868,26 @@ defmodule Twelvgaige.Breech do
     end
   end
 
-  defp start_scheduler_recover_task(owner, round_id, workflow, snapshot, journals, store) do
+  defp start_scheduler_recover_task(
+         owner,
+         round_id,
+         workflow,
+         snapshot,
+         journals,
+         store,
+         opts
+       ) do
     fun = fn ->
       result =
-        RoundServer.recover_sync(workflow, snapshot,
-          store: store,
-          journals: journals,
-          supervised?: false,
-          stop_after_await?: true
+        RoundServer.recover_sync(
+          workflow,
+          snapshot,
+          Keyword.merge(opts,
+            store: store,
+            journals: journals,
+            supervised?: false,
+            stop_after_await?: true
+          )
         )
 
       send(owner, {:round_finished, round_id, result})
@@ -886,6 +916,9 @@ defmodule Twelvgaige.Breech do
     end
   end
 
+  defp put_manifest_agents(opts, agents) when map_size(agents) == 0, do: opts
+  defp put_manifest_agents(opts, agents), do: Keyword.put(opts, :agents, agents)
+
   defp recovery_resume_error(round_id, reason) do
     Error.new(:crash_error, :shot_crash, "recovered round could not be resumed",
       details: %{round_id: round_id, reason: inspect(reason)}
@@ -910,7 +943,10 @@ defmodule Twelvgaige.Breech do
     put_in(state.active_rounds[round_id], entry)
   end
 
-  defp persist_task_result?(opts), do: not Keyword.get(opts, :scheduler?, false)
+  # Every foreground entry point now delegates to the durable scheduler, which
+  # commits its own terminal transition. The daemon must not append a duplicate
+  # summary transition after the task reports completion.
+  defp persist_task_result?(_opts), do: false
 
   defp persist_round_result?(round_id, result, state) do
     active = Map.get(state.active_rounds, round_id, %{})

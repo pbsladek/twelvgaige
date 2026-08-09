@@ -11,9 +11,9 @@ defmodule Twelvgaige.TraphouseExamplesTest do
   ]
 
   @agent_paths [
-    "docs/traphouse/workflows/agents/mock_agent.yaml",
-    "docs/traphouse/workflows/agents/mock_agent.json",
-    "docs/traphouse/workflows/agents/mock_agent.toml"
+    "docs/traphouse/workflows/agents/local_agent.yaml",
+    "docs/traphouse/workflows/agents/local_agent.json",
+    "docs/traphouse/workflows/agents/local_agent.toml"
   ]
 
   @safety_path "docs/traphouse/workflows/safety.yaml"
@@ -40,7 +40,7 @@ defmodule Twelvgaige.TraphouseExamplesTest do
 
   test "traphouse workflow examples run with adjacent agent discovery" do
     for path <- @workflow_paths do
-      assert {:ok, snapshot} = Twelvgaige.run_round_sync(path, %{})
+      assert {:ok, snapshot} = Twelvgaige.run_round_sync(path, %{}, ollama_fixture_opts())
 
       assert snapshot.status == :complete
 
@@ -56,7 +56,11 @@ defmodule Twelvgaige.TraphouseExamplesTest do
     assert workflow.id == "safety_simple"
 
     assert {:ok, snapshot} =
-             Twelvgaige.run_round_sync(@safety_path, %{}, approve_all_safety?: true)
+             Twelvgaige.run_round_sync(
+               @safety_path,
+               %{},
+               Keyword.put(ollama_fixture_opts(), :approve_all_safety?, true)
+             )
 
     assert snapshot.status == :complete
 
@@ -72,7 +76,25 @@ defmodule Twelvgaige.TraphouseExamplesTest do
     assert {:ok, workflow} = Cache.get_workflow("simple", server: cache)
     assert workflow.id == "simple"
 
-    assert {:ok, agent} = Cache.get_agent("mock_agent", server: cache)
-    assert agent.id == "mock_agent"
+    assert {:ok, agent} = Cache.get_agent("local_agent", server: cache)
+    assert agent.id == "local_agent"
+  end
+
+  defp ollama_fixture_opts do
+    [
+      transport: fn _request ->
+        {:ok,
+         %{
+           status: 200,
+           headers: [],
+           body: %{
+             "message" => %{"content" => "local fixture response"},
+             "done_reason" => "stop",
+             "prompt_eval_count" => 1,
+             "eval_count" => 1
+           }
+         }}
+      end
+    ]
   end
 end

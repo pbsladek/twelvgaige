@@ -43,6 +43,7 @@ defmodule Twelvgaige.Round.Watch do
       after_seq: opts.after_seq,
       remaining: opts.limit,
       fetches: 0,
+      terminal_event_seen?: false,
       events: []
     })
   end
@@ -60,6 +61,7 @@ defmodule Twelvgaige.Round.Watch do
         after_seq: opts.after_seq,
         remaining: opts.limit,
         fetches: 0,
+        terminal_event_seen?: false,
         delivered: 0
       },
       handler
@@ -135,7 +137,8 @@ defmodule Twelvgaige.Round.Watch do
     with {:ok, false} <- terminal?(round_id, opts) do
       await_events(round_id, opts, state)
     else
-      {:ok, true} -> {:ok, Enum.reverse(state.events)}
+      {:ok, true} when state.terminal_event_seen? -> {:ok, Enum.reverse(state.events)}
+      {:ok, true} -> do_collect(round_id, opts, state)
       {:error, _reason} = error -> error
     end
   end
@@ -155,7 +158,8 @@ defmodule Twelvgaige.Round.Watch do
     with {:ok, false} <- terminal?(round_id, opts) do
       stream_await_events(round_id, opts, state, handler)
     else
-      {:ok, true} -> {:ok, stream_result(state)}
+      {:ok, true} when state.terminal_event_seen? -> {:ok, stream_result(state)}
+      {:ok, true} -> do_stream(round_id, opts, state, handler)
       {:error, _reason} = error -> error
     end
   end
@@ -207,7 +211,7 @@ defmodule Twelvgaige.Round.Watch do
 
   defp maybe_continue_after_events(round_id, opts, state) do
     with {:ok, terminal?} <- terminal?(round_id, opts) do
-      if terminal? do
+      if terminal? and state.terminal_event_seen? do
         {:ok, Enum.reverse(state.events)}
       else
         do_collect(round_id, opts, state)
@@ -225,7 +229,7 @@ defmodule Twelvgaige.Round.Watch do
 
   defp stream_maybe_continue_after_events(round_id, opts, state, handler) do
     with {:ok, terminal?} <- terminal?(round_id, opts) do
-      if terminal? do
+      if terminal? and state.terminal_event_seen? do
         {:ok, stream_result(state)}
       else
         do_stream(round_id, opts, state, handler)
@@ -262,6 +266,7 @@ defmodule Twelvgaige.Round.Watch do
       state
       | after_seq: max_seq(state.after_seq, events),
         remaining: state.remaining - length(events),
+        terminal_event_seen?: state.terminal_event_seen? or Enum.any?(events, &terminal_event?/1),
         events: Enum.reverse(events) ++ state.events
     }
   end
@@ -276,6 +281,8 @@ defmodule Twelvgaige.Round.Watch do
            state
            | after_seq: max_seq(state.after_seq, events),
              remaining: state.remaining - length(events),
+             terminal_event_seen?:
+               state.terminal_event_seen? or Enum.any?(events, &terminal_event?/1),
              delivered: state.delivered + length(events)
          }}
 
@@ -300,6 +307,19 @@ defmodule Twelvgaige.Round.Watch do
   defp event_seq(%{seq: seq}), do: seq
   defp event_seq(%{"seq" => seq}), do: seq
   defp event_seq(_event), do: nil
+
+  defp terminal_event?(%Event{event_type: event_type}), do: terminal_event_type?(event_type)
+  defp terminal_event?(%{event_type: event_type}), do: terminal_event_type?(event_type)
+  defp terminal_event?(%{"event_type" => event_type}), do: terminal_event_type?(event_type)
+
+  defp terminal_event_type?(event_type) when is_binary(event_type) do
+    event_type in ~w(round_completed round_failed round_halted round_cancelled)
+  end
+
+  defp terminal_event_type?(event_type) when is_atom(event_type),
+    do: terminal_event_type?(Atom.to_string(event_type))
+
+  defp terminal_event_type?(_event_type), do: false
 
   defp increment_fetches(state), do: %{state | fetches: state.fetches + 1}
 

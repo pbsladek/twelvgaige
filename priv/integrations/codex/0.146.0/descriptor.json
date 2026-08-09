@@ -1,0 +1,9 @@
+{
+  "artifact_digest": "ae1d3ffe6d48aec6a4dc3f50e7eb8e0d11962485a6a9406c5a7012139383da02",
+  "artifact_version": "0.146.0",
+  "experimental_api": false,
+  "protocol_version": "2",
+  "schema_bundle": "schema/codex_app_server_protocol.v2.schemas.json",
+  "schema_digest": "2d40289dea67cdef56c4de0b4f8caba4a4dcf4c1b73d16bb3711e88988e732f2",
+  "transport": "stdio"
+}

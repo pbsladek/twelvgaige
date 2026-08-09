@@ -114,13 +114,17 @@ defmodule Twelvgaige.API.Server do
   @spec address(GenServer.server()) :: {:http, :inet.ip_address(), :inet.port_number()}
   def address(server), do: GenServer.call(server, :address)
 
+  def rotate_token(server), do: GenServer.call(server, :rotate_token)
+
   @impl true
   def init(opts) do
     ip = Keyword.get(opts, :ip, @default_ip)
     port = Keyword.get(opts, :port, @default_port)
+    bearer_token = Keyword.get(opts, :bearer_token, Keyword.get(opts, :auth_token))
 
     with {:ok, trusted_proxy_cidrs} <- parse_trusted_proxy_cidrs(opts),
          :ok <- validate_bind_policy(ip, opts, trusted_proxy_cidrs),
+         :ok <- require_local_auth(bearer_token),
          {:ok, listen_socket} <- listen(ip, port),
          {:ok, {bound_ip, bound_port}} <- :inet.sockname(listen_socket) do
       state = %__MODULE__{
@@ -128,7 +132,7 @@ defmodule Twelvgaige.API.Server do
         ip: bound_ip,
         port: bound_port,
         breech: Keyword.get(opts, :breech, Twelvgaige.Breech),
-        bearer_token: Keyword.get(opts, :bearer_token, Keyword.get(opts, :auth_token)),
+        bearer_token: bearer_token,
         router_opts: Keyword.get(opts, :router_opts, []),
         behind_tls_proxy?: Keyword.get(opts, :behind_tls_proxy?, false),
         trusted_proxy_cidrs: trusted_proxy_cidrs,
@@ -169,6 +173,12 @@ defmodule Twelvgaige.API.Server do
   def handle_call(:port, _from, state), do: {:reply, state.port, state}
 
   def handle_call(:address, _from, state), do: {:reply, {:http, state.ip, state.port}, state}
+  def handle_call(:request_state, _from, state), do: {:reply, state, state}
+
+  def handle_call(:rotate_token, _from, state) do
+    token = 32 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
+    {:reply, {:ok, token}, %{state | bearer_token: token}}
+  end
 
   def handle_call({:acquire_stream_client, pid}, _from, state) do
     if map_size(state.active_streams) < state.max_stream_clients do
@@ -212,35 +222,18 @@ defmodule Twelvgaige.API.Server do
   end
 
   @spec validate_bind_policy(:inet.ip_address(), keyword(), list()) :: :ok | {:error, term()}
-  defp validate_bind_policy(ip, opts, trusted_proxy_cidrs) do
+  defp validate_bind_policy(ip, _opts, _trusted_proxy_cidrs) do
     cond do
       local_ip?(ip) ->
         :ok
 
-      not Keyword.get(opts, :allow_remote?, false) ->
-        {:error, {:http_remote_bind_requires_opt_in, ip}}
-
-      is_nil(Keyword.get(opts, :bearer_token, Keyword.get(opts, :auth_token))) ->
-        {:error, {:http_remote_bind_requires_auth, ip}}
-
-      Keyword.has_key?(opts, :tls_options) and
-          not Keyword.get(opts, :behind_tls_proxy?, false) ->
-        {:error, {:http_native_tls_not_implemented, ip}}
-
-      not remote_bind_has_transport_protection?(opts) ->
-        {:error, {:http_remote_bind_requires_tls_or_proxy, ip}}
-
-      trusted_proxy_cidrs == [] ->
-        {:error, {:http_trusted_proxy_requires_cidrs, ip}}
-
       true ->
-        :ok
+        {:error, {:http_non_loopback_bind_unsupported, ip}}
     end
   end
 
-  defp remote_bind_has_transport_protection?(opts) do
-    Keyword.get(opts, :behind_tls_proxy?, false)
-  end
+  defp require_local_auth(token) when is_binary(token) and byte_size(token) >= 16, do: :ok
+  defp require_local_auth(_token), do: {:error, :http_local_auth_required}
 
   defp listen(ip, port) do
     :gen_tcp.listen(port, [
@@ -268,15 +261,16 @@ defmodule Twelvgaige.API.Server do
   defp handle_socket(parent, socket, state) do
     result =
       with {:ok, method, target, headers, body} <- read_request(socket, state),
-           :ok <- validate_forwarded_headers(socket, state, headers) do
+           current <- GenServer.call(parent, :request_state),
+           :ok <- validate_forwarded_headers(socket, current, headers) do
         router_opts =
-          state.router_opts
-          |> Keyword.put(:server, state.breech)
+          current.router_opts
+          |> Keyword.put(:server, current.breech)
           |> Keyword.put(:headers, headers)
-          |> Keyword.put(:max_body_bytes, state.max_body_bytes)
-          |> maybe_put(:bearer_token, state.bearer_token)
+          |> Keyword.put(:max_body_bytes, current.max_body_bytes)
+          |> maybe_put(:bearer_token, current.bearer_token)
 
-        dispatch_or_stream(parent, socket, state, method, target, body, router_opts)
+        dispatch_or_stream(parent, socket, current, method, target, body, router_opts)
       else
         {:error, reason} -> {:response, request_error_response(reason)}
       end

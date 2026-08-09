@@ -1,0 +1,111 @@
+{
+  "result": "pass",
+  "schema_version": 1,
+  "generated_at": "2026-08-09T20:51:04Z",
+  "release_gate": {
+    "status": "pass",
+    "schema_version": 1,
+    "checks": [
+      {
+        "id": "codex_schema",
+        "check": "codex_schema",
+        "result": {
+          "status": "pass"
+        },
+        "kind": "protocol"
+      },
+      {
+        "id": "codex_app_server_fixture",
+        "check": "codex_app_server_fixture",
+        "result": {
+          "status": "pass"
+        },
+        "kind": "protocol"
+      },
+      {
+        "id": "podman_live",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/podman-worker/live-qualification.json",
+          "generated_at": "2026-08-08T06:04:44Z"
+        },
+        "kind": "backend",
+        "evidence": "qualification/evidence/podman-worker/live-qualification.json",
+        "slo_profile": "podman_macos_arm64"
+      },
+      {
+        "id": "podman_codex",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/podman-worker/codex-provider-qualification.json",
+          "generated_at": "2026-08-03T00:24:21Z"
+        },
+        "kind": "driver_backend",
+        "evidence": "qualification/evidence/podman-worker/codex-provider-qualification.json"
+      },
+      {
+        "id": "podman_codex_app_server",
+        "protocol": "codex_app_server",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/podman-worker/codex-app-server-provider-qualification.json",
+          "generated_at": "2026-08-08T05:15:14Z"
+        },
+        "kind": "driver_backend",
+        "evidence": "qualification/evidence/podman-worker/codex-app-server-provider-qualification.json"
+      },
+      {
+        "id": "apple_container_live",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/apple-container/live-qualification.json",
+          "generated_at": "2026-08-08T06:06:09Z"
+        },
+        "kind": "backend",
+        "evidence": "qualification/evidence/apple-container/live-qualification.json",
+        "slo_profile": "apple_container_macos_arm64"
+      },
+      {
+        "id": "apple_container_codex",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/apple-container/codex-provider-qualification.json",
+          "generated_at": "2026-08-08T05:15:58Z"
+        },
+        "kind": "driver_backend",
+        "evidence": "qualification/evidence/apple-container/codex-provider-qualification.json"
+      },
+      {
+        "id": "egress_proxy_image",
+        "check": "egress_proxy_image",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/egress-proxy/image-record.json",
+          "generated_at": "2026-08-08T06:00:05Z"
+        },
+        "kind": "supply_chain"
+      },
+      {
+        "id": "egress_boundary_live",
+        "check": "egress_boundary_live",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/egress-proxy/live-qualification.json",
+          "generated_at": "2026-08-08T05:59:55.338239Z"
+        },
+        "kind": "network_boundary"
+      },
+      {
+        "id": "operations_slo",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/operations/live-qualification.json",
+          "generated_at": "2026-08-09T20:50:48Z"
+        },
+        "kind": "operations",
+        "evidence": "qualification/evidence/operations/live-qualification.json"
+      }
+    ],
+    "slo_version": 1
+  }
+}

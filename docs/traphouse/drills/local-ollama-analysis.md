@@ -9,7 +9,7 @@ shots, bounded inputs, resource profiles, and audit records.
 - Summarize local logs or reports without sending data to a cloud provider.
 - Run repeatable analysis on a laptop.
 - Keep provider selection explicit in the agent shell.
-- Later swap the provider to Anthropic, OpenAI, or Gemini without changing the
+- Later swap the provider to OpenAI without changing the
   workflow DAG.
 
 ## Agent Shell

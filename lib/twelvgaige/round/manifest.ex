@@ -9,19 +9,24 @@ defmodule Twelvgaige.Round.Manifest do
 
   alias Twelvgaige.Shell.Agent
   alias Twelvgaige.Shell.Workflow
+  alias Twelvgaige.Loadout
 
-  @schema_version 1
+  @schema_version 2
+  @encoding_version 1
 
   @type source :: %{optional(atom()) => term()} | %{optional(String.t()) => term()} | nil
 
   @type t :: %__MODULE__{
           schema_version: pos_integer(),
+          encoding_version: pos_integer(),
           round_id: String.t(),
           shell_id: String.t(),
           shell_version: String.t(),
           workflow: Workflow.t(),
           workflow_hash: String.t(),
           agent_hashes: %{String.t() => String.t()},
+          agent_snapshots: %{String.t() => Agent.t()},
+          loadouts: %{String.t() => map()},
           agent_sources: [source()],
           effective_resource_profile: atom() | String.t() | nil,
           source: source(),
@@ -36,11 +41,14 @@ defmodule Twelvgaige.Round.Manifest do
     :workflow,
     :workflow_hash,
     :agent_hashes,
+    :agent_snapshots,
+    :loadouts,
     :agent_sources,
     :effective_resource_profile,
     :source,
     :created_at,
-    schema_version: @schema_version
+    schema_version: @schema_version,
+    encoding_version: @encoding_version
   ]
 
   @doc "Builds a manifest from atom-key or string-key attributes."
@@ -48,21 +56,62 @@ defmodule Twelvgaige.Round.Manifest do
   def new(attrs) do
     workflow = normalize_workflow!(required!(attrs, :workflow))
     agents = value(attrs, :agents, [])
+    agent_snapshots = value(attrs, :agent_snapshots, normalize_agents!(agents))
     agent_paths = value(attrs, :agent_paths, value(attrs, :agent_shell_paths, []))
 
     %__MODULE__{
       schema_version: value(attrs, :schema_version, @schema_version),
+      encoding_version: value(attrs, :encoding_version, @encoding_version),
       round_id: required!(attrs, :round_id),
       shell_id: value(attrs, :shell_id, workflow.id),
       shell_version: value(attrs, :shell_version, workflow.version),
       workflow: workflow,
       workflow_hash: value(attrs, :workflow_hash, workflow_hash(workflow)),
-      agent_hashes: value(attrs, :agent_hashes, agent_hashes(agents)),
+      agent_hashes: value(attrs, :agent_hashes, agent_hashes(Map.values(agent_snapshots))),
+      agent_snapshots: agent_snapshots,
+      loadouts: value(attrs, :loadouts, loadouts_for(workflow, agent_snapshots, attrs)),
       agent_sources: value(attrs, :agent_sources, sources_for(agent_paths)),
       effective_resource_profile: value(attrs, :effective_resource_profile, nil),
       source: value(attrs, :source, nil),
       created_at: value(attrs, :created_at, nil)
     }
+  end
+
+  @doc "Returns verified normalized agent snapshots keyed by agent id."
+  @spec agents(t() | map()) ::
+          {:ok, %{String.t() => Agent.t()}}
+          | {:error, :manifest_invalid_agents | :manifest_agent_hash_mismatch}
+  def agents(manifest) when is_map(manifest) do
+    snapshots = value(manifest, :agent_snapshots, %{})
+
+    with {:ok, snapshots} <- normalize_agents(snapshots),
+         :ok <- verify_agent_hashes(snapshots, value(manifest, :agent_hashes, %{})) do
+      {:ok, snapshots}
+    end
+  end
+
+  @doc "Returns the immutable effective loadout stored for a shot."
+  @spec loadout(t() | map(), String.t()) :: {:ok, map()} | {:error, :manifest_loadout_not_found}
+  def loadout(manifest, shot_id) when is_map(manifest) and is_binary(shot_id) do
+    case value(manifest, :loadouts, %{}) do
+      %{} = loadouts ->
+        case Map.fetch(loadouts, shot_id) do
+          {:ok, loadout} -> {:ok, loadout}
+          :error -> {:error, :manifest_loadout_not_found}
+        end
+
+      _other ->
+        {:error, :manifest_loadout_not_found}
+    end
+  end
+
+  @doc "Verifies every immutable definition stored in a manifest."
+  @spec verify(t() | map()) :: :ok | {:error, atom()}
+  def verify(manifest) when is_map(manifest) do
+    with {:ok, _workflow} <- workflow(manifest),
+         {:ok, _agents} <- agents(manifest) do
+      :ok
+    end
   end
 
   @doc """
@@ -106,6 +155,24 @@ defmodule Twelvgaige.Round.Manifest do
   end
 
   def agent_hashes(_agents), do: %{}
+
+  defp loadouts_for(workflow, agent_snapshots, attrs) do
+    opts =
+      attrs
+      |> attrs_to_keyword()
+      |> Keyword.put(:agents, agent_snapshots)
+
+    Map.new(workflow.shots, fn shot -> {shot.id, Loadout.for_shot(shot, opts)} end)
+  end
+
+  defp attrs_to_keyword(attrs) when is_list(attrs), do: attrs
+
+  defp attrs_to_keyword(%{} = attrs) do
+    Enum.flat_map(attrs, fn
+      {key, value} when is_atom(key) -> [{key, value}]
+      _entry -> []
+    end)
+  end
 
   @doc "Normalizes source metadata for accepted workflow or agent inputs."
   @spec sources_for([term()] | term()) :: [source()]
@@ -171,6 +238,63 @@ defmodule Twelvgaige.Round.Manifest do
       []
     end
   end
+
+  defp normalize_agents!(agents) do
+    case normalize_agents(agents) do
+      {:ok, normalized} -> normalized
+      {:error, reason} -> raise ArgumentError, "invalid agent manifest: #{inspect(reason)}"
+    end
+  end
+
+  defp normalize_agents(nil), do: {:ok, %{}}
+
+  defp normalize_agents(%Agent{id: id} = agent), do: {:ok, %{id => agent}}
+
+  defp normalize_agents(%{} = agents) do
+    if Map.has_key?(agents, :id) or Map.has_key?(agents, "id") do
+      normalize_agents([agents])
+    else
+      agents
+      |> Map.values()
+      |> normalize_agents()
+    end
+  end
+
+  defp normalize_agents(agents) when is_list(agents) do
+    Enum.reduce_while(agents, {:ok, %{}}, fn agent, {:ok, acc} ->
+      case normalize_agent(agent) do
+        {:ok, %Agent{id: id} = normalized} -> {:cont, {:ok, Map.put(acc, id, normalized)}}
+        {:error, _reason} -> {:halt, {:error, :manifest_invalid_agents}}
+      end
+    end)
+  end
+
+  defp normalize_agents(_agents), do: {:error, :manifest_invalid_agents}
+
+  defp normalize_agent(%Agent{} = agent), do: {:ok, agent}
+
+  defp normalize_agent(%{} = agent) do
+    case Agent.from_map(agent) do
+      {:ok, %Agent{} = normalized} -> {:ok, normalized}
+      {:error, _reason} -> {:error, :manifest_invalid_agents}
+    end
+  end
+
+  defp normalize_agent(_agent), do: {:error, :manifest_invalid_agents}
+
+  defp verify_agent_hashes(_agents, nil), do: :ok
+  defp verify_agent_hashes(_agents, hashes) when hashes == %{}, do: :ok
+
+  defp verify_agent_hashes(agents, expected_hashes) when is_map(expected_hashes) do
+    if agent_hashes(Map.values(agents)) == expected_hashes do
+      :ok
+    else
+      {:error, :manifest_agent_hash_mismatch}
+    end
+  end
+
+  defp verify_agent_hashes(_agents, _expected_hashes),
+    do: {:error, :manifest_agent_hash_mismatch}
 
   defp fetch_workflow(manifest) do
     case value(manifest, :workflow, nil) do

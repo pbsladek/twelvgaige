@@ -158,6 +158,10 @@ defmodule Twelvgaige.Store.SQLite.TermCodec do
   def encode(term), do: :erlang.term_to_binary(term)
 
   @spec decode(binary()) :: term()
+  # The `:safe` option forbids creation of new atoms, references, funs, and
+  # other unsafe external terms. This is the reviewed exception to Sobelow's
+  # syntax-only BinToTerm finding.
+  # sobelow_skip ["Misc.BinToTerm"]
   def decode(binary), do: :erlang.binary_to_term(binary, [:safe])
 
   @spec encode_nullable(term() | nil) :: binary() | nil

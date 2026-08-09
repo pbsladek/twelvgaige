@@ -1,6 +1,10 @@
 # Authoring Completion Plan
 
-This plan tracks the remaining authoring-management work after the first
+Status: complete. All AC0-AC7 phases in this record are implemented. Current
+operator commands are documented in [`../authoring.md`](../authoring.md) and
+[`../../USAGE.md`](../../USAGE.md).
+
+This plan records the authoring-management work after the first
 conservative implementation of `shell graph`, `shell lint`, `shell new`,
 `shell draft`, `shell review`, `shell approve`, `shot add`, `shot rename`,
 `shot move`, `shot remove`, `shot library`, inventory, impact, doctor, format,
@@ -28,7 +32,10 @@ unreviewed file mutation.
   pure rewrite logic, CLI tests for dry-run/write behavior, and integration
   tests only where real filesystem or runtime interaction is required.
 
-## Current State
+## Starting State
+
+This section records the state when the plan was opened; it is not the current
+feature list.
 
 Implemented:
 
@@ -41,9 +48,9 @@ Implemented:
 - Conservative shot refactors: add, template add, rename, move, remove.
 - Shot-template libraries, lockfiles, verification, update, and outdated
   reports.
-- Initial `shell draft` with mock/local/hosted-provider consent.
+- Initial `shell draft` with local/hosted-provider consent.
 
-Remaining:
+Remaining when the plan was opened:
 
 - Dedicated write-capable `patch_apply` RFC and implementation.
 - Broader scaffold library discovery, provenance, lockfiles, and drift reports.
@@ -287,7 +294,7 @@ Acceptance:
 ## Phase AC5 - Hosted Authoring Rounds
 
 Status: complete for the current read-only command surface. `shell author
-review <path>` can use mock, local Ollama, or hosted providers with explicit
+review <path>` can use local Ollama or hosted OpenAI with explicit
 `--allow-remote` consent. It emits a disclosure and deterministic patch plan to
 stdout and never writes files.
 

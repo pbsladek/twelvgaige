@@ -100,7 +100,7 @@ Twelvgaige must never spawn one OS process, task, LLM call, or tool call per rea
 - `[x]` Support safety shots that pause a foreground round in Phase 2 and can be approved externally through the daemon in Phase 3.
 - `[x]` Approve, reject, cancel, and inspect daemon-owned rounds in Phase 3.
 - `[x]` Run LLM-backed shots through a provider behaviour.
-- `[x]` Run tests with a mock LLM provider and no network.
+- `[x]` Run tests with a test-only deterministic LLM provider and no network.
 - `[x]` Execute read-only tools through a tool behaviour.
 - `[x]` Enforce per-shot tool allowlists.
 - `[x]` Classify LLM, output parser, tool, timeout, policy, and crash errors into the closed `%Twelvgaige.Error{}` taxonomy.
@@ -133,7 +133,7 @@ Twelvgaige.Application
 +-- Twelvgaige.Shell.Cache                # Workflow and agent shell cache
 +-- Twelvgaige.Tool.Catalog               # Built-in tool catalog
 +-- Twelvgaige.ResourceLimiter            # Local concurrency and byte-budget gates
-+-- Twelvgaige.LLM.Supervisor             # Mock and real provider clients
++-- Twelvgaige.LLM.Supervisor             # Provider clients and test adapters
 +-- Twelvgaige.Round.Supervisor           # DynamicSupervisor
 +-- Twelvgaige.Breech                     # Phase 3 local daemon control plane
 ```
@@ -512,8 +512,8 @@ Defaults:
 kind: agent
 id: k8s_inspector
 name: Kubernetes Inspector
-provider: mock
-model: mock
+provider: ollama
+model: llama3.2
 system_prompt: |
   You inspect Kubernetes infrastructure. Report observed state clearly.
 
@@ -1009,13 +1009,12 @@ Twelvgaige supports LLM providers through provider adapters. The round engine on
 
 First-class provider IDs:
 
-- `mock`
-- `anthropic`
 - `openai`
-- `gemini`
 - `ollama`
 
 Provider IDs are stable API values. Model names are provider-specific strings and must not be interpreted by the round engine.
+Normal tests additionally compile a deterministic provider that is not present
+in development or production builds.
 
 Provider behaviour:
 
@@ -1033,7 +1032,7 @@ Provider selection comes from the agent shell:
 ```yaml
 kind: agent
 id: incident_analyst
-provider: anthropic
+provider: openai
 model: provider-specific-model-name
 system_prompt: |
   Analyze incident context and produce structured output.
@@ -1161,22 +1160,12 @@ Provider-specific defaults:
 
 | Provider | Secret source | Endpoint behavior | Laptop concurrency default |
 | --- | --- | --- | ---: |
-| `anthropic` | `TWELVGAIGE_ANTHROPIC_API_KEY`, `ANTHROPIC_API_KEY`, or secret ref | Hosted API, optional base URL override from `TWELVGAIGE_ANTHROPIC_BASE_URL` | 4 |
 | `openai` | `TWELVGAIGE_OPENAI_API_KEY`, `OPENAI_API_KEY`, or secret ref | Hosted API, optional base URL override from `TWELVGAIGE_OPENAI_BASE_URL` | 4 |
-| `gemini` | `TWELVGAIGE_GEMINI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, ADC later, or secret ref | Google Gemini API through configured auth mode | 4 |
 | `ollama` | none by default | Local HTTP endpoint, default host from `TWELVGAIGE_OLLAMA_BASE_URL`, `OLLAMA_HOST`, or local default | 1 |
 
 Ollama is treated as a local runtime. On the laptop profile, default global Ollama calls are capped at 1 because model inference can consume substantial CPU, RAM, and GPU/VRAM outside the BEAM. Users may raise this in `workstation` or `server` profiles.
 
 ### 12.3 Provider Adapter Requirements
-
-Anthropic adapter:
-
-- Maps normalized system messages to Anthropic-native system handling.
-- Maps normalized user/assistant/tool messages to provider-native content blocks.
-- Normalizes native tool calls to Twelvgaige tool-call shape.
-- Normalizes usage into input/output/total tokens when available.
-- Maps rate limits, auth failures, overloads, bad requests, context length errors, and timeouts into `%Twelvgaige.Error{}`.
 
 OpenAI adapter:
 
@@ -1185,14 +1174,6 @@ OpenAI adapter:
 - Normalizes structured-output responses when supported.
 - Normalizes usage into input/output/total tokens when available.
 - Maps rate limits, auth failures, bad requests, context length errors, provider errors, and timeouts into `%Twelvgaige.Error{}`.
-
-Gemini adapter:
-
-- Maps normalized system and conversation messages to Gemini-native contents/config.
-- Normalizes function/tool calls to Twelvgaige tool-call shape.
-- Supports API-key and Google-auth based configuration without exposing credentials in logs.
-- Normalizes usage into input/output/total tokens when available.
-- Maps quota/rate limits, auth failures, safety blocks, bad requests, context length errors, provider errors, and timeouts into `%Twelvgaige.Error{}`.
 
 Ollama adapter:
 
@@ -1246,7 +1227,7 @@ Normal tests must not call real providers.
 
 Required provider tests:
 
-- mock provider returns deterministic responses.
+- the test-only deterministic provider returns deterministic responses.
 - each real adapter serializes normalized messages into expected provider request payloads.
 - each real adapter normalizes provider tool calls.
 - each real adapter normalizes usage.
@@ -2041,14 +2022,12 @@ Current Phase 4 bootstrap behavior with `Store.File`, `Store.SQLite`, and the sy
 
 ### 17.5 SQLite Storage Contract
 
-SQLite is the default durable store for local and laptop deployments. It is a single-node correctness boundary, not a distributed lock manager.
-
-Default paths:
-
-- macOS/Linux data directory: `$XDG_DATA_HOME/twelvgaige` or `~/.local/share/twelvgaige`
-- Windows data directory: `%LOCALAPPDATA%\Twelvgaige`
-- database file: `twelvgaige.db`
-- override: `TWELVGAIGE_DB_PATH`
+The in-memory store is the runtime default. SQLite is the recommended durable
+store for local and laptop deployments; select it explicitly with
+`TWELVGAIGE_STORE_SQLITE=/absolute/path/to/twelvgaige.sqlite3` or trusted
+application configuration. It is a single-node correctness boundary, not a
+distributed lock manager. Twelvgaige does not invent a default SQLite path for
+the ordinary round store.
 
 Directory creation must use owner-only permissions where the operating system supports them. The daemon must refuse to start if the database file or parent directory is obviously world-writable on a platform where that can be checked.
 
@@ -2596,7 +2575,7 @@ Phase 5 pure-router webhook endpoint:
 
 ### 20.6 Provider Transport Policy
 
-Provider network settings are trusted runtime configuration. Workflow shells and agent shells may select provider ID and model, but they must not provide API keys, bearer tokens, proxy settings, or provider base URLs. See [`secrets-and-providers.md`](secrets-and-providers.md) for operator-facing configuration.
+Provider network settings are trusted runtime configuration. Workflow shells and agent shells may select provider ID and model, but they must not provide API keys, bearer tokens, proxy settings, or provider base URLs. See [`secrets-and-providers.md`](../secrets-and-providers.md) for operator-facing configuration.
 
 Transport rules:
 
@@ -2800,9 +2779,9 @@ Metric label constraints:
 
 Default logging:
 
-- Phase 1: human-readable logs to stderr only when `--verbose` or `TWELVGAIGE_LOG_LEVEL` is set.
-- Daemon phases: human-readable logs by default in development; JSON logs when `TWELVGAIGE_LOG_FORMAT=json`.
-- Default log level is `info` for daemon lifecycle and warnings/errors, `warn` for foreground CLI unless verbose.
+- Runtime emission is quiet unless structured logging is configured.
+- JSON logs are enabled with application config or
+  `TWELVGAIGE_LOG_FORMAT=json`.
 - `Twelvgaige.Log.JSON` owns JSON-line formatting for structured logs. It
   emits the required base fields, normalizes metadata into JSON-safe values,
   expands `%Twelvgaige.Error{}` into queryable error fields, omits raw
@@ -3102,11 +3081,8 @@ lib/
     |   +-- capabilities.ex
     |   +-- router.ex
     |   +-- response.ex
-    |   +-- mock.ex
     |   +-- providers/
-    |       +-- anthropic.ex
     |       +-- openai.ex
-    |       +-- gemini.ex
     |       +-- ollama.ex
     +-- tool/
     |   +-- behaviour.ex
@@ -3152,7 +3128,7 @@ Implemented in project code instead of dependencies:
 - `[x]` Metrics and Prometheus text exposition use project-owned collectors and formatters.
 - `[x]` Scheduler interval and five-field UTC cron support use project-owned modules.
 - `[x]` Tests use hand-written fakes, injected transports, and shared contract modules rather than Mox.
-- `[x]` Provider adapter request/response/error fixtures cover Anthropic, OpenAI, Gemini, and Ollama without network calls.
+- `[x]` Provider adapter request/response/error fixtures cover OpenAI and Ollama without network calls.
 
 Deferred unless feature pressure justifies adding them:
 
@@ -3224,7 +3200,7 @@ Tag meanings:
 | `:integration` | Cross-module tests that may start supervisors or CLI processes. | excluded |
 | `:daemon` | Tests that start Breech daemon/IPC. | excluded |
 | `:persistence` | Tests using SQLite or durable store migrations. | excluded |
-| `:provider_live` | Live Anthropic/OpenAI/Gemini/Ollama provider calls. | excluded |
+| `:provider_live` | Live OpenAI/Ollama provider calls. | excluded |
 | `:keychain_live` | Live OS keychain tests that may prompt or mutate user keychain state. | excluded |
 | `:sqlcipher_live` | Live SQLCipher store tests requiring a SQLCipher-linked SQLite driver. | excluded |
 | `:k8s_live` | Tests against a real local Kubernetes cluster. | excluded |
@@ -3249,9 +3225,7 @@ test/support/
     +-- shells/
     +-- agents/
     +-- providers/
-    |   +-- anthropic/
     |   +-- openai/
-    |   +-- gemini/
     |   +-- ollama/
     +-- kubernetes/
     |   +-- get/
@@ -3295,7 +3269,7 @@ Behaviour implementations must share contract tests where practical:
   - list incomplete rounds
   - replay round events
   - recover structured shot outputs
-- Provider contract for mock, Anthropic, OpenAI, Gemini, and Ollama adapters:
+- Provider contract for the test-only deterministic adapter, OpenAI, and Ollama:
   - request serialization
   - tool-call normalization
   - usage normalization or estimated usage
@@ -3345,9 +3319,7 @@ Behaviour implementations must share contract tests where practical:
 - `[x]` Provider config resolver loads trusted runtime config and environment secrets without allowing shell-level credentials.
 - `[x]` Loadout resolver applies referenced agent provider, model, and system prompt to foreground and scheduler shot execution.
 - `[x]` Provider capability checks reject unsupported native tool/schema modes.
-- `[x]` Anthropic adapter serializes requests and normalizes responses/errors from fixtures.
 - `[x]` OpenAI adapter serializes requests and normalizes responses/errors from fixtures.
-- `[x]` Gemini adapter serializes requests and normalizes responses/errors from fixtures.
 - `[x]` Ollama adapter serializes requests and normalizes responses/errors from fixtures.
 - `[x]` Provider configs redact API keys, auth headers, URL query secrets, and inspected transport details in logs/errors.
 - `[x]` Tool executor denies non-allowlisted tools.
@@ -3390,7 +3362,7 @@ Behaviour implementations must share contract tests where practical:
 ### 26.3 Integration Tests
 
 - `[x]` CLI validates a workflow shell.
-- `[x]` CLI runs simple mock workflow to completion.
+- `[x]` CLI runs a simple deterministic test workflow to completion.
 - `[x]` CLI returns JSON output with stable schema.
 - `[x]` CLI maps round snapshots and command errors to deterministic exit codes.
 - `[x]` JSON logs contain required fields and no raw secrets; `Twelvgaige.Log.JSON` provides the tested formatter and `Twelvgaige.Log.emit/5` is wired into Breech lifecycle events.
@@ -3405,7 +3377,7 @@ Behaviour implementations must share contract tests where practical:
 
 - `[x]` Store contract runs through a shared reusable contract module against memory, file, and SQLite stores.
 - `[x]` Store contract runs against SQLite store once persistence exists.
-- `[x]` Provider contract runs against mock, Anthropic, OpenAI, Gemini, and Ollama adapters with fixtures.
+- `[x]` Provider contract runs against the test-only deterministic adapter, OpenAI, and Ollama with fixtures.
 - `[x]` Command runner contract runs against fake command runner.
 - `[x]` Tool contract runs against every built-in tool.
 - `[x]` Kubernetes tool contract runs against fixture-backed command runner.
@@ -3452,10 +3424,10 @@ Behaviour implementations must share contract tests where practical:
 | `[x]` | Pattern compiler | Validates DAG and produces normalized pattern. |
 | `[x]` | Condition evaluator | Safe string conditions evaluate input and prior shot outputs; false conditions mark shots skipped, and missing non-`exists` paths fail with classified condition errors. |
 | `[x]` | Loadout resolver | Supplied agent definitions determine provider, model, and system prompt for referenced shots in foreground and scheduler execution paths. |
-| `[x]` | Mock LLM provider | Tests run without network. |
+| `[x]` | Test-only deterministic LLM provider | Tests run without network. |
 | `[x]` | Round supervisor | Dynamic supervisor starts per-round supervisors. |
 | `[x]` | Round server | Executes state transitions and readiness. |
-| `[x]` | Shot executor | Executes mock LLM attempts, bounded ReAct iterations, and read-only tool calls. |
+| `[x]` | Shot executor | Executes deterministic test LLM attempts, bounded ReAct iterations, and read-only tool calls. |
 | `[x]` | CLI round run | Simple workflow completes in the foreground. |
 
 ### Phase 2 - Tools And Safety
@@ -3474,7 +3446,7 @@ Behaviour implementations must share contract tests where practical:
 | `[x]` | Safety shot | Foreground round pauses and can use inline approval in the same VM. |
 | `[x]` | Retry policy | Retryable failures retry with bounded backoff and never exceed max attempts. |
 | `[x]` | Output validation | Malformed or schema-invalid output cannot advance dependents. |
-| `[x]` | Provider router | Explicit provider IDs route to mock, Anthropic, OpenAI, Gemini, or Ollama adapters. |
+| `[x]` | Provider router | Production provider IDs route only to OpenAI or Ollama adapters. |
 | `[x]` | Provider fixtures | Adapter request/response/error normalization is tested without network calls. |
 
 ### Phase 3 - Breech Daemon
@@ -3568,11 +3540,25 @@ Resolved implementation decisions:
 - CI, build, and release automation must call Makefile targets rather than duplicating Mix command logic inside workflow YAML.
 - Burrito binaries are the primary multi-platform GitHub release artifacts; Mix release tarballs remain target-specific secondary artifacts.
 - Tests use hand-written fakes, injected transports, and contract modules instead of Mox.
-- Provider support covers Anthropic, OpenAI, Gemini, and Ollama through adapter fixtures and explicit provider IDs.
-- Provider live smoke tests, when added, should use ExUnit tags plus environment opt-in rather than a separate Mix task.
+- Provider support covers OpenAI and Ollama through adapter fixtures and explicit provider IDs.
+- Provider live smoke tests use ExUnit tags and environment opt-in through the
+  Makefile; normal tests remain offline.
 - k3d is the preferred disposable local Kubernetes target for live smoke tests. Existing kind, minikube, or dev-cluster contexts can still be used by setting `TWELVGAIGE_K8S_CONTEXT`.
 - ReAct tool calls execute serially inside one shot attempt. Parallel read-only tool calls are a future optimization, not a correctness requirement.
-- Durable persistence keeps redacted snapshots, events, audit records, attempt journals, and tool journals by default. File-backed stores, SQLite stores, SQLite WAL/SHM sidecars, and JSON log files use private POSIX modes where supported. Stores accept `sensitive_retention: :summary` for high-sensitivity local runs; that mode retains journal metadata while summarizing prompt/message/tool input/output payload fields by type and size. Audit/event checkpoint exports are tamper-evident after export but do not make the live local store cryptographically immutable. Local stores are not encrypted at rest; use OS or volume encryption until a SQLCipher/keychain/KMS design is implemented. `crypto sqlcipher-spike` detects driver support through `PRAGMA cipher_version`, runs migrations and reopen checks only when SQLCipher is present, and stays a feasibility probe. `Store.SQLiteEncrypted` is now a separate fail-closed store surface: it requires `:key` or `:key_env`, checks SQLCipher before creating the target file, and is selected by `TWELVGAIGE_STORE_SQLCIPHER` plus `TWELVGAIGE_STORE_SQLCIPHER_KEY`. Key-management backends currently provide a contract for future encrypted-store wiring: test, env, file, macOS Keychain, Windows DPAPI, and Linux Secret Service. Env/file are explicit insecure dev/CI/headless backends; macOS Keychain, Windows DPAPI, and Linux Secret Service are OS-protected command-wrapper integrations with live/release verification still tracked before encrypted-store support depends on them. Linux Secret Service is desktop Linux only and requires `secret-tool`, a user D-Bus session, and an unlocked collection. Backup/export policy defaults to encrypted mode, marks redacted exports as non-restorable, and rejects plaintext export without explicit plaintext allowance. Store DEKs use AES-256-GCM envelopes; rewrap rotation changes only the DEK envelope and leaves database re-encryption for later rekey work.
+- Durable persistence keeps redacted snapshots, events, audit records, attempt
+  journals, and tool journals by default. File-backed stores, SQLite sidecars,
+  and JSON logs use private POSIX modes where supported. High-sensitivity mode
+  summarizes prompt, message, and tool payloads. Checkpoint exports are
+  tamper-evident after export but do not make the live store immutable. Default
+  file and SQLite stores are unencrypted; use OS or volume encryption. The
+  optional `Store.SQLiteEncrypted` is fail-closed, requires a key, verifies
+  actual SQLCipher support before creating the target, and is selected by
+  `TWELVGAIGE_STORE_SQLCIPHER` plus `TWELVGAIGE_STORE_SQLCIPHER_KEY`.
+  Key-manager backends include test, explicit insecure env/file, macOS
+  Keychain, Windows DPAPI, and desktop Linux Secret Service implementations.
+  Platform qualification is stated separately from implementation. Backup and
+  restore, plaintext-to-SQLCipher migration, and backup-gated DEK-envelope
+  rewrap are implemented; full database-page rekey remains separate work.
 - Arbitrary shell execution remains deferred. Structured tools construct argv internally.
 
 Remaining release follow-ups:

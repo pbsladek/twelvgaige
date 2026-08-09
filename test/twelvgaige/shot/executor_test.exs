@@ -247,6 +247,77 @@ defmodule Twelvgaige.Shot.ExecutorTest do
     assert error.details.total_tokens == 13
   end
 
+  test "enforces token budget cumulatively across tool iterations" do
+    root = tmp_dir!()
+    File.write!(Path.join(root, "report.txt"), "ok")
+
+    responses = [
+      %{
+        content: "read",
+        tool_calls: [
+          %{"id" => "call_1", "name" => "shell_read", "input" => %{path: "report.txt"}}
+        ],
+        usage: %{input_tokens: 3, output_tokens: 3, total_tokens: 6}
+      },
+      %{
+        content: "done",
+        usage: %{input_tokens: 3, output_tokens: 3, total_tokens: 6}
+      }
+    ]
+
+    assert {:error, error} =
+             shot(%{choke: %{token_budget: 10, max_iterations: 2}})
+             |> attempt()
+             |> Executor.run(responses: responses, tool_opts: [root: root], limiter: nil)
+
+    assert error.reason == :llm_context_too_large
+    assert error.details.token_budget == 10
+    assert error.details.total_tokens == 12
+  end
+
+  test "passes tool and structured-output schemas plus remaining budget to the provider" do
+    parent = self()
+
+    transport = fn request ->
+      send(parent, {:provider_request, request})
+
+      {:ok,
+       %{
+         status: 200,
+         headers: [],
+         body: %{
+           "choices" => [%{"message" => %{"content" => ~s({"summary":"green"})}}],
+           "usage" => %{"prompt_tokens" => 2, "completion_tokens" => 2}
+         }
+       }}
+    end
+
+    shot =
+      shot(%{
+        choke: %{token_budget: 10},
+        output_schema: %{
+          type: "object",
+          required: ["summary"],
+          properties: %{summary: %{type: "string"}}
+        }
+      })
+
+    attempt =
+      shot
+      |> attempt()
+      |> Map.put(:loadout, %{provider: :openai, model: "gpt-test", system_prompt: "test"})
+
+    assert {:ok, result} = Executor.run(attempt, transport: transport, limiter: nil)
+    assert result.output == %{"summary" => "green"}
+
+    assert_receive {:provider_request, request}
+    assert request.body["max_tokens"] == 10
+    assert get_in(request.body, ["tools", Access.at(0), "function", "name"]) == "shell_read"
+
+    assert get_in(request.body, ["response_format", "json_schema", "schema", "type"]) ==
+             "object"
+  end
+
   test "denies tool calls outside the shot allowlist" do
     response = %{
       content: "",
@@ -298,6 +369,56 @@ defmodule Twelvgaige.Shot.ExecutorTest do
     assert shot.choke.max_iterations == 1
     assert error.class == :output_error
     assert error.reason == :output_parse_error
+  end
+
+  test "agent limits restrict a more permissive shot" do
+    root = tmp_dir!()
+    File.write!(Path.join(root, "a.txt"), "ok")
+
+    response = %{
+      content: "",
+      tool_calls: [%{"name" => "shell_read", "input" => %{"path" => "a.txt"}}]
+    }
+
+    attempt =
+      shot(%{choke: %{max_iterations: 6, token_budget: 100}})
+      |> attempt()
+      |> Map.update!(:loadout, fn loadout ->
+        Map.put(loadout, :choke, %{max_iterations: 1, token_budget: 10})
+      end)
+
+    assert {:error, iteration_error} =
+             Executor.run(attempt,
+               response: response,
+               tool_opts: [root: root],
+               limiter: nil
+             )
+
+    assert iteration_error.message =~ "max ReAct iterations"
+    assert iteration_error.details.max_iterations == 1
+
+    assert {:error, budget_error} =
+             Executor.run(attempt,
+               response: %{content: "done", usage: %{total_tokens: 11}},
+               limiter: nil
+             )
+
+    assert budget_error.details.token_budget == 10
+  end
+
+  test "agent tool policy is enforced again at execution" do
+    response = %{
+      content: "",
+      tool_calls: [%{"name" => "shell_read", "input" => %{"path" => "a.txt"}}]
+    }
+
+    attempt =
+      shot()
+      |> attempt()
+      |> Map.update!(:loadout, &Map.put(&1, :tool_policy, %{allowed: [], denied: []}))
+
+    assert {:error, error} = Executor.run(attempt, response: response, limiter: nil)
+    assert error.reason == :tool_denied
   end
 
   defp tmp_dir! do

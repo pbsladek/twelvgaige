@@ -36,7 +36,7 @@ jobs:
         uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
         with:
           otp-version: "28"
-          elixir-version: "1.19.5"
+          elixir-version: "1.20.3"
 
       - name: Cache Mix
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -64,7 +64,7 @@ jobs:
         uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
         with:
           otp-version: "28"
-          elixir-version: "1.19.5"
+          elixir-version: "1.20.3"
 
       - name: Cache Mix
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -83,6 +83,9 @@ jobs:
     name: coverage
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -92,7 +95,7 @@ jobs:
         uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
         with:
           otp-version: "28"
-          elixir-version: "1.19.5"
+          elixir-version: "1.20.3"
 
       - name: Cache Mix
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -107,6 +110,15 @@ jobs:
       - name: Coverage gate
         run: make coverage-export
 
+      - name: Upload Elixir coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          disable_search: true
+          fail_ci_if_error: true
+          files: ./cover/lcov.info
+          flags: elixir
+          use_oidc: true
+
       - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -115,5 +127,6 @@ jobs:
           path: |
             cover/**
             artifacts/coverage-summary.txt
+            artifacts/coverage-gate.json
           if-no-files-found: warn
           retention-days: 7

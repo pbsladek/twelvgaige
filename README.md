@@ -5,10 +5,18 @@
 [![Release](https://github.com/pbsladek/twelvgaige/actions/workflows/release.yml/badge.svg)](https://github.com/pbsladek/twelvgaige/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Twelvgaige runs reliable, auditable AI-agent workflows from the command line.
-Define a workflow as a set of shots, give each shot an agent and allowed tools,
-then run it locally with retries, safety gates, resource limits, persistence,
-and audit trails handled by Elixir/OTP.
+Twelvgaige runs auditable AI-agent workflows from the command line. Define a
+workflow as a set of shots, give each shot an agent and allowed tools, then run
+it locally with retries, safety gates, resource limits, persistence, and audit
+trails handled by Elixir/OTP.
+
+The project is pre-release and currently targets a single trusted OS user on one
+machine. Workflow agents can use local Ollama models or the OpenAI API. The
+optional unattended operations plane supplies durable control, credentials,
+sandbox inventory, retention, and audit for delegated Codex sessions in
+isolated containers. Delegated-session creation is currently an embedded
+manager/integration API rather than a `session start` CLI command. Twelvgaige is
+not a multi-user or distributed service.
 
 ## Why
 
@@ -27,11 +35,12 @@ language work, but the runtime decides what is allowed to happen next.
 That makes Twelvgaige a better fit for operational workflows than chat-style
 assistants: Kubernetes triage, guarded remediation, release checks, CI/CD
 investigations, Git maintenance, local runbooks, and repeatable analysis using
-Anthropic, OpenAI, Gemini, Ollama, or mock providers.
+OpenAI or Ollama.
 
 ## Install
 
-From source:
+Twelvgaige currently requires Erlang/OTP and Elixir. The versions used by the
+repository are pinned in `.mise.toml`. From source:
 
 ```bash
 mise install # optional, uses .mise.toml
@@ -40,7 +49,7 @@ mix escript.build
 ./twelvgaige version
 ```
 
-Run the local smoke flow:
+Run a credential-free CLI smoke test:
 
 ```bash
 make escript-smoke
@@ -69,6 +78,14 @@ Released binaries are produced by the GitHub release workflow. See
 verification.
 
 ## Usage
+
+The bundled examples use Ollama with the `llama3.2` model. Start Ollama and make
+that model available before running a round. Validation and normalization do
+not call a model.
+
+```bash
+ollama pull llama3.2
+```
 
 Validate a shell:
 
@@ -101,18 +118,41 @@ Then inspect it from another terminal:
 ./twelvgaige status
 ```
 
+Enable the single-user unattended operations plane before starting the daemon.
+Podman is the default sandbox backend; Apple containers are available as an
+explicit macOS backend after local qualification:
+
+```bash
+export TWELVGAIGE_OPERATIONS_ENABLED=1
+export TWELVGAIGE_PODMAN_MACHINE=twelvgaige
+./twelvgaige daemon serve
+```
+
+On a new macOS development host, create and verify the dedicated Podman machine
+and build the pinned worker image first. The exact commands and qualification
+distinction are in [Usage](USAGE.md#single-user-operations-plane).
+
+This uses the per-user application-data directory, the platform credential
+store for the operations master key, 30-day raw/artifact retention, and 90-day
+security/audit retention. Override the data directory with
+`TWELVGAIGE_DATA_ROOT`; use
+`TWELVGAIGE_AUDIT_CHECKPOINT_EXTERNAL_PATH` for a second append-only audit
+checkpoint destination.
+
 Provider credentials come from environment variables or trusted runtime config:
 
 ```bash
 export TWELVGAIGE_OPENAI_API_KEY=...
 ```
 
-The bundled `simple` workflow uses the mock provider, so it runs without a
-hosted LLM key. See [Secrets and providers](docs/secrets-and-providers.md) for
-Anthropic, OpenAI, Gemini, and Ollama setup.
+The bundled `simple` workflow uses local Ollama, so it runs without a hosted
+LLM key once the configured model is available. See
+[Secrets and providers](docs/secrets-and-providers.md) for OpenAI and Ollama
+setup.
 
 ## Docs
 
+- [Documentation index](docs/readme.md)
 - [Usage](USAGE.md)
 - [Core concepts](docs/concepts.md)
 - [Authoring workflows](docs/authoring.md)
@@ -124,8 +164,8 @@ Anthropic, OpenAI, Gemini, and Ollama setup.
 - [Use cases](docs/use-cases.md)
 - [CI and local validation](docs/ci.md)
 - [Release flow](docs/release.md)
+- [Design and implementation records](docs/design/readme.md)
 - [Design spec](docs/design/spec.md)
-- [Shot authoring and management plan](docs/design/shot-authoring-management-plan.md)
 - [Release checklist](docs/design/release-checklist.md)
 
 ## License

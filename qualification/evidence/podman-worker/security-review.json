@@ -1,0 +1,21 @@
+{
+  "counts": {
+    "critical": 0,
+    "high": 1,
+    "unreviewed_high": 0
+  },
+  "exceptions": [
+    {
+      "disposition": "not_applicable",
+      "id": "CVE-2026-32631",
+      "package": "git",
+      "rationale": "The advisory affects Git for Windows NTLM authentication; this worker is Linux/ARM64 and contains no Windows Git binary or NTLM credential flow."
+    }
+  ],
+  "policy": {
+    "maximum_critical": 0,
+    "maximum_unreviewed_high": 0
+  },
+  "reviewed_at": "2026-08-02T23:37:55Z",
+  "schema_version": 1
+}

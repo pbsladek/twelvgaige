@@ -8,7 +8,10 @@ defmodule Twelvgaige.PerfReview do
   alias Twelvgaige.Shell.Workflow
   alias Twelvgaige.Store.Retention
 
-  def run do
+  @schema_version 1
+  @default_regression_percent 50.0
+
+  def run(args \\ System.argv()) do
     cases = [
       {"duplicate_scan_old_quadratic", 3, fn -> old_duplicate(duplicate_values()) end},
       {"duplicate_scan_mapset", 30, fn -> mapset_duplicate(duplicate_values()) end},
@@ -20,12 +23,22 @@ defmodule Twelvgaige.PerfReview do
       {"output_parser_candidates", 100, fn -> Parser.parse(output_content(), output_schema()) end}
     ]
 
-    IO.puts("name,iterations,best_us,median_us,worst_us")
+    result = %{
+      schema_version: @schema_version,
+      suite: "phase0-core",
+      host: host_metadata(),
+      cases:
+        Enum.map(cases, fn {name, iterations, fun} ->
+          Map.merge(%{name: name, iterations: iterations}, benchmark(fun, iterations))
+        end)
+    }
 
-    Enum.each(cases, fn {name, iterations, fun} ->
-      result = benchmark(fun, iterations)
-      IO.puts("#{name},#{iterations},#{result.best},#{result.median},#{result.worst}")
-    end)
+    case check_baseline(result, args) do
+      :ok -> print_result(result, args)
+      {:error, regressions} ->
+        print_result(Map.put(result, :regressions, regressions), args)
+        System.halt(1)
+    end
   end
 
   defp benchmark(fun, iterations) do
@@ -46,10 +59,117 @@ defmodule Twelvgaige.PerfReview do
       |> Enum.sort()
 
     %{
-      best: hd(times),
-      median: Enum.at(times, div(length(times), 2)),
-      worst: List.last(times)
+      best_us: hd(times),
+      median_us: Enum.at(times, div(length(times), 2)),
+      worst_us: List.last(times),
+      samples_us: times
     }
+  end
+
+  defp print_result(result, args) do
+    if option(args, "--format", "csv") == "json" do
+      IO.puts(Jason.encode!(result, pretty: true))
+    else
+      IO.puts("name,iterations,best_us,median_us,worst_us")
+
+      Enum.each(result.cases, fn item ->
+        IO.puts(
+          "#{item.name},#{item.iterations},#{item.best_us},#{item.median_us},#{item.worst_us}"
+        )
+      end)
+    end
+  end
+
+  defp check_baseline(result, args) do
+    case option(args, "--check", nil) do
+      nil ->
+        :ok
+
+      path ->
+        with {:ok, contents} <- File.read(path),
+             {:ok, baseline} <- Jason.decode(contents) do
+          allowed_percent =
+            args
+            |> option("--max-regression-percent", Float.to_string(@default_regression_percent))
+            |> parse_percent!()
+
+          regressions = regressions(result, baseline, allowed_percent)
+          if regressions == [], do: :ok, else: {:error, regressions}
+        else
+          {:error, reason} ->
+            {:error, [%{case: "baseline", reason: inspect(reason), path: path}]}
+        end
+    end
+  end
+
+  defp regressions(result, baseline, allowed_percent) do
+    baseline_cases = Map.new(Map.get(baseline, "cases", []), &{&1["name"], &1})
+
+    Enum.flat_map(result.cases, fn item ->
+      case Map.get(baseline_cases, item.name) do
+        %{"median_us" => baseline_median} when is_number(baseline_median) ->
+          allowed_median = baseline_median * (1.0 + allowed_percent / 100.0)
+
+          if item.median_us <= allowed_median do
+            []
+          else
+            [
+              %{
+                case: item.name,
+                baseline_median_us: baseline_median,
+                observed_median_us: item.median_us,
+                allowed_regression_percent: allowed_percent
+              }
+            ]
+          end
+
+        _missing ->
+          [%{case: item.name, reason: "missing baseline case"}]
+      end
+    end)
+  end
+
+  defp host_metadata do
+    %{
+      os: :os.type() |> inspect(),
+      os_version: :os.version() |> Tuple.to_list() |> Enum.join("."),
+      architecture: :erlang.system_info(:system_architecture) |> to_string(),
+      erlang: :erlang.system_info(:otp_release) |> to_string(),
+      elixir: System.version(),
+      schedulers: System.schedulers_online(),
+      model: host_value("TWELVGAIGE_BENCH_HOST_MODEL", "hw.model"),
+      memory_bytes: host_value("TWELVGAIGE_BENCH_HOST_MEMORY_BYTES", "hw.memsize")
+    }
+  end
+
+  defp host_value(env_name, sysctl_name) do
+    case System.get_env(env_name) do
+      value when is_binary(value) and value != "" -> value
+      _missing -> sysctl_value(sysctl_name)
+    end
+  end
+
+  defp sysctl_value(name) do
+    case System.cmd("sysctl", ["-n", name], stderr_to_stdout: true) do
+      {value, 0} -> String.trim(value)
+      _other -> "unknown"
+    end
+  rescue
+    _error -> "unknown"
+  end
+
+  defp option(args, name, default) do
+    case Enum.find_index(args, &(&1 == name)) do
+      nil -> default
+      index -> Enum.at(args, index + 1, default)
+    end
+  end
+
+  defp parse_percent!(value) do
+    case Float.parse(value) do
+      {percent, ""} when percent >= 0 -> percent
+      _other -> raise ArgumentError, "invalid --max-regression-percent"
+    end
   end
 
   defp old_duplicate(values) do

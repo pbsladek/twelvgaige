@@ -189,6 +189,7 @@ defmodule Twelvgaige.RoundTest do
              transition_id: "transition_1",
              round_version: 2,
              event_type: "shot_completed",
+             event_class: "operational",
              shot_id: "gather",
              payload: %{attempt: 1},
              occurred_at: "2026-05-01T12:00:00Z"

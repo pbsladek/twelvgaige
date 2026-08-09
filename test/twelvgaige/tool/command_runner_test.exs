@@ -115,6 +115,28 @@ defmodule Twelvgaige.Tool.CommandRunnerTest do
     assert error.reason == :tool_timeout
   end
 
+  test "timeout terminates descendants instead of leaving an orphan" do
+    sh = System.find_executable("sh")
+
+    marker =
+      Path.join(System.tmp_dir!(), "twelvgaige-orphan-#{System.unique_integer([:positive])}")
+
+    on_exit(fn -> File.rm(marker) end)
+
+    script =
+      "(sleep 0.35; printf orphan > #{shell_quote(marker)}) >/dev/null 2>&1 & wait"
+
+    assert {:error, error} =
+             CommandRunner.run(sh, ["-c", script],
+               timeout_ms: 50,
+               max_output_bytes: 128
+             )
+
+    assert error.reason == :tool_timeout
+    Process.sleep(500)
+    refute File.exists?(marker)
+  end
+
   test "can require absolute command paths" do
     assert {:error, error} =
              CommandRunner.run("elixir", ["--version"], require_absolute_binary?: true)
@@ -132,4 +154,6 @@ defmodule Twelvgaige.Tool.CommandRunnerTest do
     |> String.replace_prefix("/private/var/", "/var/")
     |> String.replace_prefix("/private/tmp/", "/tmp/")
   end
+
+  defp shell_quote(value), do: "'" <> String.replace(value, "'", "'\\''") <> "'"
 end

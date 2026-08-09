@@ -71,8 +71,8 @@ shots:
 kind: agent
 id: k8s_inspector
 version: 1.0.0
-provider: anthropic
-model: claude-sonnet
+provider: openai
+model: gpt-5.2
 system_prompt: |
   You inspect Kubernetes state. Prefer read-only tools. Do not recommend or
   apply changes unless the workflow prompt explicitly asks for recommendations.
@@ -82,8 +82,8 @@ system_prompt: |
 kind: agent
 id: k8s_remediator
 version: 1.0.0
-provider: anthropic
-model: claude-sonnet
+provider: openai
+model: gpt-5.2
 system_prompt: |
   You apply only approved Kubernetes remediation. Never invent resources,
   namespaces, or commands. Prefer the least destructive supported tool.

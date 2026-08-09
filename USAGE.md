@@ -49,9 +49,10 @@ make package-burrito-smoke BURRITO_TARGET=linux
 
 `make check` is the fast local gate. `make coverage` enforces the offline
 coverage threshold. `make e2e-cli` runs the core CLI contract through the built
-escript. `make ci` runs dependency fetch, formatter check, warnings-as-errors
-compile, normal tests, and persistence tests. GitHub Actions also runs
-`make authoring-check`, package smoke, and remote e2e jobs. See
+escript. `make ci` runs dependency fetch, formatter and warnings-as-errors
+checks, Credo, Sobelow, the locked-dependency audit, normal and persistence
+tests, and the Phase 0 performance gate. GitHub Actions also runs
+`make authoring-check`, coverage, package smoke, and remote e2e jobs. See
 [`docs/ci.md`](docs/ci.md) for the full CI and branch-protection checklist.
 
 For repeatable failure artifacts that can be shared in review, run:
@@ -120,7 +121,8 @@ patched `zig@0.15` has proven more reliable than the upstream Zig binary.
 
 GitHub workflows live in `.github/workflows`:
 
-- `ci.yml`: formatter, compile, normal tests, persistence tests.
+- `ci.yml`: formatting, compilation, static/security analysis, dependency
+  audit, normal and persistence tests, authoring checks, and coverage.
 - `build.yml`: smoke-builds escript, Mix release artifacts, and Burrito
   executables. Burrito runs as a multi-platform matrix for `linux`,
   `linux_arm64`, `windows`, and `macos_silicon`.
@@ -148,13 +150,12 @@ traphouse, pass `--write --output`:
 twelvgaige shell new incident \
   --scaffold inspect-analyze-gate-fix-verify \
   --output traphouse/workflows/incident.yaml \
-  --with-mock-agents \
   --write
 ```
 
-`--with-mock-agents` writes companion mock agent shells next to the workflow
-under `workflows/agents/`. Existing files are protected unless `--force` is
-provided. Generated workflows start with draft lifecycle metadata and a
+Scaffolds may include companion agent shells, which are written next to the
+workflow under `workflows/agents/`. Existing files are protected unless
+`--force` is provided. Generated workflows start with draft lifecycle metadata and a
 `generated_by` provenance record that names the scaffold source. After
 generation, run `shell lint --strict` before committing changes:
 
@@ -292,9 +293,8 @@ twelvgaige shell draft --from incident-notes.md \
 
 The command never runs the generated workflow. It reads bounded source text,
 redacts secret-shaped values, asks the configured provider for a candidate, then
-parses, validates, and strict-lints the shell before emitting it. Hosted
-providers such as OpenAI, Anthropic, and Gemini require explicit
-`--allow-remote`:
+parses, validates, and strict-lints the shell before emitting it. The hosted
+OpenAI provider requires explicit `--allow-remote`:
 
 ```bash
 twelvgaige shell draft --from incident-notes.md \
@@ -303,8 +303,8 @@ twelvgaige shell draft --from incident-notes.md \
   --allow-remote
 ```
 
-The default provider is `mock` for offline testing. `ollama` is treated as a
-local provider and does not require `--allow-remote`.
+The default provider is `ollama`, which is treated as local and does not require
+`--allow-remote`.
 
 ## A Minimal Workflow
 
@@ -319,11 +319,11 @@ version: 1.0.0
 shots:
   - id: first
     kind: slug
-    agent: mock_agent
+    agent: local_agent
     prompt: first prompt
   - id: second
     kind: slug
-    agent: mock_agent
+    agent: local_agent
     depends_on:
       - first
     prompt: second prompt
@@ -332,16 +332,16 @@ shots:
 See [`docs/shell-formats.md`](docs/shell-formats.md) for JSON and TOML versions,
 nested policy examples, and conversion commands.
 
-The adjacent mock agent lives at `docs/traphouse/workflows/agents/mock_agent.yaml`:
+The adjacent local agent lives at `docs/traphouse/workflows/agents/local_agent.yaml`:
 
 ```yaml
 kind: agent
-id: mock_agent
-name: Mock Agent
+id: local_agent
+name: Local Ollama Agent
 version: 1.0.0
-provider: mock
-model: mock-model
-system_prompt: Run the mock shot.
+provider: ollama
+model: llama3.2
+system_prompt: Run the local shot.
 ```
 
 Agent shells in an `agents/` directory next to the workflow are discovered
@@ -349,15 +349,15 @@ automatically for trusted local roots. For shells stored elsewhere, pass one or
 more explicit paths:
 
 ```bash
-twelvgaige round run docs/traphouse/workflows/simple.yaml --agent-shell docs/traphouse/workflows/agents/mock_agent.yaml
+twelvgaige round run docs/traphouse/workflows/simple.yaml --agent-shell docs/traphouse/workflows/agents/local_agent.yaml
 ```
 
 When testing a workflow from an unreviewed repository, disable adjacent agent
 discovery and pass only reviewed agent shells:
 
 ```bash
-twelvgaige round run ./downloaded/workflow.yaml --untrusted-root --agent-shell ./reviewed-agents/mock_agent.yaml
-twelvgaige round run ./downloaded/workflow.yaml --no-agent-discovery --agent-shell ./reviewed-agents/mock_agent.yaml
+twelvgaige round run ./downloaded/workflow.yaml --untrusted-root --agent-shell ./reviewed-agents/local_agent.yaml
+twelvgaige round run ./downloaded/workflow.yaml --no-agent-discovery --agent-shell ./reviewed-agents/local_agent.yaml
 ```
 
 `--untrusted-root` keeps explicit `--agent-shell` paths working but blocks
@@ -387,7 +387,7 @@ twelvgaige shell inventory docs/traphouse --root docs/traphouse
 twelvgaige shell inventory docs/traphouse --root docs/traphouse --format json
 twelvgaige shell inventory docs/traphouse --root docs/traphouse --output docs/traphouse/inventory/inventory.json
 twelvgaige shell impact docs/traphouse --root docs/traphouse --tool kubectl_apply --format json
-twelvgaige shell impact docs/traphouse --root docs/traphouse --agent mock_agent
+twelvgaige shell impact docs/traphouse --root docs/traphouse --agent local_agent
 twelvgaige shell impact docs/traphouse --root docs/traphouse --tool kubectl_apply --output docs/traphouse/inventory/impact-kubectl-apply.json
 twelvgaige shell reload docs/traphouse --format json
 twelvgaige shell list --format json
@@ -402,7 +402,7 @@ twelvgaige shell validate docs/traphouse/workflows/shell_authoring_review_readon
 twelvgaige round run docs/traphouse/workflows/shell_authoring_review_readonly.yaml
 ```
 
-That workflow grants mock authoring agents access to read-only tools for shell
+That workflow grants local Ollama agents access to read-only tools for shell
 validation, graphing, linting, inventory, impact analysis, normalization, diff
 review, tool catalog lookup, and patch-plan drafting. Patch plans are advisory
 artifacts; this phase does not write edits back to disk.
@@ -647,7 +647,7 @@ shots:
     description: "Review before continuing"
   - id: after
     kind: slug
-    agent: mock_agent
+    agent: local_agent
     depends_on: [approval]
     prompt: "run after approval"
 ```
@@ -709,6 +709,80 @@ Stop the daemon:
 ```bash
 twelvgaige daemon stop
 ```
+
+## Single-User Operations Plane
+
+The unattended operations plane is opt-in. It adds delegated-session control,
+sandbox health and reconciliation, encrypted artifact storage, retention,
+operational audit, backup, and release checks to the local daemon:
+
+```bash
+export TWELVGAIGE_OPERATIONS_ENABLED=1
+export TWELVGAIGE_PODMAN_MACHINE=twelvgaige
+twelvgaige daemon serve
+```
+
+It supports one trusted local OS user. Podman is the default sandbox backend.
+Apple containers are an explicit macOS backend and must be qualified on the
+host before use. OTP supervises sessions and container processes, but the
+selected container backend supplies the filesystem, process, credential, and
+network isolation boundary.
+
+The checked-in Podman machine helper is for macOS. After installing Podman,
+prepare a new development host with:
+
+```bash
+make podman-machine-plan
+make podman-machine-create
+make podman-machine-health
+make podman-worker-build
+```
+
+The machine uses the dedicated `twelvgaige` name by default, with 4 CPUs, 6 GiB
+of memory, a 64 GiB virtual disk, rootless operation, and one narrow mount for
+the Twelvgaige application-data directory. Override those values through the
+`TWELVGAIGE_PODMAN_MACHINE`, `TWELVGAIGE_PODMAN_CPUS`,
+`TWELVGAIGE_PODMAN_MEMORY_MIB`, `TWELVGAIGE_PODMAN_DISK_GIB`, and
+`TWELVGAIGE_DATA_ROOT` Make variables before creation. The create target leaves
+an existing machine unchanged; the health target verifies the actual mount and
+connection contract.
+
+Image build proves local execution. Supply-chain and live security
+qualification are separate, more expensive gates:
+
+```bash
+make podman-worker-qualify-image
+make podman-live-qualify
+```
+
+Apple-container admission remains explicit. Probe and qualify it with
+`make apple-container-health` and `make apple-container-live-qualify` only on a
+host where Apple's container CLI and the qualified worker image are available.
+The complete two-backend, egress, and operations evidence matrix is evaluated
+by `make release-qualification`; it is a release gate, not a first-run setup
+command.
+
+Inspect the operations plane from another terminal:
+
+```bash
+twelvgaige operations dashboard
+twelvgaige sandbox health
+twelvgaige session list
+twelvgaige operations retention status
+twelvgaige operations release check
+```
+
+The session commands list, inspect, attach to, take over, or revoke sessions
+created through the delegated-session manager and integration API. There is no
+standalone `session start` CLI command. `sandbox reconcile` is a dry run unless
+`--apply` is supplied; destroying orphaned sandboxes also requires
+`--destroy-orphans`.
+
+The default application-data directory is
+`~/Library/Application Support/Twelvgaige` on macOS,
+`%LOCALAPPDATA%\Twelvgaige` on Windows, and
+`$XDG_DATA_HOME/twelvgaige` or `~/.local/share/twelvgaige` on Linux. Override it
+with `TWELVGAIGE_DATA_ROOT`.
 
 ## Watch And Audit
 
@@ -931,9 +1005,11 @@ TWELVGAIGE_SQLCIPHER_SPIKE_KEY=test \
   twelvgaige crypto sqlcipher-spike --path /tmp/twelvgaige-sqlcipher-spike.db
 ```
 
-Current local stores are not encrypted by Twelvgaige. Use OS or volume
-encryption for laptop at-rest protection, and use `sensitive_retention:
-:summary` for high-sensitivity local runs. Remote HTTP serving must use a
+The default file and SQLite stores are not encrypted by Twelvgaige. Use OS or
+volume encryption for laptop at-rest protection, and use
+`sensitive_retention: :summary` for high-sensitivity local runs. A separate
+fail-closed SQLCipher store is available only with a SQLCipher-enabled driver.
+Remote HTTP serving must use a
 trusted TLS/mTLS proxy today; native TLS/mTLS is reported as unsupported until
 the listener implements it. `crypto sqlcipher-spike` is a feasibility probe:
 it detects whether the currently packaged SQLite driver was built against
@@ -960,20 +1036,23 @@ plaintext SQLite store, back it up, migrate it to SQLCipher, open the encrypted
 store, back it up, restore it, and reopen the restored encrypted store. They are
 not part of the default build or release flow.
 
-Key-management work is currently a library/config surface, not a CLI workflow.
-The test backend and explicit env/file backends exist so future encrypted-store
-work has a stable contract. Env/file key backends require
+The operations plane uses platform key storage for its master key. A general
+key-manager behaviour and platform backends also provide a stable contract for
+tests, CI, and future integrations, but the optional SQLCipher store currently
+accepts a key directly or through a named environment variable rather than
+resolving it through those backends. Key management is not exposed as a general
+CLI. The test backend and explicit env/file backends support tests, CI, and
+headless operation. Env/file key backends require
 `allow_insecure_key_backend?: true` and are reported by `crypto status` as not
 OS-protected. The macOS keychain backend wraps `/usr/bin/security` generic
 password items and is reported as OS-protected. Verify real login-Keychain
 behavior with `make keychain-smoke-macos KEYCHAIN_LIVE=1`; normal tests exclude
-that live tag and do not touch the user's Keychain. Encrypted-store integration
-and Burrito keychain smoke checks are still future phases. The Windows key
-backend is DPAPI protected files via a PowerShell wrapper. It is user-profile
-bound and unit-tested with an injected runner; real Windows release verification
-is still pending. The Linux key backend is FreeDesktop Secret Service via
-`secret-tool`. It is meant for desktop Linux with a user D-Bus session and
-unlocked collection, not WSL, containers, or headless servers. Use explicit
+that live tag and do not touch the user's Keychain. The Windows key backend is
+DPAPI-protected files through a PowerShell wrapper. It is user-profile bound and
+unit-tested with an injected runner; live Windows release verification remains
+pending. The Linux key backend uses FreeDesktop Secret Service through
+`secret-tool`. It is intended for desktop Linux with a user D-Bus session and
+an unlocked collection, not WSL, containers, or headless servers. Use explicit
 env/file key backends for headless Linux only when the insecure-backend
 acceptance flag is set.
 
@@ -1042,6 +1121,9 @@ checks, and no-go criteria.
 
 ## Command Reference
 
+This section is a compact snapshot. `twelvgaige --help` is authoritative for
+the installed executable.
+
 ```bash
 twelvgaige --help
 twelvgaige version
@@ -1053,22 +1135,43 @@ twelvgaige store restore <source-path> <destination-path> [--replace] [--format 
 twelvgaige store migrate-sqlcipher --source <plaintext.db> --destination <encrypted.db> --key-env <env> [--replace] [--format human|json]
 twelvgaige store rewrap-envelope <envelope.json> --backup <backup.json> --old-key-env <env> --new-key-env <env> [--format human|json]
 
-twelvgaige daemon serve [--transport unix|tcp|npipe] [--runtime-dir <path>] [--endpoint <path>]
-twelvgaige daemon stop [--runtime-dir <path>] [--endpoint <path>]
-twelvgaige daemon paths [--transport unix|tcp|npipe] [--runtime-dir <path>] [--endpoint <path>]
+twelvgaige daemon serve [--transport unix|tcp|npipe] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+twelvgaige daemon stop [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+twelvgaige daemon paths [--transport unix|tcp|npipe] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+twelvgaige daemon token rotate [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+
+twelvgaige session list [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+twelvgaige session show <session-id> [--format human|json]
+twelvgaige session attach <session-id> [--format human|json]
+twelvgaige session takeover <session-id> --expected-epoch <epoch> [--format human|json]
+twelvgaige session revoke <session-id> [--format human|json]
+twelvgaige sandbox health [--format human|json]
+twelvgaige sandbox reconcile [--apply] [--destroy-orphans] [--format human|json]
+twelvgaige operations dashboard [--format human|json]
+twelvgaige operations audit status [--format human|json]
+twelvgaige operations audit checkpoint [--format human|json]
+twelvgaige operations audit export <path> [--format human|json]
+twelvgaige operations store stats [--format human|json]
+twelvgaige operations store backup <path> [--format human|json]
+twelvgaige operations store restore <backup-path> <destination-path> [--format human|json]
+twelvgaige operations retention status [--format human|json]
+twelvgaige operations retention run [--format human|json]
+twelvgaige operations artifact inventory [--format human|json]
+twelvgaige operations artifact rotate [--format human|json]
+twelvgaige operations release check [--format human|json]
 
 twelvgaige shell validate <path> [--format human|json]
-twelvgaige shell new <id> [--scaffold single-shot|inspect-analyze-gate-fix-verify] [--scaffold-path <path>] [--format yaml|json|toml] [--output <path>] [--with-mock-agents] [--write] [--force] [--root <path>]
+twelvgaige shell new <id> [--scaffold single-shot|inspect-analyze-gate-fix-verify] [--scaffold-path <path>] [--format yaml|json|toml] [--output <path>] [--write] [--force] [--root <path>]
 twelvgaige shell scaffold list [--format human|json] [--root <path>] [--scaffold-path <path>]
 twelvgaige shell scaffold show <scaffold-id> [--format human|json] [--root <path>] [--scaffold-path <path>]
 twelvgaige shell scaffold verify [--write-lock] [--lockfile <path>] [--format human|json] [--root <path>] [--scaffold-path <path>]
 twelvgaige shell scaffold update [--write-lock] [--lockfile <path>] [--format human|json] [--root <path>] [--scaffold-path <path>]
 twelvgaige shell scaffold outdated <path> [--format human|json] [--root <path>] [--scaffold-path <path>]
-twelvgaige shell author review <path> [--provider mock|ollama|openai|anthropic|gemini] [--model <model>] [--allow-remote] [--max-input-bytes <bytes>] [--format human|json] [--root <path>]
+twelvgaige shell author review <path> [--provider ollama|openai] [--model <model>] [--allow-remote] [--max-input-bytes <bytes>] [--format human|json] [--root <path>]
 twelvgaige shell patch inspect <patch-file> [--root <path>] [--format human|json]
 twelvgaige shell patch verify <patch-file> [--approval <approval-file>] --root <path> [--format human|json]
 twelvgaige shell patch apply <patch-file> [--approval <approval-file>] --root <path> [--write] [--format human|json]
-twelvgaige shell draft --from <file|-> [--provider mock|ollama|openai|anthropic|gemini] [--model <model>] [--allow-remote] [--max-input-bytes <bytes>] [--format yaml|json|toml] [--output <path> --write] [--force] [--root <path>]
+twelvgaige shell draft --from <file|-> [--provider ollama|openai] [--model <model>] [--allow-remote] [--max-input-bytes <bytes>] [--format yaml|json|toml] [--output <path> --write] [--force] [--root <path>]
 twelvgaige shell normalize <path> [--format json|yaml|toml]
 twelvgaige shell convert <path> --to json|yaml|toml [--output <path>]
 twelvgaige shell fmt <path> [--check|--write] [--format human|json] [--root <path>]

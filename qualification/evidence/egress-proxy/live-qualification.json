@@ -1,0 +1,67 @@
+{
+  "result": "pass",
+  "image": {
+    "reference": "localhost/twelvgaige/egress-proxy:1",
+    "digest": "sha256:061cc11b9b215f5940bec7975430ccf67f15030742df1a92daa36369f4d654a3"
+  },
+  "backends": {
+    "podman": {
+      "result": "pass",
+      "cleanup": "pass",
+      "worker_network": "twelvgaige-egress-921dc00b6d106764e696",
+      "proxy_address": "10.89.0.1",
+      "worker_attestation": {
+        "uid": 65532,
+        "gid": 65532,
+        "network_mode": "broker_only",
+        "environment_names": [
+          "HTTPS_PROXY",
+          "HTTP_PROXY",
+          "NO_PROXY"
+        ],
+        "dropped_capabilities": [
+          "ALL"
+        ],
+        "rootfs_mode": "read_only"
+      },
+      "audit_digest": "sha256:283d4143376e87fb18da0b94e3c36938b60108f8bc78d70630430aaf2ae7790a"
+    },
+    "apple_container": {
+      "result": "pass",
+      "cleanup": "pass",
+      "worker_network": "twelvgaige-egress-0d3218c4a4d483388c26",
+      "proxy_address": "192.168.128.2",
+      "worker_attestation": {
+        "uid": 65532,
+        "gid": 65532,
+        "network_mode": "broker_only",
+        "environment_names": [
+          "HTTPS_PROXY",
+          "HTTP_PROXY",
+          "NO_PROXY"
+        ],
+        "dropped_capabilities": [
+          "ALL"
+        ],
+        "rootfs_mode": "read_only"
+      },
+      "audit_digest": "sha256:3c62efe9895f0d8d2fd9f79829c0b54ffb597bab67a7fa077296d3a6908406f2"
+    }
+  },
+  "schema_version": 1,
+  "generated_at": "2026-08-08T05:59:55.338239Z",
+  "contract": {
+    "per_session_internal_network": "pass",
+    "worker_direct_egress_denied": "pass",
+    "capability_required": "pass",
+    "allowed_destination_connected": "pass",
+    "undeclared_destination_denied": "pass",
+    "private_dns_result_denied": "pass",
+    "dns_address_pinned": "pass",
+    "sidecar_non_root": "pass",
+    "sidecar_read_only_root": "pass",
+    "sidecar_capabilities_dropped": "pass",
+    "sidecar_destroyed_on_revoke": "pass",
+    "capability_absent_from_audit": "pass"
+  }
+}

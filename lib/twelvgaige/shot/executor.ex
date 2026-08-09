@@ -10,9 +10,11 @@ defmodule Twelvgaige.Shot.Executor do
 
   alias Twelvgaige.Error
   alias Twelvgaige.LLM
+  alias Twelvgaige.LLM.Conversation
   alias Twelvgaige.Output.Parser, as: OutputParser
   alias Twelvgaige.Redactor
   alias Twelvgaige.Shot.Attempt
+  alias Twelvgaige.Shot.Result
   alias Twelvgaige.Tool
   alias Twelvgaige.Tool.Call
 
@@ -22,14 +24,11 @@ defmodule Twelvgaige.Shot.Executor do
   @default_tool_output_bytes_per_shot 1024 * 1024
   @default_tool_result_message_bytes 64 * 1024
   @default_message_bytes 2 * 1024 * 1024
+  @test_providers Application.compile_env(:twelvgaige, :test_provider_ids, [])
+  @default_provider if("mock" in @test_providers, do: :mock, else: :ollama)
+  @default_model if("mock" in @test_providers, do: "mock-model", else: "llama3.2")
 
-  @type success :: %{
-          content: String.t(),
-          output: term(),
-          tool_calls: [map()],
-          usage: map(),
-          messages: [map()]
-        }
+  @type success :: Result.t()
 
   @spec run(Attempt.t(), keyword()) :: {:ok, success()} | {:error, Error.t()}
   def run(%Attempt{} = attempt, opts \\ []) do
@@ -47,58 +46,73 @@ defmodule Twelvgaige.Shot.Executor do
       max_iterations_error(attempt, max_iterations)
     else
       with :ok <- ensure_message_budget(attempt, messages, opts),
-           {:ok, response} <- complete(attempt, messages, opts, iteration),
-           :ok <- ensure_token_budget(attempt, response.usage, opts) do
+           :ok <- ensure_budget_remaining(attempt, usage, opts),
+           {:ok, response} <- complete(attempt, messages, opts, iteration, usage) do
         usage = merge_usage(usage, response.usage)
 
-        case response.tool_calls do
-          [] ->
-            with {:ok, output} <- OutputParser.parse(response.content, output_schema(attempt)) do
-              {:ok,
-               %{
-                 content: response.content,
-                 output: output,
-                 tool_calls: tool_results,
-                 usage: usage,
-                 messages: messages
-               }}
-            end
-
-          calls ->
-            with :ok <- ensure_tool_call_budget(tool_results, calls, opts),
-                 {:ok, normalized_calls} <- normalize_tool_calls(calls),
-                 {:ok, call_results} <- execute_tool_calls(normalized_calls, attempt, opts),
-                 :ok <- ensure_tool_output_budget(tool_results, call_results, opts) do
-              next_messages =
-                messages ++
-                  [assistant_message(response)] ++
-                  Enum.map(call_results, &tool_result_message(&1, opts))
-
-              with :ok <- ensure_message_budget(attempt, next_messages, opts) do
-                run_loop(
-                  attempt,
-                  next_messages,
-                  opts,
-                  iteration + 1,
-                  tool_results ++ call_results,
-                  usage
-                )
+        with :ok <- ensure_token_budget(attempt, usage, opts) do
+          case response.tool_calls do
+            [] ->
+              with {:ok, output} <- OutputParser.parse(response.content, output_schema(attempt)) do
+                {:ok,
+                 Result.new(
+                   text: response.content,
+                   output: output,
+                   tool_calls: tool_results,
+                   usage: usage,
+                   messages: messages ++ [Conversation.assistant(response)]
+                 )}
               end
-            end
+
+            calls ->
+              with :ok <- ensure_tool_call_budget(tool_results, calls, opts),
+                   {:ok, normalized_calls} <- normalize_tool_calls(calls),
+                   {:ok, call_results} <- execute_tool_calls(normalized_calls, attempt, opts),
+                   :ok <- ensure_tool_output_budget(tool_results, call_results, opts) do
+                next_messages =
+                  messages ++
+                    [assistant_message(response)] ++
+                    Enum.map(call_results, &tool_result_message(&1, opts))
+
+                with :ok <- ensure_message_budget(attempt, next_messages, opts) do
+                  run_loop(
+                    attempt,
+                    next_messages,
+                    opts,
+                    iteration + 1,
+                    tool_results ++ call_results,
+                    usage
+                  )
+                end
+              end
+          end
         end
       end
     end
   end
 
-  defp complete(attempt, messages, opts, iteration) do
+  defp complete(attempt, messages, opts, iteration, usage) do
     loadout = attempt.loadout || %{}
-    provider = Map.get(loadout, :provider, Map.get(loadout, "provider", :mock))
-    model = Map.get(loadout, :model, Map.get(loadout, "model", "mock-model"))
+    provider = Map.get(loadout, :provider, Map.get(loadout, "provider", @default_provider))
+    model = Map.get(loadout, :model, Map.get(loadout, "model", @default_model))
 
-    LLM.complete(provider, model, messages, llm_opts(opts, attempt, iteration))
+    LLM.complete(provider, model, messages, llm_opts(opts, attempt, iteration, usage))
   end
 
-  defp llm_opts(opts, attempt, iteration) do
+  defp llm_opts(opts, attempt, iteration, usage) do
+    forwarded_opts =
+      Keyword.get(opts, :llm_opts, []) ++
+        Keyword.take(opts, [
+          :api_key,
+          :base_url,
+          :transport,
+          :timeout_ms,
+          :dns_resolver,
+          :allow_remote_provider_url,
+          :allow_insecure_provider_url,
+          :capability_config
+        ])
+
     error_opts =
       opts
       |> Keyword.take([:error, :mock_handler])
@@ -129,7 +143,15 @@ defmodule Twelvgaige.Shot.Executor do
           []
       end
 
-    error_opts ++ limiter_opts ++ response_opts
+    provider_opts =
+      []
+      |> put_option(:tools, tool_schemas(attempt, opts))
+      |> put_option(:response_format, response_format(attempt))
+      |> put_option(:generation_config, generation_config(attempt))
+      |> put_option(:max_tokens, remaining_output_tokens(attempt, usage, opts))
+      |> put_option(:timeout_ms, effective_timeout_ms(attempt, opts, :llm_timeout_ms, 30_000))
+
+    provider_opts ++ response_opts ++ limiter_opts ++ error_opts ++ forwarded_opts
   end
 
   defp normalize_tool_calls(calls) do
@@ -189,7 +211,7 @@ defmodule Twelvgaige.Shot.Executor do
         attempt: attempt.attempt,
         tool_call_id: call.id
       },
-      timeout_ms: Keyword.get(opts, :tool_timeout_ms, 30_000),
+      timeout_ms: effective_timeout_ms(attempt, opts, :tool_timeout_ms, 30_000),
       max_output_bytes: Keyword.get(opts, :tool_max_output_bytes, @default_tool_output_bytes),
       metrics: Keyword.get(opts, :metrics, Twelvgaige.Metrics),
       tool_opts: tool_opts
@@ -237,7 +259,13 @@ defmodule Twelvgaige.Shot.Executor do
     _error -> 0
   end
 
-  defp allowed_tools(%Attempt{definition: %{tools: tools}}) when is_list(tools), do: tools
+  defp allowed_tools(%Attempt{definition: %{tools: tools}} = attempt) when is_list(tools) do
+    case loadout_value(attempt, :tool_policy) do
+      nil -> tools
+      policy -> apply_tool_policy(tools, policy)
+    end
+  end
+
   defp allowed_tools(_attempt), do: []
 
   defp tool_safety(%Attempt{definition: %{choke: %{tool_safety: tool_safety}}}), do: tool_safety
@@ -285,12 +313,8 @@ defmodule Twelvgaige.Shot.Executor do
         "You are running a Twelvgaige shot."
 
     [
-      %{role: "system", content: system_prompt, source: :system},
-      %{
-        role: "user",
-        content: user_content(attempt),
-        source: :round_context
-      }
+      Conversation.message(:system, system_prompt, source: :system),
+      Conversation.message(:user, user_content(attempt), source: :round_context)
     ]
   end
 
@@ -306,22 +330,14 @@ defmodule Twelvgaige.Shot.Executor do
     "#{prompt}\n\nContext:\n#{Jason.encode!(context)}"
   end
 
-  defp assistant_message(response) do
-    %{
-      role: "assistant",
-      content: response.content,
-      source: :round_context
-    }
-  end
+  defp assistant_message(response), do: Conversation.assistant(response)
 
   defp tool_result_message(result, opts) do
-    %{
-      role: "tool",
-      name: result["name"],
-      tool_call_id: result["id"],
-      content: tool_result_content(result["output"], opts),
-      source: :tool_execution
-    }
+    Conversation.tool_result(
+      result["id"],
+      result["name"],
+      tool_result_content(result["output"], opts)
+    )
   end
 
   defp tool_result_content(output, opts) do
@@ -364,13 +380,14 @@ defmodule Twelvgaige.Shot.Executor do
     end
   end
 
-  defp max_iterations(%Attempt{definition: %{choke: %{max_iterations: max_iterations}}}, _opts)
-       when is_integer(max_iterations) and max_iterations > 0 do
-    max_iterations
-  end
-
-  defp max_iterations(_attempt, opts) do
-    Keyword.get(opts, :max_iterations, @default_max_iterations)
+  defp max_iterations(attempt, opts) do
+    [
+      choke_value(attempt, :max_iterations),
+      loadout_choke_value(attempt, :max_iterations),
+      Keyword.get(opts, :max_iterations),
+      @default_max_iterations
+    ]
+    |> effective_positive_limit()
   end
 
   defp max_iterations_error(attempt, max_iterations) do
@@ -456,13 +473,98 @@ defmodule Twelvgaige.Shot.Executor do
   end
 
   defp token_budget(attempt, opts) do
-    opts
-    |> Keyword.get(:token_budget, choke_value(attempt, :token_budget))
-    |> case do
-      value when is_integer(value) and value > 0 -> value
-      _value -> nil
+    [
+      choke_value(attempt, :token_budget),
+      loadout_choke_value(attempt, :token_budget),
+      Keyword.get(opts, :token_budget)
+    ]
+    |> effective_positive_limit(nil)
+  end
+
+  defp remaining_output_tokens(attempt, usage, opts) do
+    case {token_budget(attempt, opts), total_tokens(usage)} do
+      {nil, _used} -> nil
+      {budget, nil} -> budget
+      {budget, used} -> max(budget - used, 0)
     end
   end
+
+  defp ensure_budget_remaining(attempt, usage, opts) do
+    case {token_budget(attempt, opts), total_tokens(usage)} do
+      {nil, _used} ->
+        :ok
+
+      {_budget, nil} ->
+        :ok
+
+      {budget, used} when used < budget ->
+        :ok
+
+      {budget, used} ->
+        {:error,
+         Error.new(:llm_error, :llm_context_too_large, "LLM token budget exhausted",
+           retryable: false,
+           details: %{token_budget: budget, total_tokens: used}
+         )}
+    end
+  end
+
+  defp tool_schemas(attempt, opts) do
+    catalog = Keyword.get(opts, :tool_catalog, Twelvgaige.Tool.Catalog)
+
+    attempt
+    |> allowed_tools()
+    |> Enum.flat_map(fn name ->
+      case catalog.metadata(name) do
+        {:ok, metadata} ->
+          [
+            %{
+              name: metadata.name,
+              description: metadata.description,
+              input_schema: metadata.input_schema
+            }
+          ]
+
+        {:error, _error} ->
+          []
+      end
+    end)
+  end
+
+  defp response_format(attempt) do
+    case output_schema(attempt) do
+      nil ->
+        nil
+
+      schema ->
+        %{
+          "type" => "json_schema",
+          "json_schema" => %{
+            "name" => attempt.shot_id,
+            "strict" => true,
+            "schema" => native_schema(schema)
+          }
+        }
+    end
+  end
+
+  defp generation_config(attempt) do
+    case output_schema(attempt) do
+      nil ->
+        nil
+
+      schema ->
+        %{"responseMimeType" => "application/json", "responseSchema" => native_schema(schema)}
+    end
+  end
+
+  defp native_schema(%Twelvgaige.Shell.Schema{root: root}), do: root
+  defp native_schema(%{__struct__: _module} = schema), do: Map.from_struct(schema)
+  defp native_schema(schema), do: schema
+
+  defp put_option(opts, _key, nil), do: opts
+  defp put_option(opts, _key, []), do: opts
+  defp put_option(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp messages_byte_size(messages) do
     messages
@@ -483,4 +585,48 @@ defmodule Twelvgaige.Shot.Executor do
   end
 
   defp choke_value(_attempt, _key), do: nil
+
+  defp loadout_choke_value(attempt, key) do
+    case loadout_value(attempt, :choke) do
+      %{} = choke -> Map.get(choke, key, Map.get(choke, Atom.to_string(key)))
+      _other -> nil
+    end
+  end
+
+  defp loadout_value(%Attempt{loadout: %{} = loadout}, key) do
+    Map.get(loadout, key, Map.get(loadout, Atom.to_string(key)))
+  end
+
+  defp loadout_value(_attempt, _key), do: nil
+
+  defp apply_tool_policy(tools, policy) do
+    allowed = policy_value(policy, :allowed, []) |> Enum.map(&to_string/1) |> MapSet.new()
+    denied = policy_value(policy, :denied, []) |> Enum.map(&to_string/1) |> MapSet.new()
+
+    Enum.filter(tools, fn tool ->
+      not MapSet.member?(denied, tool) and MapSet.member?(allowed, tool)
+    end)
+  end
+
+  defp policy_value(%{} = policy, key, default) do
+    Map.get(policy, key, Map.get(policy, Atom.to_string(key), default))
+  end
+
+  defp policy_value(_policy, _key, default), do: default
+
+  defp effective_timeout_ms(attempt, opts, option, default) do
+    [
+      Map.get(attempt.definition, :timeout_ms),
+      loadout_choke_value(attempt, :timeout_ms),
+      Keyword.get(opts, option)
+    ]
+    |> effective_positive_limit(default)
+  end
+
+  defp effective_positive_limit(values, default \\ @default_max_iterations) do
+    case Enum.filter(values, &(is_integer(&1) and &1 > 0)) do
+      [] -> default
+      limits -> Enum.min(limits)
+    end
+  end
 end

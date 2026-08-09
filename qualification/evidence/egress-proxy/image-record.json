@@ -1,0 +1,33 @@
+{
+  "evidence": {
+    "image_inspect_digest": "sha256:7e713a9ba151a5285903bf9348c0af820003de948f2af6749a90ba9074f0e5f6",
+    "oci_archive_digest": "sha256:ccc7045531c2eeacf0d7109cb58f02a66ac51bacd39e4822da6c5292ab77a58f",
+    "sbom_digest": "sha256:15ad69e626d3f556fd8bd8f327f9e663dd507153c0898b06d155e2de4b633a5d",
+    "vulnerability_digest": "sha256:7b5124ab290f2b1e16e4a8e165eaae5034e28e076f575c04f6abcbe06dd3dcb6"
+  },
+  "generated_at": "2026-08-08T06:00:05Z",
+  "image": {
+    "architecture": "linux/arm64",
+    "digest": "sha256:061cc11b9b215f5940bec7975430ccf67f15030742df1a92daa36369f4d654a3",
+    "reference": "localhost/twelvgaige/egress-proxy:1"
+  },
+  "provenance": {
+    "build_network": "none",
+    "builder": "podman",
+    "containerfile_digest": "sha256:c70a3551cebbb5990f21359fff6f1ded0bafe44de02647be7b792a16ae44a2a7",
+    "repository_dirty": true,
+    "repository_revision": "04b7c730d1ae0fe0888a4197d77d5085006af709",
+    "source_digest": "sha256:c6a635e1849185687083873911002a03fd05ee424a04de9647229efec6b6bdb3"
+  },
+  "schema_version": 1,
+  "security": {
+    "capabilities": "drop_all",
+    "findings": {
+      "critical": 0,
+      "high": 0
+    },
+    "network_role": "dual_homed_policy_gateway",
+    "rootfs": "read_only_at_runtime",
+    "runs_as": "65532:65532"
+  }
+}

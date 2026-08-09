@@ -21,7 +21,9 @@ defmodule Twelvgaige.LoadoutTest do
     assert Loadout.for_shot(shot, agents: [agent]) == %{
              provider: "mock",
              model: "agent-model",
-             system_prompt: "Agent prompt"
+             system_prompt: "Agent prompt",
+             choke: agent.choke,
+             tool_policy: agent.tools
            }
   end
 

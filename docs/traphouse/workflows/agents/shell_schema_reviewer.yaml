@@ -2,8 +2,8 @@ kind: agent
 id: shell_schema_reviewer
 name: Shell Schema Reviewer
 version: 1.0.0
-provider: mock
-model: mock-model
+provider: ollama
+model: llama3.2
 system_prompt: Review normalized shell documents and schema consistency.
 tools:
   allowed: [shell_normalize, shell_diff]

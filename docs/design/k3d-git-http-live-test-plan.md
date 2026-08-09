@@ -1,5 +1,8 @@
 # K3D Git And HTTP Live Test Plan
 
+Status: implemented record. The current commands and CI policy are documented
+in [`../ci.md`](../ci.md).
+
 ## Goal
 
 Expand the k3d live suite so it validates real Git and HTTP tool behavior through

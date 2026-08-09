@@ -1,0 +1,47 @@
+{
+  "artifacts": {
+    "events": {
+      "digest": "sha256:9d5642b948401108b7f48d20edf8c34e0f11473226ca5079bcb142a6cff7b66d",
+      "path": "artifacts/qualification/apple-container/codex-provider-20260808T051531Z-82226.jsonl"
+    },
+    "patch": {
+      "digest": "sha256:7b8002b235cc3698b7f1444c5fdf2850858fe83c9b0cdc352ed31de9f98e5089",
+      "path": "artifacts/qualification/apple-container/codex-provider-20260808T051531Z-82226.patch"
+    }
+  },
+  "auth": {
+    "destroyed_after_run": true,
+    "guest_storage": "tmpfs",
+    "persisted_in_workspace": false,
+    "profile": "interactive_local_user_login_ephemeral_tmpfs",
+    "secret_value_scan": "pass",
+    "unattended_supported_profile": "brokered_service_only"
+  },
+  "fixture": {
+    "exact_content_verified": true,
+    "expected_file": "codex-qualified.txt",
+    "git_diff_recorded": true,
+    "workspace": "/Users/pbsladek/Library/Application Support/Twelvgaige/workspaces/apple-codex-provider-20260808T051531Z-82226"
+  },
+  "generated_at": "2026-08-08T05:15:58Z",
+  "image": {
+    "digest": "sha256:c3edda97f103f9db0d61d0873589f4e08c093dae04030adc0c6b90deabc105c4",
+    "reference": "localhost/twelvgaige/worker:codex-0.146.0"
+  },
+  "result": "pass",
+  "sandbox": {
+    "capabilities": "drop_all",
+    "codex_approval_mode": "automatic_inside_exact_outer_boundary",
+    "control_channels": "not exposed",
+    "gid": 65532,
+    "inner": "disabled_for_externally_sandboxed_worker",
+    "inner_disable_reason": "the compatibility fixture makes the attested outer VM authoritative and does not add an unqualified nested sandbox",
+    "network": "explicit_unrestricted_qualification_flag",
+    "no_new_privileges": "not exposed or claimed",
+    "outer": "apple_container_vm_authoritative",
+    "rootfs": "read_only",
+    "uid": 65532,
+    "unified_exec": "disabled in this compatibility fixture pending separate PTY-path qualification"
+  },
+  "schema_version": 1
+}

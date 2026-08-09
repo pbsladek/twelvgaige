@@ -1,4 +1,10 @@
 defmodule Twelvgaige.Round.Runner do
+  @allow_test_agent_fallback Application.compile_env(
+                               :twelvgaige,
+                               :allow_test_agent_fallback,
+                               false
+                             )
+
   @moduledoc """
   Foreground Phase 1 round runner.
 
@@ -13,6 +19,7 @@ defmodule Twelvgaige.Round.Runner do
   alias Twelvgaige.ResourceLimiter
   alias Twelvgaige.RuntimeProfile
   alias Twelvgaige.Round.InputValidator
+  alias Twelvgaige.Round.Server
   alias Twelvgaige.Round.Snapshot
   alias Twelvgaige.Round.State, as: RoundState
   alias Twelvgaige.Shell.Workflow
@@ -25,6 +32,11 @@ defmodule Twelvgaige.Round.Runner do
 
   @spec run(Workflow.t(), map(), keyword()) :: {:ok, Snapshot.t()} | {:error, Error.t()}
   def run(%Workflow{} = workflow, input, opts \\ []) when is_map(input) do
+    Server.run_sync(workflow, input, durable_scheduler_opts(opts))
+  end
+
+  @doc false
+  def legacy_run(%Workflow{} = workflow, input, opts \\ []) when is_map(input) do
     started_mono = monotonic_ms()
 
     result =
@@ -61,6 +73,12 @@ defmodule Twelvgaige.Round.Runner do
   @spec recover(Workflow.t(), Snapshot.t(), keyword()) ::
           {:ok, Snapshot.t()} | {:error, Error.t()}
   def recover(%Workflow{} = workflow, %Snapshot{} = snapshot, opts \\ []) when is_list(opts) do
+    Server.resume_sync(workflow, snapshot, durable_scheduler_opts(opts))
+  end
+
+  @doc false
+  def legacy_recover(%Workflow{} = workflow, %Snapshot{} = snapshot, opts \\ [])
+      when is_list(opts) do
     with {:ok, profile} <- RuntimeProfile.from_snapshot(snapshot, opts),
          {:ok, compiled} <- Compiler.compile(workflow, compiler_opts(opts)),
          {:ok, state} <- resumable_state(snapshot, compiled) do
@@ -73,17 +91,18 @@ defmodule Twelvgaige.Round.Runner do
           {:ok, Snapshot.t()} | {:error, Error.t()}
   def approve_safety(%Workflow{} = workflow, %Snapshot{} = snapshot, shot_id, opts \\ [])
       when is_binary(shot_id) and is_list(opts) do
-    resume_safety(workflow, snapshot, shot_id, :approved, opts)
+    Server.approve_safety_sync(workflow, snapshot, shot_id, durable_scheduler_opts(opts))
   end
 
   @spec reject_safety(Workflow.t(), Snapshot.t(), String.t(), keyword()) ::
           {:ok, Snapshot.t()} | {:error, Error.t()}
   def reject_safety(%Workflow{} = workflow, %Snapshot{} = snapshot, shot_id, opts \\ [])
       when is_binary(shot_id) and is_list(opts) do
-    resume_safety(workflow, snapshot, shot_id, :rejected, opts)
+    Server.reject_safety_sync(workflow, snapshot, shot_id, durable_scheduler_opts(opts))
   end
 
-  defp resume_safety(workflow, snapshot, shot_id, decision, opts) do
+  @doc false
+  def legacy_resume_safety(workflow, snapshot, shot_id, decision, opts) do
     with {:ok, profile} <- RuntimeProfile.from_snapshot(snapshot, opts),
          {:ok, compiled} <- Compiler.compile(workflow, compiler_opts(opts)),
          {:ok, request} <- awaiting_safety_request(snapshot, shot_id),
@@ -360,7 +379,7 @@ defmodule Twelvgaige.Round.Runner do
     started_mono = monotonic_ms()
 
     result =
-      ShotExecutor.run(
+      run_executor_with_timeout(
         attempt_input,
         shot_executor_opts(opts, attempt, Map.get(state.policy, :resource_profile))
       )
@@ -461,6 +480,10 @@ defmodule Twelvgaige.Round.Runner do
 
   defp wait_for_shot_permit(limiter, context, %ResourceLimiter.Waiter{} = waiter) do
     receive do
+      {:resource_granted, waiter_id, %ResourceLimiter.Permit{} = permit}
+      when waiter_id == waiter.id ->
+        {:ok, permit}
+
       {:resource_available, waiter_id, resource_kind}
       when waiter_id == waiter.id and resource_kind == waiter.resource_kind ->
         acquire_shot_permit(limiter, context)
@@ -986,13 +1009,71 @@ defmodule Twelvgaige.Round.Runner do
   end
 
   defp compiler_opts(opts) do
-    Keyword.take(opts, [
-      :agents,
-      :agent_ids,
-      :known_tools,
-      :tool_catalog,
-      :validate_tools?,
-      :allow_unsafe_tools_without_safety?
-    ])
+    compiler_opts =
+      Keyword.take(opts, [
+        :agents,
+        :agent_ids,
+        :known_tools,
+        :tool_catalog,
+        :validate_tools?,
+        :allow_unsafe_tools_without_safety?
+      ])
+
+    if allow_test_agent_fallback?(opts) do
+      compiler_opts
+    else
+      Keyword.put_new(compiler_opts, :agent_ids, [])
+    end
+  end
+
+  defp allow_test_agent_fallback?(opts),
+    do: Keyword.get(opts, :allow_test_agent_fallback?, @allow_test_agent_fallback)
+
+  defp durable_scheduler_opts(opts) do
+    opts
+    |> Keyword.put(:scheduler?, true)
+    |> Keyword.put_new(:supervised?, false)
+    |> Keyword.put_new(:stop_after_await?, true)
+  end
+
+  defp run_executor_with_timeout(%Attempt{} = attempt, opts) do
+    case attempt_timeout_ms(attempt) do
+      nil ->
+        ShotExecutor.run(attempt, opts)
+
+      timeout_ms ->
+        task = Task.async(fn -> ShotExecutor.run(attempt, opts) end)
+
+        case Task.yield(task, timeout_ms) || Task.shutdown(task, :brutal_kill) do
+          {:ok, result} ->
+            result
+
+          _timeout ->
+            {:error,
+             Error.new(:timeout_error, :shot_timeout, "shot execution timed out",
+               retryable: true,
+               details: %{
+                 round_id: attempt.round_id,
+                 shot_id: attempt.shot_id,
+                 attempt: attempt.attempt,
+                 timeout_ms: timeout_ms
+               }
+             )}
+        end
+    end
+  end
+
+  defp attempt_timeout_ms(%Attempt{} = attempt) do
+    definition_timeout = Map.get(attempt.definition, :timeout_ms)
+    loadout = attempt.loadout || %{}
+    choke = Map.get(loadout, :choke, Map.get(loadout, "choke", %{})) || %{}
+    agent_timeout = Map.get(choke, :timeout_ms, Map.get(choke, "timeout_ms"))
+
+    [definition_timeout, agent_timeout]
+    |> Enum.filter(&(is_integer(&1) and &1 > 0))
+    |> case do
+      [] -> nil
+      limits -> Enum.min(limits)
+    end
   end
 end

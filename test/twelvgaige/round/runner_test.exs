@@ -36,6 +36,18 @@ defmodule Twelvgaige.Round.RunnerTest do
     assert Enum.all?(snapshot.shots, &(&1.status == :complete))
   end
 
+  test "fails closed for a missing agent when the test fallback is disabled" do
+    assert {:error, error} =
+             Runner.run(workflow(), %{},
+               round_id: "round_missing_agent",
+               allow_test_agent_fallback?: false
+             )
+
+    assert error.reason == :unknown_agent
+    assert error.details.agent == "agent"
+    assert error.details.known_agents == []
+  end
+
   test "records the effective resource profile on foreground snapshots" do
     assert {:ok, snapshot} =
              Runner.run(workflow(), %{},
