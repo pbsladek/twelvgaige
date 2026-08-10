@@ -60,10 +60,13 @@ defmodule Twelvgaige.Operations.SessionControl do
     do: call(opts, {:authorize, lease, session_id, capability, opts})
 
   def revoke(session_id, opts \\ []), do: call(opts, {:revoke, session_id, opts})
+  def reserve_retry(session_id, opts \\ []), do: call(opts, {:reserve_retry, session_id, opts})
+  def release_retry(session_id, opts \\ []), do: call(opts, {:release_retry, session_id, opts})
   def backend_health(opts \\ []), do: call(opts, {:backend_health, opts}, 60_000)
   def reconcile(opts \\ []), do: call(opts, {:reconcile, opts}, 120_000)
   def store(server \\ __MODULE__), do: GenServer.call(server, :store)
   def artifact_store(server \\ __MODULE__), do: GenServer.call(server, :artifact_store)
+  def workspace_root(server \\ __MODULE__), do: GenServer.call(server, :workspace_root)
 
   def append_event(session_id, event, opts \\ []),
     do: call(opts, {:append_event, session_id, event, opts})
@@ -164,6 +167,7 @@ defmodule Twelvgaige.Operations.SessionControl do
 
   def handle_call(:store, _from, state), do: {:reply, state.store, state}
   def handle_call(:artifact_store, _from, state), do: {:reply, state.artifact_store, state}
+  def handle_call(:workspace_root, _from, state), do: {:reply, state.workspace_root, state}
 
   def handle_call({:update, session_id, attrs, opts}, _from, state) do
     reply =
@@ -244,6 +248,8 @@ defmodule Twelvgaige.Operations.SessionControl do
           records
           |> Enum.map(& &1.value)
           |> Enum.sort_by(&{value(&1, :occurred_at), value(&1, :seq, 0)})
+          |> Enum.filter(&(value(&1, :seq, 0) > Keyword.get(opts, :after_seq, -1)))
+          |> Enum.take(Keyword.get(opts, :limit, 500))
 
         {:ok, events}
       end
@@ -341,6 +347,58 @@ defmodule Twelvgaige.Operations.SessionControl do
            :ok <- apply_session_retention(revoked, state) do
         audit(state, :session_revoked, session_id, %{cancel_result: inspect(cancel_result)})
         {:ok, public_session(revoked)}
+      end
+
+    {:reply, reply, state}
+  end
+
+  def handle_call({:reserve_retry, session_id, opts}, _from, state) do
+    repair? = Keyword.get(opts, :repair?, false)
+    max_retries = Keyword.get(opts, :max_retries, 3)
+
+    reply =
+      with :ok <- authorize_local_user(state, opts),
+           {:ok, session} <- fetch_session(state, session_id),
+           :ok <- retryable(session, repair?, max_retries),
+           updated <-
+             session
+             |> Map.update(:retry_count, 1, &(&1 + 1))
+             |> Map.update(:repair_attempts, if(repair?, do: 1, else: 0), fn count ->
+               if repair?, do: count + 1, else: count
+             end)
+             |> Map.put(:updated_at, Keyword.get(opts, :now, state.now_fun.())),
+           :ok <-
+             Store.put(:session, session_id, updated,
+               server: state.store,
+               retention_class: :raw,
+               now: updated.updated_at
+             ) do
+        {:ok, updated}
+      end
+
+    {:reply, reply, state}
+  end
+
+  def handle_call({:release_retry, session_id, opts}, _from, state) do
+    repair? = Keyword.get(opts, :repair?, false)
+
+    reply =
+      with :ok <- authorize_local_user(state, opts),
+           {:ok, session} <- fetch_session(state, session_id),
+           updated <-
+             session
+             |> Map.update(:retry_count, 0, &max(&1 - 1, 0))
+             |> Map.update(:repair_attempts, 0, fn count ->
+               if repair?, do: max(count - 1, 0), else: count
+             end)
+             |> Map.put(:updated_at, Keyword.get(opts, :now, state.now_fun.())),
+           :ok <-
+             Store.put(:session, session_id, updated,
+               server: state.store,
+               retention_class: :raw,
+               now: updated.updated_at
+             ) do
+        {:ok, updated}
       end
 
     {:reply, reply, state}
@@ -719,6 +777,14 @@ defmodule Twelvgaige.Operations.SessionControl do
       budgets: value(session, :budgets, %{}),
       usage: value(session, :last_usage, value(session, :usage, %{})),
       nested_agents: value(session, :nested_agents, []),
+      start_request: value(session, :start_request),
+      retry_of_session_id: value(session, :retry_of_session_id),
+      retry_mode: value(session, :retry_mode),
+      retry_count: value(session, :retry_count, 0),
+      repair_attempts: value(session, :repair_attempts, 0),
+      error: value(session, :error),
+      exit_reason: value(session, :exit_reason),
+      result: value(session, :result),
       artifact_refs: value(session, :artifact_refs, []),
       deadline: value(session, :deadline),
       controller_pid: value(session, :controller_pid),
@@ -860,6 +926,28 @@ defmodule Twelvgaige.Operations.SessionControl do
   defp exact_epoch(_session, _expected), do: {:error, :session_control_epoch_conflict}
   defp ensure_not_revoked(%{status: :revoked}), do: {:error, :session_revoked}
   defp ensure_not_revoked(_session), do: :ok
+
+  defp retryable(session, repair?, max) do
+    cond do
+      session.status == :revoked ->
+        {:error, :session_revoked}
+
+      session.status in @active_statuses ->
+        {:error, :session_retry_requires_terminal_session}
+
+      repair? and Map.get(session, :repair_attempts, 0) >= 1 ->
+        {:error, :session_repair_already_attempted}
+
+      not repair? and Map.get(session, :retry_count, 0) >= max ->
+        {:error, :session_retry_limit_reached}
+
+      not is_map(Map.get(session, :start_request)) ->
+        {:error, :session_retry_request_unavailable}
+
+      true ->
+        :ok
+    end
+  end
 
   defp normalize_cancel(value) when value in [:ok, :already_stopped], do: :ok
   defp normalize_cancel({:error, reason}), do: {:error, reason}

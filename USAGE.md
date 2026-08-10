@@ -785,9 +785,41 @@ The session commands start, list, inspect, attach to, take over, or revoke
 sessions created through the delegated-session manager and integration API.
 The manager path is available as a standalone `session start` CLI command.
 
+Initialize a repository once instead of repeating authority flags for every
+task:
+
+```bash
+twelvgaige init --auth-profile codex-service
+twelvgaige doctor
+```
+
+`init` writes `.twelvgaige/config.yaml` and an example YAML task. The project
+file contains profile references and policy, never credential values. User
+defaults can live in `$XDG_CONFIG_HOME/twelvgaige/config.yaml` (normally
+`~/.config/twelvgaige/config.yaml`). Project values override user values, task
+files override the selected profile, and explicit CLI flags win over both.
+
+`doctor` checks the project profile, Codex executable, and selected sandbox.
+Use `doctor --fix` to create missing project files and run sandbox onboarding.
+That flag authorizes local configuration changes and may create or start the
+dedicated container backend; it cannot invent or repair authentication.
+
+Validate a task and preview the compiled authority without contacting the
+daemon or reserving work:
+
+```bash
+twelvgaige task validate .twelvgaige/tasks/example.yaml
+twelvgaige session plan --task-file .twelvgaige/tasks/example.yaml
+```
+
+`task validate` resolves the profile, task file, and CLI overrides. `session
+plan` also resolves the Git base commit and compiles the exact manager envelope,
+but doesn't create a session, workspace, credential lease, or sandbox.
+
 ```bash
 twelvgaige session start \
   --task "Fix the failing tests and return a verified patch" \
+  --profile local-dev \
   --auth-profile codex-service \
   --repo . \
   --sandbox podman \
@@ -834,6 +866,30 @@ worker. The command returns stable plan, child, and session IDs immediately and
 fails closed if the manager, auth profile, sandbox, or pinned runtime is not
 available. `--unrestricted-network` is the explicit opt-in for unrestricted
 egress; the default is broker-only.
+
+Add `--follow` when the calling terminal should wait for the durable terminal
+state. The same event-backed view is available later, and review never applies
+or merges the result:
+
+```bash
+twelvgaige session start --task-file task.yaml --profile local-dev --follow
+twelvgaige session watch <session-id>
+twelvgaige session review <session-id>
+```
+
+If a terminal session needs another attempt, retry it under the original
+repository, sandbox, network, path, credential-profile, timeout, and budget
+boundary:
+
+```bash
+twelvgaige session retry <session-id>
+twelvgaige session retry <session-id> --repair
+```
+
+Normal retries are capped at three. A repair adds the prior failure to the
+objective and is capped at one attempt. The reservation is durable and atomic,
+so concurrent callers cannot bypass those limits. Neither command expands
+authority, merges a commit, or applies an artifact automatically.
 
 `sandbox reconcile` is a dry run unless
 `--apply` is supplied; destroying orphaned sandboxes also requires

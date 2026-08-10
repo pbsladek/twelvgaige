@@ -4,12 +4,17 @@ defmodule Twelvgaige.CLI.Dispatcher do
   alias Twelvgaige.CLI.Commands.Audit, as: AuditCommand
   alias Twelvgaige.CLI.Commands.Crypto, as: CryptoCommand
   alias Twelvgaige.CLI.Commands.Daemon, as: DaemonCommand
+  alias Twelvgaige.CLI.Commands.Developer, as: DeveloperCommand
   alias Twelvgaige.CLI.Commands.Operations, as: OperationsCommand
   alias Twelvgaige.CLI.Commands.Round, as: RoundCommand
   alias Twelvgaige.CLI.Commands.RoundControl, as: RoundControlCommand
   alias Twelvgaige.CLI.Commands.SandboxSetup, as: SandboxSetupCommand
   alias Twelvgaige.CLI.Commands.ScaffoldLibrary, as: ScaffoldLibraryCommand
   alias Twelvgaige.CLI.Commands.SessionStart, as: SessionStartCommand
+  alias Twelvgaige.CLI.Commands.SessionPlan, as: SessionPlanCommand
+  alias Twelvgaige.CLI.Commands.SessionFollow, as: SessionFollowCommand
+  alias Twelvgaige.CLI.Commands.SessionReview, as: SessionReviewCommand
+  alias Twelvgaige.CLI.Commands.SessionRetry, as: SessionRetryCommand
   alias Twelvgaige.CLI.Commands.ShellAuthor, as: ShellAuthorCommand
   alias Twelvgaige.CLI.Commands.ShellBulk, as: ShellBulkCommand
   alias Twelvgaige.CLI.Commands.ShellCache, as: ShellCacheCommand
@@ -22,6 +27,7 @@ defmodule Twelvgaige.CLI.Dispatcher do
   alias Twelvgaige.CLI.Commands.ShotRefactor, as: ShotRefactorCommand
   alias Twelvgaige.CLI.Commands.Status, as: StatusCommand
   alias Twelvgaige.CLI.Commands.Store, as: StoreCommand
+  alias Twelvgaige.CLI.Commands.TaskValidate, as: TaskValidateCommand
   alias Twelvgaige.CLI.Usage
 
   def dispatch(["daemon", "serve" | args]), do: DaemonCommand.serve(args)
@@ -39,6 +45,8 @@ defmodule Twelvgaige.CLI.Dispatcher do
   def run(["--help"]), do: {:ok, Usage.text(), 0}
   def run(["-h"]), do: {:ok, Usage.text(), 0}
   def run(["version"]), do: {:ok, Twelvgaige.version() <> "\n", 0}
+  def run(["init" | args]), do: DeveloperCommand.init(args)
+  def run(["doctor" | args]), do: DeveloperCommand.doctor(args)
   def run(["status"]), do: StatusCommand.run(format: :human)
   def run(["status", "--format", format]), do: StatusCommand.run(format: parse_format(format))
   def run(["crypto", "status"]), do: CryptoCommand.status(format: :human)
@@ -61,6 +69,16 @@ defmodule Twelvgaige.CLI.Dispatcher do
   def run(["daemon", "stop" | args]), do: DaemonCommand.stop(args)
   def run(["daemon", "token", "rotate" | args]), do: OperationsCommand.rotate_token(args)
   def run(["session", "start" | args]), do: SessionStartCommand.run(args)
+  def run(["session", "plan" | args]), do: SessionPlanCommand.run(args)
+  def run(["session", "watch", session_id | args]), do: SessionFollowCommand.run(session_id, args)
+
+  def run(["session", "review", session_id | args]),
+    do: SessionReviewCommand.run(session_id, args)
+
+  def run(["session", "retry", session_id | args]),
+    do: SessionRetryCommand.run(session_id, args)
+
+  def run(["task", "validate", path | args]), do: TaskValidateCommand.run(path, args)
   def run(["session", "list" | args]), do: OperationsCommand.session_list(args)
 
   def run(["session", "show", session_id | args]),

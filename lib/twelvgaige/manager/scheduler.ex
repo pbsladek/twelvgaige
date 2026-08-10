@@ -54,6 +54,9 @@ defmodule Twelvgaige.Manager.Scheduler do
   def status(plan_id, opts \\ []),
     do: GenServer.call(Keyword.get(opts, :server, __MODULE__), {:status, plan_id})
 
+  def review(plan_id, opts \\ []),
+    do: GenServer.call(Keyword.get(opts, :server, __MODULE__), {:review, plan_id})
+
   def child(child_id, opts \\ []),
     do: GenServer.call(Keyword.get(opts, :server, __MODULE__), {:child, child_id})
 
@@ -124,6 +127,10 @@ defmodule Twelvgaige.Manager.Scheduler do
 
   def handle_call({:status, plan_id}, _from, state) do
     {:reply, status_view(plan_id, state), state}
+  end
+
+  def handle_call({:review, plan_id}, _from, state) do
+    {:reply, review_view(plan_id, state), state}
   end
 
   def handle_call({:child, child_id}, _from, state),
@@ -908,6 +915,50 @@ defmodule Twelvgaige.Manager.Scheduler do
        }}
     end
   end
+
+  defp review_view(plan_id, state) do
+    with {:ok, plan} <- store(state, :get_plan, [plan_id]),
+         {:ok, children} <- store(state, :list_children, [plan_id]),
+         {:ok, events} <- store(state, :list_events, [plan_id]) do
+      {:ok,
+       json_safe(%{
+         plan_id: plan.id,
+         status: plan.status,
+         error: plan.error,
+         repair_attempts: plan.repair_attempts,
+         budget: %{reserved: plan.reserved_budget, used: plan.usage},
+         children:
+           Enum.map(children, fn child ->
+             Map.take(child, [
+               :id,
+               :task_id,
+               :attempt,
+               :status,
+               :principal,
+               :workspace_id,
+               :handoff,
+               :verification,
+               :usage,
+               :error,
+               :started_at,
+               :finished_at
+             ])
+           end),
+         events: events,
+         mutates_state: false
+       })}
+    end
+  end
+
+  defp json_safe(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp json_safe(%_{} = value), do: value |> Map.from_struct() |> json_safe()
+
+  defp json_safe(value) when is_map(value),
+    do: Map.new(value, fn {key, item} -> {key, json_safe(item)} end)
+
+  defp json_safe(value) when is_list(value), do: Enum.map(value, &json_safe/1)
+  defp json_safe(value) when is_tuple(value), do: inspect(value)
+  defp json_safe(value), do: value
 
   defp update_plan(state, plan, attrs),
     do: store(state, :update_plan, [plan.id, plan.version, attrs])

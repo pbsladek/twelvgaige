@@ -29,17 +29,10 @@ defmodule Twelvgaige.Manager.SessionStart do
   def start(attrs, opts \\ [])
 
   def start(attrs, opts) when is_map(attrs) do
-    with {:ok, request} <- normalize(attrs, opts),
-         {:ok, identity} <- local_identity(opts),
-         :ok <- validate_repository(request, opts),
-         {:ok, plan} <- build_plan(request, identity, opts),
-         {:ok, envelope} <- exact_envelope(plan),
-         {:ok, compiled} <-
-           Compiler.compile(plan,
-             parent_envelope: envelope,
-             catalog: exact_catalog(plan)
-           ),
-         identities <- identities(compiled),
+    with {:ok, prepared} <- prepare(attrs, opts),
+         request = prepared.request,
+         compiled = prepared.compiled,
+         identities = prepared.identities,
          :ok <- reserve_inventory(compiled, request, identities, opts),
          {:ok, plan_id, submission} <- submit_or_fail_inventory(compiled, identities, opts) do
       {:ok,
@@ -65,6 +58,70 @@ defmodule Twelvgaige.Manager.SessionStart do
   end
 
   def start(_attrs, _opts), do: {:error, input_error(:session_start_request_invalid)}
+
+  @doc "Compiles an exact-authority plan without reserving inventory or submitting work."
+  @spec plan(map(), keyword()) :: {:ok, map()} | {:error, Error.t()}
+  def plan(attrs, opts \\ [])
+
+  def plan(attrs, opts) when is_map(attrs) do
+    with {:ok, prepared} <- prepare(attrs, opts) do
+      request = prepared.request
+      compiled = prepared.compiled
+
+      {:ok,
+       %{
+         status: :planned,
+         mutates_state: false,
+         plan_id: compiled.plan.id,
+         child_id: prepared.identities.child_id,
+         session_id: prepared.identities.session_id,
+         approval_status: compiled.approval_status,
+         runtime: request.runtime,
+         objective: request.objective,
+         repository: request.repository,
+         base_ref: request.base_ref,
+         base_commit: prepared.base_commit,
+         auth_profile: request.auth_profile,
+         sandbox: request.sandbox,
+         sandbox_profile: request.sandbox_profile,
+         network: Atom.to_string(request.network_mode),
+         allowed_paths: request.allowed_paths,
+         write: request.write?,
+         capabilities: capabilities(request),
+         deadline: DateTime.to_iso8601(request.deadline),
+         budget: request.budget,
+         warnings: [
+           "runtime authentication and sandbox health are checked when the session starts"
+         ]
+       }}
+    else
+      {:error, %Error{} = error} -> {:error, error}
+      {:error, reason} -> {:error, internal_error(reason)}
+    end
+  end
+
+  def plan(_attrs, _opts), do: {:error, input_error(:session_start_request_invalid)}
+
+  defp prepare(attrs, opts) do
+    with {:ok, request} <- normalize(attrs, opts),
+         {:ok, identity} <- local_identity(opts),
+         {:ok, base_commit} <- validate_repository(request, opts),
+         {:ok, plan} <- build_plan(request, identity, opts),
+         {:ok, envelope} <- exact_envelope(plan),
+         {:ok, compiled} <-
+           Compiler.compile(plan,
+             parent_envelope: envelope,
+             catalog: exact_catalog(plan)
+           ) do
+      {:ok,
+       %{
+         request: request,
+         base_commit: base_commit,
+         compiled: compiled,
+         identities: identities(compiled)
+       }}
+    end
+  end
 
   defp normalize(attrs, opts) do
     runtime = value(attrs, "runtime", @runtime)
@@ -156,7 +213,7 @@ defmodule Twelvgaige.Manager.SessionStart do
 
       true ->
         case resolver.(request.repository, request.base_ref, []) do
-          {:ok, _commit} -> :ok
+          {:ok, commit} -> {:ok, commit}
           {:error, reason} -> {:error, input_error({:session_base_ref_invalid, reason})}
         end
     end
@@ -293,7 +350,10 @@ defmodule Twelvgaige.Manager.SessionStart do
           capabilities: capabilities(request),
           budgets: request.budget,
           deadline: request.deadline,
-          created_at: compiled.plan.created_at
+          created_at: compiled.plan.created_at,
+          start_request: request_to_map(request),
+          retry_of_session_id: Keyword.get(opts, :retry_of_session_id),
+          retry_mode: Keyword.get(opts, :retry_mode)
         }
 
         case register.(record, server: server) do
@@ -334,6 +394,23 @@ defmodule Twelvgaige.Manager.SessionStart do
 
   defp capabilities(%{write?: true}), do: ["filesystem.write"]
   defp capabilities(_request), do: []
+
+  defp request_to_map(request) do
+    %{
+      "runtime" => request.runtime,
+      "repository" => request.repository,
+      "base_ref" => request.base_ref,
+      "task" => request.objective,
+      "auth_profile" => request.auth_profile,
+      "sandbox" => request.sandbox,
+      "network" => request.network_mode |> Atom.to_string() |> String.replace("_", "-"),
+      "allow_unrestricted_network" => request.network_mode == :unrestricted,
+      "allowed_paths" => request.allowed_paths,
+      "write" => request.write?,
+      "timeout_ms" => request.timeout_ms,
+      "budget" => request.budget
+    }
+  end
 
   defp input_error(reason) do
     Error.new(:input_error, :invalid_shell, "invalid session start request",

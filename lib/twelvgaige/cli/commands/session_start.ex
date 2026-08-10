@@ -3,7 +3,9 @@ defmodule Twelvgaige.CLI.Commands.SessionStart do
 
   alias Twelvgaige.Breech.IPC.{Client, Endpoint}
   alias Twelvgaige.CLI.{CommandHelpers, ExitCode}
+  alias Twelvgaige.CLI.Commands.SessionFollow
   alias Twelvgaige.CLI.SessionTaskFile
+  alias Twelvgaige.Developer.Config
 
   @default_budget %{
     tokens: 80_000,
@@ -13,13 +15,23 @@ defmodule Twelvgaige.CLI.Commands.SessionStart do
   }
 
   def run(args, deps \\ []) do
-    with {:ok, opts} <- parse_opts(args),
+    with {:ok, opts} <- resolve(args, deps),
          {:ok, endpoint} <- discover(opts),
-         {:ok, result} <- start(endpoint, opts, deps) do
+         {:ok, result} <- start(endpoint, opts, deps),
+         {:ok, result} <- maybe_follow(endpoint, result, opts, deps) do
       {:ok, format(result, opts[:format]), 0}
     else
       :none -> error(:daemon_unavailable, error_format(args))
       {:error, reason} -> error(reason, error_format(args))
+    end
+  end
+
+  @doc "Resolves defaults, a developer profile, a task file, and explicit CLI overrides."
+  def resolve(args, deps \\ []) when is_list(args) do
+    with {:ok, opts} <- parse_opts(args),
+         {:ok, opts} <- apply_profile(opts, deps),
+         {:ok, opts} <- apply_task_file(opts) do
+      validate(opts)
     end
   end
 
@@ -32,7 +44,8 @@ defmodule Twelvgaige.CLI.Commands.SessionStart do
     )
   end
 
-  defp request(opts) do
+  @doc false
+  def request(opts) do
     %{
       "runtime" => opts[:runtime],
       "repository" => Path.expand(opts[:repository]),
@@ -45,6 +58,7 @@ defmodule Twelvgaige.CLI.Commands.SessionStart do
       "allowed_paths" => opts[:allowed_paths],
       "write" => opts[:write?],
       "timeout_ms" => opts[:timeout_ms],
+      "profile" => opts[:resolved_profile],
       "budget" => %{
         "tokens" => opts[:budget_tokens],
         "cost_micros" => opts[:budget_cost_micros],
@@ -62,6 +76,8 @@ defmodule Twelvgaige.CLI.Commands.SessionStart do
       base_ref: "HEAD",
       task: nil,
       task_file: nil,
+      profile: nil,
+      resolved_profile: nil,
       auth_profile: System.get_env("TWELVGAIGE_CODEX_AUTH_PROFILE"),
       sandbox: "podman",
       network: "broker-only",
@@ -74,13 +90,26 @@ defmodule Twelvgaige.CLI.Commands.SessionStart do
       budget_cost_micros: @default_budget.cost_micros,
       budget_tool_calls: @default_budget.tool_calls,
       ipc_timeout_ms: 30_000,
+      follow?: false,
+      follow_timeout_ms: 3_600_000,
+      poll_ms: 1_000,
       explicit: MapSet.new()
     )
   end
 
-  defp parse_opts([], opts) do
-    with {:ok, opts} <- apply_task_file(opts), do: validate(opts)
-  end
+  defp parse_opts([], opts), do: {:ok, opts}
+
+  defp parse_opts(["--profile", value | rest], opts),
+    do: parse_opts(rest, Keyword.put(opts, :profile, value))
+
+  defp parse_opts(["--follow" | rest], opts),
+    do: parse_opts(rest, Keyword.put(opts, :follow?, true))
+
+  defp parse_opts(["--follow-timeout-ms", value | rest], opts),
+    do: parse_positive(rest, opts, :follow_timeout_ms, value)
+
+  defp parse_opts(["--poll-ms", value | rest], opts),
+    do: parse_positive(rest, opts, :poll_ms, value)
 
   defp parse_opts(["--format", value | rest], opts),
     do: parse_opts(rest, Keyword.put(opts, :format, CommandHelpers.parse_format(value)))
@@ -194,6 +223,25 @@ defmodule Twelvgaige.CLI.Commands.SessionStart do
     end
   end
 
+  defp parse_positive(rest, opts, key, value) do
+    case Integer.parse(value) do
+      {number, ""} when number > 0 -> parse_opts(rest, Keyword.put(opts, key, number))
+      _other -> {:error, {:invalid_positive_integer, key}}
+    end
+  end
+
+  defp maybe_follow(endpoint, result, opts, deps) do
+    if opts[:follow?] do
+      follow_fun = Keyword.get(deps, :follow_fun, &SessionFollow.follow/4)
+
+      with {:ok, follow} <- follow_fun.(endpoint, value(result, "session_id"), opts, deps) do
+        {:ok, Map.put(result, "follow", follow)}
+      end
+    else
+      {:ok, result}
+    end
+  end
+
   defp apply_task_file(opts) do
     case opts[:task_file] do
       nil ->
@@ -210,6 +258,22 @@ defmodule Twelvgaige.CLI.Commands.SessionStart do
 
           {:ok, merged}
         end
+    end
+  end
+
+  defp apply_profile(opts, deps) do
+    config_opts = Keyword.get(deps, :config_opts, [])
+    resolver = Keyword.get(deps, :profile_resolver, &Config.resolve_profile/2)
+
+    with {:ok, profile} <- resolver.(opts[:profile], config_opts) do
+      explicit = opts[:explicit]
+
+      merged =
+        Enum.reduce(profile.values, opts, fn {key, value}, acc ->
+          if MapSet.member?(explicit, key), do: acc, else: Keyword.put(acc, key, value)
+        end)
+
+      {:ok, Keyword.put(merged, :resolved_profile, profile.name)}
     end
   end
 
@@ -233,6 +297,8 @@ defmodule Twelvgaige.CLI.Commands.SessionStart do
   defp format(result, :json), do: CommandHelpers.encode_line(result)
 
   defp format(result, :human) do
+    follow = value(result, "follow", nil)
+
     """
     Session accepted: #{value(result, "session_id")}
     Plan: #{value(result, "plan_id")}
@@ -240,6 +306,7 @@ defmodule Twelvgaige.CLI.Commands.SessionStart do
     Status: #{value(result, "status")}
     Sandbox: #{value(result, "sandbox")}
     Repository: #{value(result, "repository")}
+    #{if(follow, do: "Final status: #{value(follow, "status")} (#{length(value(follow, "events", []))} events)", else: "")}
     """
   end
 
@@ -249,5 +316,6 @@ defmodule Twelvgaige.CLI.Commands.SessionStart do
   defp error_format(args), do: if("json" in args, do: :json, else: :human)
   defp blank?(value), do: not is_binary(value) or String.trim(value) == ""
 
-  defp value(map, key), do: Map.get(map, key, Map.get(map, String.to_existing_atom(key)))
+  defp value(map, key, default \\ nil),
+    do: Map.get(map, key, Map.get(map, String.to_existing_atom(key), default))
 end

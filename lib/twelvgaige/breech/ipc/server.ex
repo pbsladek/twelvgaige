@@ -37,6 +37,8 @@ defmodule Twelvgaige.Breech.IPC.Server do
     :operations,
     :manager_scheduler,
     :session_start_fun,
+    :session_review_fun,
+    :session_retry_fun,
     :provider_limiter,
     :scheduler,
     :retention,
@@ -119,6 +121,10 @@ defmodule Twelvgaige.Breech.IPC.Server do
           Keyword.get(opts, :manager_scheduler, Process.whereis(Twelvgaige.Manager.Scheduler)),
         session_start_fun:
           Keyword.get(opts, :session_start_fun, &Twelvgaige.Manager.SessionStart.start/2),
+        session_review_fun:
+          Keyword.get(opts, :session_review_fun, &Twelvgaige.Manager.Scheduler.review/2),
+        session_retry_fun:
+          Keyword.get(opts, :session_retry_fun, &Twelvgaige.Manager.SessionRetry.retry/3),
         provider_limiter:
           Keyword.get(
             opts,
@@ -499,6 +505,57 @@ defmodule Twelvgaige.Breech.IPC.Server do
          {:ok, session} <-
            Twelvgaige.Operations.SessionControl.get(body["session_id"], server: operations) do
       Protocol.ok(request, Map.drop(session, [:controller_pid, :credential_lease_id]))
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "session.events", "body" => body} = request, state, _server) do
+    with true <- is_integer(body["after_seq"] || -1),
+         true <- is_integer(body["limit"] || 500) and (body["limit"] || 500) in 1..5_000,
+         {:ok, operations} <- require_operations(state),
+         {:ok, events} <-
+           Twelvgaige.Operations.SessionControl.list_events(body["session_id"],
+             server: operations,
+             after_seq: body["after_seq"] || -1,
+             limit: body["limit"] || 500
+           ) do
+      Protocol.ok(request, events)
+    else
+      false -> Protocol.error(request, :invalid_ipc_request)
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "session.review", "body" => body} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state),
+         {:ok, session} <-
+           Twelvgaige.Operations.SessionControl.get(body["session_id"], server: operations),
+         {:ok, events} <-
+           Twelvgaige.Operations.SessionControl.list_events(body["session_id"],
+             server: operations
+           ),
+         {:ok, manager} <-
+           state.session_review_fun.(session.plan_id, server: state.manager_scheduler) do
+      Protocol.ok(request, %{
+        session: Map.drop(session, [:controller_pid, :credential_lease_id, :egress_lease_id]),
+        manager: manager,
+        events: events,
+        mutates_state: false
+      })
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "session.retry", "body" => body} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state),
+         {:ok, result} <-
+           state.session_retry_fun.(body["session_id"], body,
+             server: state.manager_scheduler,
+             session_control: operations
+           ) do
+      Protocol.ok(request, result)
     else
       {:error, reason} -> Protocol.error(request, reason)
     end

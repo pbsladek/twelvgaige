@@ -44,6 +44,25 @@ The test strategy distinguishes broad regression coverage from boundary-specific
 
 Codex App Server tests exercise real JSON-RPC framing, strict schema validation, approvals, exact resume identity, malformed and late frames, overload, recovery drift, budget enforcement, and cleanup. Persistence and restart suites assert the durable transition journal rather than only final state.
 
+### Developer workflow completed on 2026-08-09
+
+The single-user CLI now exposes the control-plane contracts as one developer
+workflow instead of requiring callers to assemble low-level commands:
+
+- `init` writes a secret-free project profile and example task; `doctor --fix`
+  performs explicitly authorized project and sandbox repairs.
+- User and project developer profiles resolve below task-file values and
+  explicit CLI flags. They select authority defaults, not ambient credentials.
+- `task validate` checks the resolved task request, while `session plan`
+  resolves the Git commit and compiles the exact envelope without durable or
+  external effects.
+- `session start --follow` and `session watch` consume durable session events.
+  `session review` returns session state, manager children, handoffs,
+  verification, usage, failures, and events without applying work.
+- `session retry` reuses the stored start request. Normal retries are capped;
+  `--repair` is single-attempt, failure-informed, and cannot expand the original
+  authority boundary.
+
 ## Executive decision
 
 Twelvgaige should become the control plane for two complementary forms of agent execution:

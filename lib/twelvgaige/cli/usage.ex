@@ -7,6 +7,8 @@ defmodule Twelvgaige.CLI.Usage do
   Usage:
     twelvgaige --help
     twelvgaige version
+    twelvgaige init [--profile <name>] [--auth-profile <id>] [--sandbox podman|apple-container] [--root <path>] [--force] [--format human|json]
+    twelvgaige doctor [--profile <name>] [--root <path>] [--fix] [--format human|json]
     twelvgaige status [--format human|json]
     twelvgaige crypto status [--format human|json]
     twelvgaige crypto sqlcipher-spike [--path <path>] [--key-env <env>] [--format human|json]
@@ -19,7 +21,12 @@ defmodule Twelvgaige.CLI.Usage do
     twelvgaige daemon stop [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
     twelvgaige daemon paths [--transport unix|tcp|npipe] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
     twelvgaige daemon token rotate [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
-    twelvgaige session start (--task <text>|--task-file <task.md|task.yaml>) [--auth-profile <id>] [--runtime codex] [--repo <path>] [--base-ref <ref>] [--sandbox podman|apple-container] [--network none|broker-only|unrestricted] [--unrestricted-network] [--allow-path <relative-path>] [--read-only] [--timeout <duration>] [--budget-tokens <count>] [--budget-cost-micros <count>] [--budget-tool-calls <count>] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+    twelvgaige session start (--task <text>|--task-file <task.md|task.yaml>) [--profile <name>] [--auth-profile <id>] [--runtime codex] [--repo <path>] [--base-ref <ref>] [--sandbox podman|apple-container] [--network none|broker-only|unrestricted] [--unrestricted-network] [--allow-path <relative-path>] [--read-only] [--timeout <duration>] [--budget-tokens <count>] [--budget-cost-micros <count>] [--budget-tool-calls <count>] [--follow] [--follow-timeout-ms <ms>] [--poll-ms <ms>] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+    twelvgaige session plan (--task <text>|--task-file <task.md|task.yaml>) [--profile <name>] [session authority options] [--format human|json]
+    twelvgaige task validate <task.md|task.yaml> [--profile <name>] [session authority options] [--format human|json]
+    twelvgaige session watch <session-id> [--poll-ms <ms>] [--timeout-ms <ms>] [--format human|json]
+    twelvgaige session review <session-id> [--format human|json]
+    twelvgaige session retry <session-id> [--repair] [--format human|json]
     twelvgaige session list [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
     twelvgaige session show <session-id> [--format human|json]
     twelvgaige session attach <session-id> [--format human|json]

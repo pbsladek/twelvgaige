@@ -6,6 +6,7 @@ defmodule Twelvgaige.Breech.IPCTest do
   alias Twelvgaige.Breech.IPC.Protocol
   alias Twelvgaige.Breech.IPC.Server
   alias Twelvgaige.Breech.Lock
+  alias Twelvgaige.Operations.{SessionControl, Store}
 
   @token "test-token"
   @workflow_path "test/fixtures/shells/simple_workflow.yaml"
@@ -165,6 +166,85 @@ defmodule Twelvgaige.Breech.IPCTest do
             }} = Client.start_session(address, attrs, token: @token)
 
     assert_receive {:session_start, ^attrs, :configured_manager}
+  end
+
+  test "streams session events, reviews handoffs, and requests bounded repair over IPC" do
+    root =
+      Path.join(System.tmp_dir!(), "twelvgaige-session-ipc-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(root)
+    on_exit(fn -> File.rm_rf!(root) end)
+    store = start_supervised!({Store, name: nil, path: Path.join(root, "operations.sqlite3")})
+
+    operations =
+      start_supervised!(
+        {SessionControl, name: nil, store: store, workspace_root: Path.join(root, "workspaces")}
+      )
+
+    assert {:ok, _session} =
+             SessionControl.register(
+               %{
+                 id: "sess_lifecycle",
+                 plan_id: "plan_lifecycle",
+                 status: :completed,
+                 runtime: :codex,
+                 start_request: %{"task" => "Fix it"},
+                 credential_lease_id: "must-not-leak",
+                 created_at: ~U[2026-08-09 00:00:00Z]
+               },
+               server: operations
+             )
+
+    assert {:ok, _event} =
+             SessionControl.append_event(
+               "sess_lifecycle",
+               %{id: "event_one", seq: 1, type: :turn_completed, payload: %{ok: true}},
+               server: operations
+             )
+
+    parent = self()
+
+    review = fn "plan_lifecycle", opts ->
+      send(parent, {:review_server, opts[:server]})
+      {:ok, %{status: :completed, children: [%{handoff: %{summary: "done"}}]}}
+    end
+
+    retry = fn "sess_lifecycle", attrs, opts ->
+      send(parent, {:retry_server, attrs, opts[:server], opts[:session_control]})
+
+      {:ok,
+       %{session_id: "sess_repair", retry_of_session_id: "sess_lifecycle", retry_mode: :repair}}
+    end
+
+    server =
+      start_supervised!(
+        {Server,
+         port: 0,
+         token: @token,
+         operations: operations,
+         manager_scheduler: :manager,
+         session_review_fun: review,
+         session_retry_fun: retry},
+        id: :session_lifecycle_ipc_server
+      )
+
+    address = {:tcp, {127, 0, 0, 1}, Server.port(server)}
+
+    assert {:ok, [%{"seq" => 1, "type" => "turn_completed"}]} =
+             Client.list_session_events(address, "sess_lifecycle",
+               token: @token,
+               after_seq: 0
+             )
+
+    assert {:ok, reviewed} = Client.review_session(address, "sess_lifecycle", token: @token)
+    assert reviewed["mutates_state"] == false
+    refute Map.has_key?(reviewed["session"], "credential_lease_id")
+    assert_receive {:review_server, :manager}
+
+    assert {:ok, %{"session_id" => "sess_repair", "retry_mode" => "repair"}} =
+             Client.retry_session(address, "sess_lifecycle", token: @token, repair?: true)
+
+    assert_receive {:retry_server, %{"repair" => true}, :manager, ^operations}
   end
 
   test "rejects missing or invalid bearer token", %{address: address} do

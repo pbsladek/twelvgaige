@@ -14,7 +14,8 @@ defmodule Twelvgaige.CLI.ExitCode do
     :tool_timeout,
     :safety_timeout,
     :shot_timeout,
-    :resource_queue_timeout
+    :resource_queue_timeout,
+    :session_follow_timeout
   ]
 
   @not_found_reasons [:definition_not_found, :unknown_agent, :unknown_tool]

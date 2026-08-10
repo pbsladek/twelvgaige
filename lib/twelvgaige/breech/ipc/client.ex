@@ -53,6 +53,27 @@ defmodule Twelvgaige.Breech.IPC.Client do
   def get_session(address, session_id, opts \\ []),
     do: call(address, "session.show", %{"session_id" => session_id}, opts)
 
+  def list_session_events(address, session_id, opts \\ []) do
+    body =
+      %{"session_id" => session_id}
+      |> maybe_put("after_seq", Keyword.get(opts, :after_seq))
+      |> maybe_put("limit", Keyword.get(opts, :limit))
+
+    call(address, "session.events", body, opts)
+  end
+
+  def review_session(address, session_id, opts \\ []),
+    do: call(address, "session.review", %{"session_id" => session_id}, opts)
+
+  def retry_session(address, session_id, opts \\ []) do
+    call(
+      address,
+      "session.retry",
+      %{"session_id" => session_id, "repair" => Keyword.get(opts, :repair?, false)},
+      opts
+    )
+  end
+
   def attach_session(address, session_id, opts \\ []),
     do: call(address, "session.attach", %{"session_id" => session_id}, opts)
 

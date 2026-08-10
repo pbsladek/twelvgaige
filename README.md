@@ -138,6 +138,22 @@ from the source checkout is `twelvgaige sandbox setup --backend podman`.
 Backend options and the separate qualification gates are in
 [Usage](USAGE.md#single-user-operations-plane).
 
+For a delegated coding project, create a checked-in local profile and example
+task, check the host, and inspect the exact authority before starting work:
+
+```bash
+./twelvgaige init --auth-profile codex-service
+./twelvgaige doctor
+./twelvgaige task validate .twelvgaige/tasks/example.yaml
+./twelvgaige session plan --task-file .twelvgaige/tasks/example.yaml
+./twelvgaige session start --task-file .twelvgaige/tasks/example.yaml --follow
+```
+
+`doctor --fix` creates missing project configuration and sets up the selected
+sandbox. It doesn't create credentials. See the
+[single-user operations guide](USAGE.md#single-user-operations-plane) for
+profiles, review, and bounded retry commands.
+
 This uses the per-user application-data directory, the platform credential
 store for the operations master key, 30-day raw/artifact retention, and 90-day
 security/audit retention. Override the data directory with

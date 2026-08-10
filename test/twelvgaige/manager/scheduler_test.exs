@@ -48,6 +48,25 @@ defmodule Twelvgaige.Manager.SchedulerTest do
     end)
   end
 
+  test "review returns JSON-safe handoffs, usage, and events without mutation" do
+    store = start_store()
+    scheduler = start_scheduler(store, fn child -> success(child) end, [])
+    plan = compiled("review-plan", [task("review-child")])
+
+    assert {:ok, "review-plan", :submitted} = Scheduler.submit(plan, server: scheduler)
+
+    assert_eventually(fn ->
+      match?({:ok, %{status: :completed}}, Scheduler.status("review-plan", server: scheduler))
+    end)
+
+    assert {:ok, review} = Scheduler.review("review-plan", server: scheduler)
+    assert review.mutates_state == false
+    assert review.status == :completed
+    assert [%{handoff: %{summary: _summary}, usage: usage}] = review.children
+    assert is_map(usage)
+    assert is_binary(Jason.encode!(review))
+  end
+
   test "applies bounded queue backpressure before persisting children" do
     store = start_store()
     scheduler = start_scheduler(store, fn child -> success(child) end, max_queue_children: 2)

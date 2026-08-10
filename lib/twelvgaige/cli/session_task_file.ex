@@ -46,8 +46,17 @@ defmodule Twelvgaige.CLI.SessionTaskFile do
   end
 
   defp parse_yaml(path, contents) do
-    with {:ok, document} <- YAML.parse(contents, path),
-         :ok <- known_fields(document, @top_level_fields, :session_task_file_unknown_fields),
+    with {:ok, document} <- YAML.parse(contents, path) do
+      normalize_yaml(document, path)
+    else
+      {:error, %Twelvgaige.Error{} = error} ->
+        {:error, {:session_task_file_yaml_invalid, error.message}}
+    end
+  end
+
+  @doc false
+  def normalize_yaml(document, path) when is_map(document) and is_binary(path) do
+    with :ok <- known_fields(document, @top_level_fields, :session_task_file_unknown_fields),
          :ok <- version(document),
          {:ok, objective} <- one_alias(document, "task", "objective"),
          {:ok, repository} <- one_alias(document, "repository", "repo"),
@@ -55,14 +64,10 @@ defmodule Twelvgaige.CLI.SessionTaskFile do
          {:ok, budget} <- budget(Map.get(document, "budget")),
          {:ok, values} <- yaml_values(document, objective, repository, timeout_ms, budget, path) do
       {:ok, values}
-    else
-      {:error, %Twelvgaige.Error{} = error} ->
-        {:error, {:session_task_file_yaml_invalid, error.message}}
-
-      {:error, reason} ->
-        {:error, reason}
     end
   end
+
+  def normalize_yaml(_document, _path), do: {:error, :session_task_file_yaml_invalid}
 
   defp yaml_values(document, objective, repository, timeout_ms, budget, path) do
     values =
