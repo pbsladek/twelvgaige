@@ -31,6 +31,7 @@ TWELVGAIGE_PODMAN_CPUS ?= 4
 TWELVGAIGE_PODMAN_MEMORY_MIB ?= 6144
 TWELVGAIGE_PODMAN_DISK_GIB ?= 64
 TWELVGAIGE_WORKER_IMAGE ?= localhost/twelvgaige/worker:codex-0.146.0
+TWELVGAIGE_SANDBOX_BACKEND ?= podman
 
 $(shell mkdir -p "$(ERL_CRASH_DUMP_DIR)")
 
@@ -84,6 +85,8 @@ help:
 	@printf "%s\n" "  make setup             Fetch dependencies"
 	@printf "%s\n" "  make doctor            Check local toolchain prerequisites"
 	@printf "%s\n" "  make doctor-live       Check opt-in live E2E prerequisites"
+	@printf "%s\n" "  make sandbox-setup     Create and verify the selected sandbox and pinned worker"
+	@printf "%s\n" "  make sandbox-check     Read-only health check for the selected sandbox"
 	@printf "%s\n" "  make podman-machine-plan"
 	@printf "%s\n" "                         Show the dedicated macOS Podman VM configuration"
 	@printf "%s\n" "  make podman-machine-create"
@@ -181,6 +184,23 @@ doctor:
 
 doctor-live:
 	TWELVGAIGE_DOCTOR_LIVE=1 K3D_LIVE="$(K3D_LIVE)" PROVIDER_LIVE="$(PROVIDER_LIVE)" PROVIDER_LIVE_PROVIDERS="$(PROVIDER_LIVE_PROVIDERS)" SQLCIPHER_PREFIX="$(SQLCIPHER_PREFIX)" KEYCHAIN_LIVE="$(KEYCHAIN_LIVE)" elixir scripts/doctor.exs --live
+
+.PHONY: sandbox-setup sandbox-check
+sandbox-setup:
+	@MIX_ENV=dev mix run -e 'Twelvgaige.CLI.Dispatcher.dispatch(System.argv())' -- \
+		sandbox setup --backend "$(TWELVGAIGE_SANDBOX_BACKEND)" \
+		--data-root "$(TWELVGAIGE_DATA_ROOT)" \
+		--machine "$(TWELVGAIGE_PODMAN_MACHINE)" \
+		--cpus "$(TWELVGAIGE_PODMAN_CPUS)" \
+		--memory-mib "$(TWELVGAIGE_PODMAN_MEMORY_MIB)" \
+		--disk-gib "$(TWELVGAIGE_PODMAN_DISK_GIB)" \
+		--worker-image "$(TWELVGAIGE_WORKER_IMAGE)"
+
+sandbox-check:
+	@MIX_ENV=dev mix run -e 'Twelvgaige.CLI.Dispatcher.dispatch(System.argv())' -- \
+		sandbox setup --check --backend "$(TWELVGAIGE_SANDBOX_BACKEND)" \
+		--data-root "$(TWELVGAIGE_DATA_ROOT)" \
+		--machine "$(TWELVGAIGE_PODMAN_MACHINE)"
 
 .PHONY: podman-machine-plan podman-machine-create podman-machine-health
 podman-machine-plan:

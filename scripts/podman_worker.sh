@@ -228,6 +228,16 @@ show_status() {
   fi
 }
 
+export_oci() {
+  require podman
+  digest=$(image_digest 2>/dev/null || true)
+  [ -n "$digest" ] || die "Worker image is not built"
+  mkdir -p "$artifact_dir"
+  oci_archive="${artifact_dir}/worker.oci.tar"
+  podman save --format oci-archive --output "$oci_archive" "$image_reference@$digest"
+  printf '%s\n' "$oci_archive"
+}
+
 case "$command_name" in
   build)
     build_image
@@ -242,7 +252,10 @@ case "$command_name" in
   status)
     show_status
     ;;
+  export-oci)
+    export_oci
+    ;;
   *)
-    die "Usage: $0 build|supply-chain|qualify-image|status"
+    die "Usage: $0 build|supply-chain|qualify-image|export-oci|status"
     ;;
 esac

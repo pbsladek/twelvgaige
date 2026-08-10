@@ -696,6 +696,8 @@ defmodule Twelvgaige.Operations.SessionControl do
 
     %{
       id: required(session, :id),
+      plan_id: value(session, :plan_id),
+      child_id: value(session, :child_id),
       owner_uid: owner_uid,
       status: value(session, :status, :preparing),
       runtime: value(session, :runtime),
@@ -706,6 +708,7 @@ defmodule Twelvgaige.Operations.SessionControl do
       base_commit: value(session, :base_commit),
       head_commit: value(session, :head_commit),
       sandbox_backend: value(session, :sandbox_backend),
+      sandbox_profile: value(session, :sandbox_profile),
       sandbox_resource_id: value(session, :sandbox_resource_id),
       sandbox_manifest: value(session, :sandbox_manifest),
       sandbox_manifest_digest: value(session, :sandbox_manifest_digest),

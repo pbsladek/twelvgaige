@@ -52,6 +52,27 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
     end
   end
 
+  @doc "Starts the signed Apple container service during explicit onboarding."
+  def system_start(opts \\ []), do: command(["system", "start"], opts)
+
+  @doc "Leaves an already-running signed service alone, otherwise starts it explicitly."
+  def ensure_system_started(opts \\ []) do
+    case probe(opts) do
+      {:ok, _health} ->
+        {:ok, "already running"}
+
+      {:error, {:apple_container_unavailable, :apple_container_service_not_running}} ->
+        system_start(opts)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc "Loads an OCI archive through the signed Apple container CLI."
+  def load_image(archive, opts \\ []) when is_binary(archive),
+    do: command(["image", "load", "--input", Path.expand(archive)], opts)
+
   @impl true
   def prepare(spec, opts) do
     with :ok <- exact_memory_limit(value(spec, :limits)) do

@@ -14,9 +14,13 @@ The project is pre-release and currently targets a single trusted OS user on one
 machine. Workflow agents can use local Ollama models or the OpenAI API. The
 optional unattended operations plane supplies durable control, credentials,
 sandbox inventory, retention, and audit for delegated Codex sessions in
-isolated containers. Delegated-session creation is currently an embedded
-manager/integration API rather than a `session start` CLI command. Twelvgaige is
+isolated containers. Delegated-session creation is available through both the
+manager/integration API and the `session start` CLI command. Twelvgaige is
 not a multi-user or distributed service.
+
+`session start` accepts an inline objective, a Markdown task document, or a
+closed-schema YAML task request. Explicit command-line options override values
+from a task file.
 
 ## Why
 
@@ -128,9 +132,11 @@ export TWELVGAIGE_PODMAN_MACHINE=twelvgaige
 ./twelvgaige daemon serve
 ```
 
-On a new macOS development host, create and verify the dedicated Podman machine
-and build the pinned worker image first. The exact commands and qualification
-distinction are in [Usage](USAGE.md#single-user-operations-plane).
+On a new macOS development host, `make sandbox-setup` creates and verifies the
+dedicated Podman machine and builds the pinned worker image. The equivalent CLI
+from the source checkout is `twelvgaige sandbox setup --backend podman`.
+Backend options and the separate qualification gates are in
+[Usage](USAGE.md#single-user-operations-plane).
 
 This uses the per-user application-data directory, the platform credential
 store for the operations master key, 30-day raw/artifact retention, and 90-day

@@ -121,6 +121,52 @@ defmodule Twelvgaige.Breech.IPCTest do
     assert status["profile"] == "laptop"
   end
 
+  test "starts a governed session over IPC and preserves the request boundary" do
+    parent = self()
+
+    starter = fn body, opts ->
+      send(parent, {:session_start, body, opts[:server]})
+
+      {:ok,
+       %{
+         plan_id: "mgr_ipc",
+         child_id: "child_ipc",
+         session_id: "sess_ipc",
+         status: :submitted
+       }}
+    end
+
+    server =
+      start_supervised!(
+        {Server,
+         port: 0,
+         token: @token,
+         session_start_fun: starter,
+         manager_scheduler: :configured_manager},
+        id: :session_start_ipc_server
+      )
+
+    address = {:tcp, {127, 0, 0, 1}, Server.port(server)}
+
+    attrs = %{
+      "runtime" => "codex",
+      "repository" => "/tmp/repository",
+      "task" => "Fix the failing test",
+      "auth_profile" => "codex-service",
+      "sandbox" => "podman"
+    }
+
+    assert {:ok,
+            %{
+              "plan_id" => "mgr_ipc",
+              "child_id" => "child_ipc",
+              "session_id" => "sess_ipc",
+              "status" => "submitted"
+            }} = Client.start_session(address, attrs, token: @token)
+
+    assert_receive {:session_start, ^attrs, :configured_manager}
+  end
+
   test "rejects missing or invalid bearer token", %{address: address} do
     assert {:error, error} = Client.status(address, token: "wrong")
 

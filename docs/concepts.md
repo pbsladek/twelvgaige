@@ -153,8 +153,9 @@ coding task to Codex. The delegated runtime manages its own context, tools, and
 native subagents inside an outer Podman or Apple container boundary. Twelvgaige
 retains authority over admission, workspace isolation, credentials, network
 access, budgets, approvals, cancellation, recovery, and result verification.
-The current CLI manages registered sessions but does not provide a standalone
-`session start` command.
+The CLI manages registered sessions and provides a standalone `session start`
+command, which compiles one exact-authority manager plan and
+returns its stable plan, child, and delegated-session identities immediately.
 
 Delegated sessions complement provider-native shots; they do not silently
 replace them or act as a fallback. Podman is the default backend. Apple

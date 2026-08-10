@@ -728,15 +728,20 @@ host before use. OTP supervises sessions and container processes, but the
 selected container backend supplies the filesystem, process, credential, and
 network isolation boundary.
 
-The checked-in Podman machine helper is for macOS. After installing Podman,
-prepare a new development host with:
+The checked-in sandbox onboarding is for macOS. After installing Podman,
+prepare and verify a new development host in one command:
 
 ```bash
-make podman-machine-plan
-make podman-machine-create
-make podman-machine-health
-make podman-worker-build
+make sandbox-setup
+# equivalent while running from the source checkout:
+twelvgaige sandbox setup --backend podman
 ```
+
+The command is idempotent: it leaves an existing dedicated machine's resource
+configuration unchanged, starts it when necessary, builds the pinned worker,
+and verifies the actual mount and backend contract. Use `sandbox setup --check`
+for a read-only health check. Add `--qualify-image` when onboarding should also
+produce signed supply-chain and vulnerability evidence.
 
 The machine uses the dedicated `twelvgaige` name by default, with 4 CPUs, 6 GiB
 of memory, a 64 GiB virtual disk, rootless operation, and one narrow mount for
@@ -748,16 +753,20 @@ an existing machine unchanged; the health target verifies the actual mount and
 connection contract.
 
 Image build proves local execution. Supply-chain and live security
-qualification are separate, more expensive gates:
+qualification remain separate, more expensive gates:
 
 ```bash
 make podman-worker-qualify-image
 make podman-live-qualify
 ```
 
-Apple-container admission remains explicit. Probe and qualify it with
-`make apple-container-health` and `make apple-container-live-qualify` only on a
-host where Apple's container CLI and the qualified worker image are available.
+Apple-container admission remains explicit. On a supported host, run
+`make sandbox-setup TWELVGAIGE_SANDBOX_BACKEND=apple-container` or
+`twelvgaige sandbox setup --backend apple-container` from the source checkout.
+The command verifies the
+signed CLI, starts its service, builds and exports the pinned OCI worker through
+the dedicated Podman builder, imports it, and verifies backend health. Run
+`make apple-container-live-qualify` for the separate live security gate.
 The complete two-backend, egress, and operations evidence matrix is evaluated
 by `make release-qualification`; it is a release gate, not a first-run setup
 command.
@@ -772,9 +781,61 @@ twelvgaige operations retention status
 twelvgaige operations release check
 ```
 
-The session commands list, inspect, attach to, take over, or revoke sessions
-created through the delegated-session manager and integration API. There is no
-standalone `session start` CLI command. `sandbox reconcile` is a dry run unless
+The session commands start, list, inspect, attach to, take over, or revoke
+sessions created through the delegated-session manager and integration API.
+The manager path is available as a standalone `session start` CLI command.
+
+```bash
+twelvgaige session start \
+  --task "Fix the failing tests and return a verified patch" \
+  --auth-profile codex-service \
+  --repo . \
+  --sandbox podman \
+  --budget-tokens 80000
+```
+
+The task can also come from Markdown:
+
+```bash
+twelvgaige session start \
+  --task-file task.md \
+  --auth-profile codex-service
+```
+
+Markdown is passed as the complete objective. A YAML task file can define the
+structured request:
+
+```yaml
+version: 1
+task: Fix the failing tests and return a verified patch.
+repository: .
+base_ref: main
+auth_profile: codex-service
+sandbox: podman
+network: broker-only
+allowed_paths: [lib, test]
+write: true
+timeout: 45m
+budget:
+  tokens: 80000
+  cost_micros: 25000000
+  time_ms: 2700000
+  tool_calls: 1000
+```
+
+YAML repository paths are relative to the task file. Explicit CLI flags
+override file values, including `--task`. Unknown YAML fields, duplicate aliases
+such as both `task` and `objective`, and unrestricted networking without
+`allow_unrestricted_network: true` or `--unrestricted-network` are rejected.
+
+The auth profile must be present in the configured manager executor. Unattended
+starts require a brokered service profile; no host login is copied into the
+worker. The command returns stable plan, child, and session IDs immediately and
+fails closed if the manager, auth profile, sandbox, or pinned runtime is not
+available. `--unrestricted-network` is the explicit opt-in for unrestricted
+egress; the default is broker-only.
+
+`sandbox reconcile` is a dry run unless
 `--apply` is supplied; destroying orphaned sandboxes also requires
 `--destroy-orphans`.
 

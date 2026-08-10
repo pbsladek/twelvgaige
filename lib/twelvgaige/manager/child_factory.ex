@@ -5,8 +5,8 @@ defmodule Twelvgaige.Manager.ChildFactory do
   alias Twelvgaige.Workspace.Manager, as: WorkspaceManager
 
   def prepare(%ChildRecord{} = child, opts \\ []) do
-    session_id = child.delegated_session_id || deterministic_id(:session, child.id)
-    workspace_id = child.workspace_id || deterministic_id(:workspace, child.id)
+    session_id = child.delegated_session_id || delegated_session_id(child.id)
+    workspace_id = child.workspace_id || workspace_id(child.id)
     child = %{child | delegated_session_id: session_id, workspace_id: workspace_id}
 
     with {:ok, workspace} <- resolve_or_allocate_workspace(child, opts),
@@ -14,6 +14,14 @@ defmodule Twelvgaige.Manager.ChildFactory do
       {:ok, %{child | delegated_session_id: session_id, workspace_id: workspace.id}}
     end
   end
+
+  @doc "Returns the stable delegated-session identity reserved for a manager child."
+  def delegated_session_id(child_id) when is_binary(child_id),
+    do: deterministic_id(:session, child_id)
+
+  @doc "Returns the stable workspace identity reserved for a manager child."
+  def workspace_id(child_id) when is_binary(child_id),
+    do: deterministic_id(:workspace, child_id)
 
   defp resolve_or_allocate_workspace(%{workspace_id: workspace_id} = child, opts)
        when is_binary(workspace_id) do

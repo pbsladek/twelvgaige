@@ -4,6 +4,26 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainerTest do
   alias Twelvgaige.Sandbox.Backend.AppleContainer
   alias Twelvgaige.Sandbox.LaunchManifest
 
+  test "onboarding leaves a healthy signed service running and starts only a stopped service" do
+    parent = self()
+
+    assert {:ok, "already running"} =
+             AppleContainer.ensure_system_started(
+               command_runner: service_runner(parent, "Status: running\n"),
+               container_binary_path: "/usr/local/bin/container"
+             )
+
+    refute_received {:service_start, _args}
+
+    assert {:ok, "started"} =
+             AppleContainer.ensure_system_started(
+               command_runner: service_runner(parent, "Status: stopped\n"),
+               container_binary_path: "/usr/local/bin/container"
+             )
+
+    assert_receive {:service_start, ["system", "start"]}
+  end
+
   test "probes the pinned host/runtime contract and creates an attested per-session VM" do
     parent = self()
     root = temp_dir()
@@ -323,6 +343,37 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainerTest do
       policy_revision: "policy-1",
       created_at: DateTime.utc_now()
     }
+  end
+
+  defp service_runner(parent, status) do
+    fn binary, args, _opts ->
+      output =
+        case {Path.basename(binary), args} do
+          {"codesign", ["--verify", "--strict", "/usr/local/bin/container"]} ->
+            ""
+
+          {"codesign", ["-d", "--verbose=2", "/usr/local/bin/container"]} ->
+            "Identifier=com.apple.container.cli\nTeamIdentifier=UPBK2H6LZM\n"
+
+          {"container", ["--version"]} ->
+            "container CLI version 1.2.0\n"
+
+          {"container", ["system", "status"]} ->
+            status
+
+          {"container", ["system", "start"] = start_args} ->
+            send(parent, {:service_start, start_args})
+            "started"
+
+          {"sw_vers", ["-productVersion"]} ->
+            "26.0\n"
+
+          {"uname", ["-m"]} ->
+            "arm64\n"
+        end
+
+      {:ok, %{status: 0, stdout: output, stderr: "", duration_ms: 1}}
+    end
   end
 
   defp inspect_fixture(root, name, digest, manifest_digest) do

@@ -35,6 +35,8 @@ defmodule Twelvgaige.Breech.IPC.Server do
     :endpoint_path,
     :lock,
     :operations,
+    :manager_scheduler,
+    :session_start_fun,
     :provider_limiter,
     :scheduler,
     :retention,
@@ -113,6 +115,10 @@ defmodule Twelvgaige.Breech.IPC.Server do
         lock: lock,
         operations:
           Keyword.get(opts, :operations, Process.whereis(Twelvgaige.Operations.SessionControl)),
+        manager_scheduler:
+          Keyword.get(opts, :manager_scheduler, Process.whereis(Twelvgaige.Manager.Scheduler)),
+        session_start_fun:
+          Keyword.get(opts, :session_start_fun, &Twelvgaige.Manager.SessionStart.start/2),
         provider_limiter:
           Keyword.get(
             opts,
@@ -473,6 +479,17 @@ defmodule Twelvgaige.Breech.IPC.Server do
            ) do
       Protocol.ok(request, sessions)
     else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "session.start", "body" => body} = request, state, _server) do
+    case state.session_start_fun.(body,
+           server: state.manager_scheduler,
+           session_control: state.operations,
+           require_inventory?: true
+         ) do
+      {:ok, result} -> Protocol.ok(request, result)
       {:error, reason} -> Protocol.error(request, reason)
     end
   end

@@ -47,6 +47,9 @@ defmodule Twelvgaige.Breech.IPC.Client do
     call(address, "session.list", body, opts)
   end
 
+  def start_session(address, attrs, opts \\ []) when is_map(attrs),
+    do: call(address, "session.start", attrs, opts)
+
   def get_session(address, session_id, opts \\ []),
     do: call(address, "session.show", %{"session_id" => session_id}, opts)
 

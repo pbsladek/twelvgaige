@@ -7,7 +7,9 @@ defmodule Twelvgaige.CLI.Dispatcher do
   alias Twelvgaige.CLI.Commands.Operations, as: OperationsCommand
   alias Twelvgaige.CLI.Commands.Round, as: RoundCommand
   alias Twelvgaige.CLI.Commands.RoundControl, as: RoundControlCommand
+  alias Twelvgaige.CLI.Commands.SandboxSetup, as: SandboxSetupCommand
   alias Twelvgaige.CLI.Commands.ScaffoldLibrary, as: ScaffoldLibraryCommand
+  alias Twelvgaige.CLI.Commands.SessionStart, as: SessionStartCommand
   alias Twelvgaige.CLI.Commands.ShellAuthor, as: ShellAuthorCommand
   alias Twelvgaige.CLI.Commands.ShellBulk, as: ShellBulkCommand
   alias Twelvgaige.CLI.Commands.ShellCache, as: ShellCacheCommand
@@ -58,6 +60,7 @@ defmodule Twelvgaige.CLI.Dispatcher do
   def run(["daemon", "paths" | args]), do: DaemonCommand.paths(args)
   def run(["daemon", "stop" | args]), do: DaemonCommand.stop(args)
   def run(["daemon", "token", "rotate" | args]), do: OperationsCommand.rotate_token(args)
+  def run(["session", "start" | args]), do: SessionStartCommand.run(args)
   def run(["session", "list" | args]), do: OperationsCommand.session_list(args)
 
   def run(["session", "show", session_id | args]),
@@ -73,6 +76,7 @@ defmodule Twelvgaige.CLI.Dispatcher do
     do: OperationsCommand.session_revoke(session_id, args)
 
   def run(["sandbox", "health" | args]), do: OperationsCommand.sandbox_health(args)
+  def run(["sandbox", "setup" | args]), do: SandboxSetupCommand.run(args)
   def run(["sandbox", "reconcile" | args]), do: OperationsCommand.sandbox_reconcile(args)
   def run(["operations", "dashboard" | args]), do: OperationsCommand.dashboard(args)
 
