@@ -12,14 +12,14 @@ defmodule Twelvgaige.Operations.Paths do
       match?({:unix, :darwin}, :os.type()) ->
         Path.join([System.user_home!(), "Library", "Application Support", "Twelvgaige"])
 
-      match?({:win32, _}, :os.type()) ->
-        Path.join(System.get_env("LOCALAPPDATA") || System.user_home!(), "Twelvgaige")
-
-      true ->
+      match?({:unix, :linux}, :os.type()) ->
         Path.join(
           System.get_env("XDG_DATA_HOME") || Path.join(System.user_home!(), ".local/share"),
           "twelvgaige"
         )
+
+      true ->
+        raise "unsupported Twelvgaige platform"
     end
   end
 
@@ -28,6 +28,7 @@ defmodule Twelvgaige.Operations.Paths do
 
   def workspaces(opts \\ []), do: Path.join(data_root(opts), "workspaces")
   def artifacts(opts \\ []), do: Path.join(data_root(opts), "artifacts")
+  def credentials(opts \\ []), do: Path.join(data_root(opts), "credentials")
   def audit_exports(opts \\ []), do: Path.join(data_root(opts), "audit-exports")
 
   def audit_checkpoints(opts \\ []),
@@ -41,6 +42,7 @@ defmodule Twelvgaige.Operations.Paths do
       root,
       workspaces(opts),
       artifacts(opts),
+      credentials(opts),
       Path.dirname(operations_database(opts)),
       audit_exports(opts)
     ]

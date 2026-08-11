@@ -32,6 +32,7 @@ installed CLI.
 ## Implementation And Qualification Records
 
 - [Authoring completion](authoring-completion-plan.md)
+- [Developer CLI, Git, and workspace plan](developer-cli-git-workspace-plan.md)
 - [K3d Git and HTTP live tests](k3d-git-http-live-test-plan.md)
 - [Live E2E](live-e2e-implementation-plan.md)
 - [Shell formats](shell-formats-plan.md)

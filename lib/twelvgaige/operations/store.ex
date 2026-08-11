@@ -15,7 +15,7 @@ defmodule Twelvgaige.Operations.Store do
   alias Twelvgaige.Store.SQLite.Repo
 
   @schema_version 3
-  @live_authority_namespaces ["control_token", "credential"]
+  @live_authority_namespaces ["control_token", "credential", "sandbox_resource"]
 
   defstruct [:path, :repo, raw_retention_days: 30, security_retention_days: 90]
 

@@ -30,75 +30,76 @@
     "copy_snapshot": "pass",
     "copy_snapshot_no_writable_host_mount": "pass",
     "copy_snapshot_import_read_only": "pass",
+    "copy_snapshot_source_not_mounted": "pass",
     "copy_snapshot_declared_export": "pass",
     "copy_snapshot_volume_bootstrap": "host_controlled_ephemeral_vm",
     "copy_snapshot_export_bytes": 10
   },
   "performance": {
-    "cancellation_ms": 2899,
-    "recovery_ms": 563,
+    "cancellation_ms": 2779,
+    "recovery_ms": 564,
     "repeated_samples": [
       {
-        "machine_id": "sbx_v7Vt7_Sa95ymQA8s",
-        "guest_memory_bytes": 3497984,
-        "host_vm_rss_bytes": 38862848,
-        "launch_ms": 2997
+        "machine_id": "sbx_mvZCI7ASuOKSsbKF",
+        "guest_memory_bytes": 3747840,
+        "host_vm_rss_bytes": 38928384,
+        "launch_ms": 3175
       },
       {
-        "machine_id": "sbx_NRiWAIflBf_To8dN",
-        "guest_memory_bytes": 3768320,
-        "host_vm_rss_bytes": 38846464,
-        "launch_ms": 2994
-      },
-      {
-        "machine_id": "sbx_8CuojGUGdufuQoAb",
-        "guest_memory_bytes": 3768320,
-        "host_vm_rss_bytes": 38813696,
-        "launch_ms": 2954
-      },
-      {
-        "machine_id": "sbx_mLyLLtn3x1LxrGOR",
-        "guest_memory_bytes": 3489792,
-        "host_vm_rss_bytes": 38764544,
-        "launch_ms": 2948
-      },
-      {
-        "machine_id": "sbx_9J3MuyI8d-hf_qyt",
-        "guest_memory_bytes": 3760128,
+        "machine_id": "sbx_j7aqgAfr51ehPotr",
+        "guest_memory_bytes": 3735552,
         "host_vm_rss_bytes": 38830080,
-        "launch_ms": 2943
+        "launch_ms": 3014
+      },
+      {
+        "machine_id": "sbx_PlrKul31FEW-K0Zw",
+        "guest_memory_bytes": 3743744,
+        "host_vm_rss_bytes": 38862848,
+        "launch_ms": 3041
+      },
+      {
+        "machine_id": "sbx_y-tgiPm0wGZU04Eq",
+        "guest_memory_bytes": 3756032,
+        "host_vm_rss_bytes": 38813696,
+        "launch_ms": 3058
+      },
+      {
+        "machine_id": "sbx_lyRH4L8RH9E6G51u",
+        "guest_memory_bytes": 3739648,
+        "host_vm_rss_bytes": 38797312,
+        "launch_ms": 3025
       }
     ],
     "concurrent_samples": [
       {
-        "machine_id": "sbx_S3PbZzwzu0ZUGJ2e",
-        "guest_memory_bytes": 3772416,
-        "host_vm_rss_bytes": 77611008,
-        "launch_ms": 3660
+        "machine_id": "sbx_DkBH7z8Q2AVVkwek",
+        "guest_memory_bytes": 3473408,
+        "host_vm_rss_bytes": 77758464,
+        "launch_ms": 3669
       },
       {
-        "machine_id": "sbx_1FDVvEU3nYDYrjeq",
+        "machine_id": "sbx_noKHZWA1sGkdvIRw",
         "guest_memory_bytes": 3510272,
-        "host_vm_rss_bytes": 77611008,
-        "launch_ms": 3701
+        "host_vm_rss_bytes": 77758464,
+        "launch_ms": 3625
       }
     ],
     "repeated_count": 5,
     "concurrent_count": 2,
-    "concurrent_elapsed_ms": 10918,
+    "concurrent_elapsed_ms": 10702,
     "guest_memory_envelope": {
       "status": "within_envelope",
       "declared_bytes": 268435456,
       "high_water_bytes": 335544320,
-      "peak_bytes": 3768320
+      "peak_bytes": 3756032
     },
-    "host_vm_peak_rss_bytes": 77611008,
+    "host_vm_peak_rss_bytes": 77758464,
     "host_high_water_bytes": 671088640,
     "backend_restart_policy": "within_high_water",
     "all_resources_destroyed": true
   },
   "schema_version": 1,
-  "generated_at": "2026-08-08T06:06:09Z",
+  "generated_at": "2026-08-11T09:38:33Z",
   "backend": {
     "version": "1.2.0",
     "available": true,

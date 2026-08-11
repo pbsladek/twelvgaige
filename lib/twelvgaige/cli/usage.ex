@@ -7,8 +7,21 @@ defmodule Twelvgaige.CLI.Usage do
   Usage:
     twelvgaige --help
     twelvgaige version
+
+  Global options (accepted before or after the command):
+    --quiet                     Suppress successful human output
+    --verbose                   Write redacted command and timing diagnostics to stderr
+    --color auto|always|never   Select terminal color policy (default: auto)
+    --no-color                  Alias for --color never
+
+  Control-plane options (accepted by workspace, session, sandbox control, and operations commands):
+    --runtime-dir <path>        Select the local daemon runtime directory
+    --endpoint <path>           Select an exact authenticated endpoint file
+
+    twelvgaige completion <bash|zsh|fish>
     twelvgaige init [--profile <name>] [--auth-profile <id>] [--sandbox podman|apple-container] [--root <path>] [--force] [--format human|json]
     twelvgaige doctor [--profile <name>] [--root <path>] [--fix] [--format human|json]
+    twelvgaige support bundle --output <directory> [--write --yes] [--request-id <id>] [--root <path>] [--format human|json]
     twelvgaige status [--format human|json]
     twelvgaige crypto status [--format human|json]
     twelvgaige crypto sqlcipher-spike [--path <path>] [--key-env <env>] [--format human|json]
@@ -17,24 +30,43 @@ defmodule Twelvgaige.CLI.Usage do
     twelvgaige store migrate-sqlcipher --source <plaintext.db> --destination <encrypted.db> --key-env <env> [--replace] [--format human|json]
     twelvgaige store rewrap-envelope <envelope.json> --backup <backup.json> --old-key-env <env> --new-key-env <env> [--format human|json]
     twelvgaige audit verify <checkpoint-path|-> [--hmac-env <env>] [--format human|json]
-    twelvgaige daemon serve [--transport unix|tcp|npipe] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+    twelvgaige daemon serve [--transport unix|tcp] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
     twelvgaige daemon stop [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
-    twelvgaige daemon paths [--transport unix|tcp|npipe] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+    twelvgaige daemon paths [--transport unix|tcp] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
     twelvgaige daemon token rotate [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
-    twelvgaige session start (--task <text>|--task-file <task.md|task.yaml>) [--profile <name>] [--auth-profile <id>] [--runtime codex] [--repo <path>] [--base-ref <ref>] [--sandbox podman|apple-container] [--network none|broker-only|unrestricted] [--unrestricted-network] [--allow-path <relative-path>] [--read-only] [--timeout <duration>] [--budget-tokens <count>] [--budget-cost-micros <count>] [--budget-tool-calls <count>] [--follow] [--follow-timeout-ms <ms>] [--poll-ms <ms>] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
-    twelvgaige session plan (--task <text>|--task-file <task.md|task.yaml>) [--profile <name>] [session authority options] [--format human|json]
+    twelvgaige repo inspect [--repo <path>] [--base-ref <ref>] [--format human|json]
+    twelvgaige workspace list [--repo <path>] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+    twelvgaige workspace set list [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+    twelvgaige workspace set show <set-id-prefix|--last> [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+    twelvgaige workspace show <workspace-id-prefix|--last> [--repo <path>] [--format human|json]
+    twelvgaige workspace path <workspace-id-prefix|--last> [--repo <path>] [--format human|json]
+    twelvgaige workspace status <workspace-id-prefix|--last> [--repo <path>] [--format human|json]
+    twelvgaige workspace diff <workspace-id-prefix|--last> [--repo <path>] [--format human|json]
+    twelvgaige workspace export <workspace-id-prefix|--last> --output <directory> [--repo <path>] [--request-id <id>] [--format human|json]
+    twelvgaige workspace apply <workspace-id-prefix|--last> [--target review-worktree|current-worktree] [--check|--write --yes --expected-epoch <epoch>] [--request-id <id>] [--format human|json]
+    twelvgaige workspace reconcile <workspace-id-prefix|--last> [--write --yes --expected-epoch <epoch> --action quarantine|restore-backup|resume-export|resume-cleanup|discard-review] [--request-id <id>] [--format human|json]
+    twelvgaige workspace review cleanup <workspace-id-prefix|--last> [--write --yes --expected-epoch <epoch>] [--request-id <id>] [--format human|json]
+    twelvgaige workspace retention status [--format human|json]
+    twelvgaige workspace retention run [--format human|json]
+    twelvgaige workspace cleanup <workspace-id-prefix|--last> [--repo <path>] [--write --yes --expected-epoch <epoch>] [--request-id <id>] [--format human|json]
+    twelvgaige session start (--plan <plan-path>|<task.md|task.yaml>|--task <text>|--task-file <task.md|task.yaml>) [--request-id <id>] [--profile <name>] [--auth-profile <id>] [--runtime codex] [--repo <path>] [--base-ref <ref>] [--source committed|staged|working-tree] [--include-untracked] [--include-ignored] [--sandbox podman|apple-container] [--network none|broker-only|unrestricted] [--unrestricted-network] [--allow-path <relative-path>] [--read-only] [--timeout <duration>] [--budget-tokens <count>] [--budget-cost-micros <count>] [--budget-tool-calls <count>] [--follow] [--follow-timeout-ms <ms>] [--poll-ms <ms>] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+    twelvgaige session plan (<task.md|task.yaml>|--task <text>|--task-file <task.md|task.yaml>) [--request-id <id>] [--profile <name>] [session authority options] [--output <plan-path>] [--format human|json]
     twelvgaige task validate <task.md|task.yaml> [--profile <name>] [session authority options] [--format human|json]
-    twelvgaige session watch <session-id> [--poll-ms <ms>] [--timeout-ms <ms>] [--format human|json]
+    twelvgaige session watch <session-id> [--poll-ms <ms>] [--timeout-ms <ms>] [--cancel-request-id <id>] [--format human|json]
     twelvgaige session review <session-id> [--format human|json]
     twelvgaige session retry <session-id> [--repair] [--format human|json]
+    twelvgaige session export <session-id-prefix|--last> --output <directory> [--repo <path>] [--request-id <id>] [--format human|json]
+    twelvgaige session apply <session-id-prefix|--last> [--target review-worktree|current-worktree] [--check|--write --yes --expected-epoch <epoch>] [--repo <path>] [--request-id <id>] [--format human|json]
     twelvgaige session list [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
     twelvgaige session show <session-id> [--format human|json]
     twelvgaige session attach <session-id> [--format human|json]
     twelvgaige session takeover <session-id> --expected-epoch <epoch> [--format human|json]
+    twelvgaige session cancel <session-id> [--request-id <id>] [--format human|json]
     twelvgaige session revoke <session-id> [--format human|json]
     twelvgaige sandbox setup [--backend podman|apple-container|auto] [--check] [--qualify-image] [--data-root <path>] [--source-root <path>] [--machine <name>] [--cpus <count>] [--memory-mib <mib>] [--disk-gib <gib>] [--worker-image <reference>] [--timeout-ms <milliseconds>] [--format human|json]
     twelvgaige sandbox health [--format human|json]
     twelvgaige sandbox reconcile [--apply] [--destroy-orphans] [--format human|json]
+    twelvgaige operation show <request-id> [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
     twelvgaige operations dashboard [--format human|json]
     twelvgaige operations audit status [--format human|json]
     twelvgaige operations audit checkpoint [--format human|json]
@@ -107,4 +139,13 @@ defmodule Twelvgaige.CLI.Usage do
 
   @spec text() :: String.t()
   def text, do: @usage
+
+  @doc "Returns the public invocation lines used to build the typed command model."
+  @spec command_usages() :: [String.t()]
+  def command_usages do
+    @usage
+    |> String.split("\n")
+    |> Enum.map(&String.trim/1)
+    |> Enum.filter(&String.starts_with?(&1, "twelvgaige "))
+  end
 end

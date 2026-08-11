@@ -21,8 +21,8 @@ signing are tracked separately in
 | --- | --- | --- | --- |
 | 0 | Security boundary inventory and docs | Complete | `security.md` documents the current boundary and residual gaps. |
 | 1 | Control-plane auth, TLS/mTLS, IPC limits, provider transport | Partial | Auth, proxy-mode restrictions, and IPC bounds are implemented; native TLS/mTLS and provider invalid-certificate regression tests remain. |
-| 2 | Host, tool, HTTP egress, and Kubernetes authority | Complete with platform residuals | Runtime policy and POSIX controls are implemented; native Windows process-tree verification remains. |
-| 3 | Storage, logs, redaction, audit integrity | Partial | Private modes, redaction, checkpoint integrity, optional SQLCipher, and OS key backends exist; broader canary and Windows qualification remain. |
+| 2 | Host, tool, HTTP egress, and Kubernetes authority | Complete | Runtime policy and POSIX controls are implemented on supported platforms. |
+| 3 | Storage, logs, redaction, audit integrity | Partial | Private modes, redaction, checkpoint integrity, optional SQLCipher, and OS key backends exist; broader canary coverage remains. |
 | 4 | Prompt injection, adversarial E2E, packaging, supply chain | Partial | k3d, checksums, attestations, and dependency audit exist; prompt-injection coverage and application-package SBOM work remain. |
 
 Each pass should record:
@@ -212,7 +212,6 @@ Each pass should record:
 - [~] Add SBOM/provenance coverage. GitHub provenance attestations cover release
       assets; SBOM and vulnerability evidence currently cover the delegated
       worker and egress-proxy images, not every application package.
-- [ ] Add Windows named-pipe security verification on real Windows hardware.
 
 ### Acceptance Tests
 

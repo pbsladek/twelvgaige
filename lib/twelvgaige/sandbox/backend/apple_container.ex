@@ -96,7 +96,7 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
     resource_id = manifest.resource_id || Twelvgaige.ID.new(:sandbox)
     manifest = LaunchManifest.bind_resource(manifest, resource_id, machine_id: resource_id)
 
-    with :ok <- validate_proxy_environment(manifest, opts),
+    with :ok <- validate_runtime_environment(manifest, opts),
          {:ok, _signature} <- verify_cli_signature(opts),
          :ok <- verify_image(manifest, opts) do
       create_attested(resource_id, manifest, opts)
@@ -131,6 +131,29 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
   end
 
   @impl true
+  def stdio_transport(resource_id, opts) when is_binary(resource_id) and resource_id != "" do
+    with {:ok, binary} <- signed_container_binary(opts) do
+      {:ok,
+       %{
+         binary: binary,
+         arguments: ["start", "--attach", "--interactive", resource_id],
+         environment: transport_environment(opts)
+       }}
+    end
+  end
+
+  @impl true
+  def await(resource_id, opts) do
+    deadline =
+      System.monotonic_time(:millisecond) + Keyword.get(opts, :timeout_ms, 900_000)
+
+    await_stopped(resource_id, deadline, opts)
+  end
+
+  @impl true
+  def logs(resource_id, opts), do: command(["logs", resource_id], opts)
+
+  @impl true
   def inspect(resource_id, opts) do
     case {Keyword.get(opts, :observed), Keyword.get(opts, :observed_factory)} do
       {%{} = observed, _factory} ->
@@ -141,6 +164,27 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
 
       {nil, _factory} ->
         inspect_command(resource_id, opts)
+    end
+  end
+
+  defp await_stopped(resource_id, deadline, opts) do
+    case inspect(resource_id, opts) do
+      {:ok, %{status: :stopped}} ->
+        {:ok, %{status: :stopped, exit_status: nil}}
+
+      {:ok, %{status: status}} when status in [:created, :running] ->
+        if System.monotonic_time(:millisecond) < deadline do
+          Process.sleep(100)
+          await_stopped(resource_id, deadline, opts)
+        else
+          {:error, :apple_container_wait_timeout}
+        end
+
+      {:ok, %{status: status}} ->
+        {:error, {:apple_container_wait_state_invalid, status}}
+
+      {:error, _reason} = error ->
+        error
     end
   end
 
@@ -212,6 +256,35 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
         {:error, _reason} = error ->
           error
       end
+    else
+      %LaunchManifest{} -> {:error, :sandbox_export_transport_invalid}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  @impl true
+  def export_workspace(resource_id, destination, opts) do
+    destination = Path.expand(destination)
+
+    with %LaunchManifest{workspace_transport: :copy_snapshot} = manifest <-
+           Keyword.fetch!(opts, :manifest),
+         :ok <- allowed_export_destination(destination, opts),
+         :ok <- ensure_stopped(resource_id, manifest, opts) do
+      staging =
+        destination <>
+          ".runtime-staging-" <> Integer.to_string(System.unique_integer([:positive]))
+
+      result =
+        with :ok <- File.mkdir(staging),
+             {:ok, _output} <-
+               command(full_export_helper_args(resource_id, staging, manifest), opts),
+             {:ok, report} <-
+               Twelvgaige.Workspace.RuntimeImport.replace(staging, destination, opts) do
+          {:ok, Map.put(report, :transport, :copy_snapshot)}
+        end
+
+      if File.exists?(staging), do: File.rm_rf(staging)
+      result
     else
       %LaunchManifest{} -> {:error, :sandbox_export_transport_invalid}
       {:error, _reason} = error -> error
@@ -342,7 +415,7 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
         memory_bytes: integer_value(value(config, "resources", %{}), ["memoryInBytes", "memory"]),
         pids: process_limit(init)
       },
-      environment_names: proxy_environment_names(value(init, "environment", [])),
+      environment_names: declared_environment_names(value(init, "environment", []), manifest),
       labels: expected_labels(value(config, "labels", %{}), manifest)
     }
   end
@@ -356,6 +429,7 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
       |> Enum.flat_map(fn {key, val} -> ["--label", "#{key}=#{val}"] end)
 
     security = [
+      "--interactive",
       "--user",
       "#{manifest.uid}:#{manifest.gid}",
       "--read-only",
@@ -372,7 +446,7 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
     network = network_args(manifest.network_mode, opts)
 
     mounts = mount_args(manifest)
-    environment = proxy_environment_args(manifest, opts)
+    environment = runtime_environment_args(opts)
     worker_command = wrap_copy_snapshot_command(manifest, worker_command)
 
     identity ++
@@ -432,43 +506,46 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
     if broker in names, do: :broker_only, else: :unrestricted
   end
 
-  defp validate_proxy_environment(%{network_mode: :broker_only} = manifest, opts) do
-    environment = Keyword.get(opts, :proxy_environment, %{})
+  defp validate_runtime_environment(manifest, opts) do
+    environment = runtime_environment(opts)
     names = environment |> Map.keys() |> Enum.sort()
 
     cond do
-      names != Enum.sort(@proxy_environment_names) ->
-        {:error, :proxy_environment_required}
-
       Enum.sort(manifest.environment_names) != names ->
         {:error, :proxy_environment_attestation_mismatch}
 
       not Enum.all?(environment, fn {name, value} ->
-        name in @proxy_environment_names and is_binary(value) and value != ""
+        name in manifest.environment_names and is_binary(value) and value != ""
       end) ->
         {:error, :proxy_environment_invalid}
+
+      manifest.network_mode == :broker_only and
+          not Enum.all?(@proxy_environment_names, &Map.has_key?(environment, &1)) ->
+        {:error, :proxy_environment_required}
 
       true ->
         :ok
     end
   end
 
-  defp validate_proxy_environment(%{environment_names: []}, _opts), do: :ok
-  defp validate_proxy_environment(_manifest, _opts), do: {:error, :unexpected_proxy_environment}
-
-  defp proxy_environment_args(%{network_mode: :broker_only}, opts) do
+  defp runtime_environment_args(opts) do
     opts
-    |> Keyword.fetch!(:proxy_environment)
+    |> runtime_environment()
     |> Enum.sort()
     |> Enum.flat_map(fn {name, value} -> ["--env", "#{name}=#{value}"] end)
   end
 
-  defp proxy_environment_args(_manifest, _opts), do: []
+  defp runtime_environment(opts) do
+    Keyword.get(opts, :environment, %{})
+    |> Map.merge(Keyword.get(opts, :proxy_environment, %{}))
+  end
 
-  defp proxy_environment_names(environment) do
+  defp declared_environment_names(environment, manifest) do
+    expected = MapSet.new(if(manifest, do: manifest.environment_names, else: []))
+
     environment
     |> Enum.map(&(&1 |> String.split("=", parts: 2) |> hd()))
-    |> Enum.filter(&(&1 in @proxy_environment_names))
+    |> Enum.filter(&MapSet.member?(expected, &1))
     |> Enum.uniq()
     |> Enum.sort()
   end
@@ -529,7 +606,7 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
   defp cleanup_copy_volumes(resource_id, opts) do
     with {:ok, output} <- command(["volume", "list", "--format", "json"], opts),
          {:ok, available} <- decode_volume_names(output) do
-      ["/workspace", "/artifacts"]
+      ["/workspace", "/artifacts", "/run/codex-home"]
       |> Enum.map(&copy_volume_name(resource_id, &1))
       |> Enum.filter(&MapSet.member?(available, &1))
       |> Enum.reduce_while(:ok, fn name, :ok ->
@@ -562,16 +639,10 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
 
   defp mount_args(%{workspace_transport: :copy_snapshot} = manifest) do
     Enum.flat_map(manifest.mounts, fn mount ->
-      import = "/run/twelvgaige-import" <> mount.destination
       volume = copy_volume_name(manifest.resource_id, mount.destination)
       readonly = if mount.mode == :read_only, do: ",readonly", else: ""
 
-      [
-        "--mount",
-        "type=bind,source=#{mount.source},target=#{import},readonly",
-        "--mount",
-        "type=volume,source=#{volume},target=#{mount.destination}#{readonly}"
-      ]
+      ["--mount", "type=volume,source=#{volume},target=#{mount.destination}#{readonly}"]
     end)
   end
 
@@ -580,19 +651,6 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
       readonly = if mount.mode == :read_only, do: ",readonly", else: ""
       ["--mount", "type=bind,source=#{mount.source},target=#{mount.destination}#{readonly}"]
     end)
-  end
-
-  defp wrap_copy_snapshot_command(%{workspace_transport: :copy_snapshot, mounts: mounts}, command)
-       when command != [] do
-    copies =
-      mounts
-      |> Enum.map(fn mount ->
-        import = "/run/twelvgaige-import" <> mount.destination
-        "cp -R #{shell_quote(import)}/. #{shell_quote(mount.destination)}/"
-      end)
-      |> Enum.join("; ")
-
-    ["/bin/sh", "-lc", "set -eu; #{copies}; exec \"$@\"", "twelvgaige-copy-snapshot" | command]
   end
 
   defp wrap_copy_snapshot_command(_manifest, command), do: command
@@ -607,6 +665,7 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
 
   defp volume_initializer_args(manifest, mount, volume) do
     destination = mount.destination
+    import = "/run/twelvgaige-import" <> destination
 
     [
       "run",
@@ -624,6 +683,8 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
       "ALL",
       "--cap-add",
       "CHOWN",
+      "--cap-add",
+      "DAC_READ_SEARCH",
       "--cpus",
       "1",
       "--memory",
@@ -634,11 +695,13 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
       "none",
       "--no-dns",
       "--mount",
+      "type=bind,source=#{mount.source},target=#{import},readonly",
+      "--mount",
       "type=volume,source=#{volume},target=#{destination}",
       image_identity(manifest),
-      "/bin/chown",
-      "#{manifest.uid}:#{manifest.gid}",
-      destination
+      "/bin/sh",
+      "-lc",
+      "set -eu; cp -R #{shell_quote(import)}/. #{shell_quote(destination)}/; chown -R #{manifest.uid}:#{manifest.gid} #{shell_quote(destination)}"
     ]
   end
 
@@ -753,6 +816,48 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
       "/bin/sh",
       "-lc",
       "set -eu; umask 077; #{copies}"
+    ]
+  end
+
+  defp full_export_helper_args(resource_id, staging, manifest) do
+    helper_id =
+      resource_id <> "-export-all-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    volume = copy_volume_name(resource_id, "/workspace")
+
+    [
+      "run",
+      "--rm",
+      "--name",
+      helper_id,
+      "--label",
+      "#{@managed_label}=true",
+      "--label",
+      "io.twelvgaige.resource=#{resource_id}",
+      "--label",
+      "io.twelvgaige.role=copy-snapshot-export",
+      "--user",
+      "#{manifest.uid}:#{manifest.gid}",
+      "--read-only",
+      "--cap-drop",
+      "ALL",
+      "--cpus",
+      "1",
+      "--memory",
+      "200M",
+      "--ulimit",
+      "nproc=16:16",
+      "--network",
+      "none",
+      "--no-dns",
+      "--mount",
+      "type=volume,source=#{volume},target=/source,readonly",
+      "--mount",
+      "type=bind,source=#{staging},target=/export",
+      image_identity(manifest),
+      "/bin/sh",
+      "-lc",
+      "set -eu; umask 077; cp -R /source/. /export/"
     ]
   end
 
@@ -906,6 +1011,28 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainer do
     else
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp signed_container_binary(opts) do
+    with {:ok, _signature} <- verify_cli_signature(opts),
+         binary when is_binary(binary) <- resolve_container_binary(opts) do
+      {:ok, binary}
+    else
+      nil -> {:error, :apple_container_binary_not_found}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp transport_environment(opts) do
+    Keyword.get_lazy(opts, :transport_environment, fn ->
+      ["PATH", "HOME", "TMPDIR", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR"]
+      |> Enum.flat_map(fn name ->
+        case System.get_env(name) do
+          nil -> []
+          value -> [{name, value}]
+        end
+      end)
+    end)
   end
 
   defp resolve_container_binary(opts) do

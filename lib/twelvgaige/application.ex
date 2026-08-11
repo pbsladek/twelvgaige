@@ -7,6 +7,12 @@ defmodule Twelvgaige.Application do
 
   @impl true
   def start(_type, _args) do
+    with :ok <- Twelvgaige.Platform.ensure_supported() do
+      start_supervisor()
+    end
+  end
+
+  defp start_supervisor do
     store_config = StoreConfig.resolve()
     store_module = StoreConfig.module(store_config)
 

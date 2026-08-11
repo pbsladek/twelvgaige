@@ -62,13 +62,6 @@ make e2e-package
 make burrito-smoke BURRITO_TARGET=macos_silicon
 ```
 
-Windows CLI contract testing is handled in GitHub Actions. If PowerShell Core is
-installed locally, the same script can be run with:
-
-```bash
-make e2e-windows
-```
-
 ## Local Live Suites
 
 Live suites stay opt-in. `make e2e-live-local` runs only the suites explicitly
@@ -90,7 +83,7 @@ artifacts are written under `artifacts/live/<platform>` locally unless
 - `ci.yml`: format, compile, Credo, Sobelow, dependency advisories, unit and
   persistence tests, authoring checks, and the 75%
   aggregate coverage gate.
-- `e2e.yml`: offline process-level CLI checks on Linux, macOS, and Windows.
+- `e2e.yml`: offline process-level CLI checks on Linux and macOS.
 - `build.yml`: package and smoke-test escript, Mix release, and Burrito
   artifacts.
 - `release.yml`: build release assets, generate checksums, attest provenance,
@@ -136,12 +129,10 @@ these checks before merge:
 - `coverage`
 - `offline cli (ubuntu-latest)`
 - `offline cli (macos-14)`
-- `windows cli contract`
 - `package (ubuntu-latest)`
 - `package (macos-14)`
 - `burrito (linux)`
 - `burrito (linux_arm64)`
-- `burrito (windows)`
 - `burrito (macos_silicon)`
 
 Keep live e2e jobs out of required branch protection. They depend on local or

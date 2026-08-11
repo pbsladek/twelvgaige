@@ -1,0 +1,29 @@
+#!/usr/bin/expect -f
+
+set timeout 30
+spawn env TWELVGAIGE_CLI_PAYLOAD=scripts/qualify_cli_interrupt_payload.sh ./twelvgaige
+
+expect {
+  "interrupt-ready" {}
+  timeout { exit 1 }
+  eof { exit 1 }
+}
+
+send "\003"
+expect {
+  "interrupt-1" {}
+  timeout { exit 1 }
+  eof { exit 1 }
+}
+
+send "\003"
+expect {
+  "interrupt-2" {}
+  timeout { exit 1 }
+  eof { exit 1 }
+}
+
+expect eof
+set result [wait]
+set status [lindex $result 3]
+exit $status

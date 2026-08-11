@@ -38,4 +38,39 @@ defmodule Twelvgaige.Sandbox.AdmissionTest do
     assert :ok = Admission.release(lease, server: admission)
     assert {:ok, _lease} = Admission.reserve(request, server: admission)
   end
+
+  test "caller-bound lease identity makes reservation retry idempotent" do
+    admission =
+      start_supervised!(
+        {Admission,
+         name: nil,
+         limits: %{
+           sandboxes: 2,
+           cpu: 4,
+           memory_bytes: 2048,
+           pids: 200,
+           workspace_bytes: 2000,
+           artifact_bytes: 2000,
+           provider_tokens: 200
+         }}
+      )
+
+    request = %{sandboxes: 1, cpu: 1, workspace_bytes: 100}
+    lease_id = "reservation_0123456789abcdef"
+
+    assert {:ok, ^lease_id} =
+             Admission.reserve(request, server: admission, lease_id: lease_id)
+
+    assert {:ok, ^lease_id} =
+             Admission.reserve(request, server: admission, lease_id: lease_id)
+
+    assert %{used: %{sandboxes: 1, cpu: 1, workspace_bytes: 100}} =
+             Admission.snapshot(server: admission)
+
+    assert {:error, :sandbox_admission_lease_conflict} =
+             Admission.reserve(%{sandboxes: 2}, server: admission, lease_id: lease_id)
+
+    assert :ok = Admission.release(lease_id, server: admission)
+    assert :already_released = Admission.release(lease_id, server: admission)
+  end
 end

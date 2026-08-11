@@ -12,4 +12,7 @@ defmodule Twelvgaige.DelegatedSession.Adapter do
   @callback snapshot(term()) :: {:ok, map()} | {:error, term()}
   @callback reconcile(map(), map()) :: {:ok, atom(), map()} | {:error, term()}
   @callback finalize(term()) :: {:ok, map()} | {:error, term()}
+  @callback drain(term(), pos_integer()) :: {:ok, [term()]} | {:error, term()}
+
+  @optional_callbacks drain: 2
 end

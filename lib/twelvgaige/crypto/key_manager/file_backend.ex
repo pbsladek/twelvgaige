@@ -164,20 +164,16 @@ defmodule Twelvgaige.Crypto.KeyManager.FileBackend do
   defp match_key_ref(%Key{}, _key_id), do: {:error, :key_not_found}
 
   defp reject_insecure_key_file(path) do
-    if windows?() do
-      :ok
-    else
-      case File.stat(path) do
-        {:ok, %{mode: mode}} ->
-          if (mode &&& @private_file_mask) == 0 do
-            :ok
-          else
-            {:error, {:insecure_key_file_mode, path}}
-          end
+    case File.stat(path) do
+      {:ok, %{mode: mode}} ->
+        if (mode &&& @private_file_mask) == 0 do
+          :ok
+        else
+          {:error, {:insecure_key_file_mode, path}}
+        end
 
-        {:error, _reason} = error ->
-          error
-      end
+      {:error, _reason} = error ->
+        error
     end
   end
 
@@ -210,6 +206,4 @@ defmodule Twelvgaige.Crypto.KeyManager.FileBackend do
   defp decode_datetime(_value), do: nil
 
   defp utc_now, do: DateTime.truncate(Twelvgaige.Clock.utc_now(), :second)
-
-  defp windows?, do: match?({:win32, _name}, :os.type())
 end

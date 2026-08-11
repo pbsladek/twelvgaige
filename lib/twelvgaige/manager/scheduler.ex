@@ -24,6 +24,7 @@ defmodule Twelvgaige.Manager.Scheduler do
     :child_admit_fun,
     :child_release_fun,
     :recovery_fun,
+    :workspace_finalize_fun,
     :child_factory,
     :child_factory_opts,
     max_running: 4,
@@ -83,6 +84,8 @@ defmodule Twelvgaige.Manager.Scheduler do
       child_admit_fun: Keyword.get(opts, :child_admit_fun, fn _child -> {:ok, nil} end),
       child_release_fun: Keyword.get(opts, :child_release_fun, fn _permit -> :ok end),
       recovery_fun: Keyword.get(opts, :recovery_fun, fn _child -> :quarantine end),
+      workspace_finalize_fun:
+        Keyword.get(opts, :workspace_finalize_fun, fn _child, result -> result end),
       child_factory: Keyword.get(opts, :child_factory, &ChildFactory.prepare/2),
       child_factory_opts: Keyword.get(opts, :child_factory_opts, []),
       max_running: Keyword.get(opts, :max_running, 4),
@@ -206,9 +209,9 @@ defmodule Twelvgaige.Manager.Scheduler do
   def handle_info({:child_deadline, child_id}, state) do
     case Map.fetch(state.running, child_id) do
       {:ok, entry} ->
-        maybe_cancel_runtime(entry.child, state)
+        result = terminal_result(entry, :deadline_exceeded, state)
         Process.exit(entry.pid, :kill)
-        handle_worker_result(child_id, {:error, :deadline_exceeded}, entry.pid, state)
+        handle_worker_result(child_id, result, entry.pid, state)
 
       :error ->
         {:noreply, state}
@@ -223,10 +226,13 @@ defmodule Twelvgaige.Manager.Scheduler do
       {child_id, refs} ->
         state = %{state | refs: refs}
 
-        if Map.has_key?(state.running, child_id) do
-          handle_worker_result(child_id, {:error, {:worker_exit, reason}}, nil, state)
-        else
-          {:noreply, state}
+        case Map.get(state.running, child_id) do
+          nil ->
+            {:noreply, state}
+
+          entry ->
+            result = terminal_result(entry, {:worker_exit, reason}, state)
+            handle_worker_result(child_id, result, nil, state)
         end
     end
   end
@@ -386,6 +392,7 @@ defmodule Twelvgaige.Manager.Scheduler do
     factory = state.child_factory
     factory_opts = state.child_factory_opts
     executor = state.executor
+    workspace_finalize_fun = state.workspace_finalize_fun
 
     {pid, ref} =
       :erlang.spawn_opt(
@@ -396,7 +403,9 @@ defmodule Twelvgaige.Manager.Scheduler do
 
               receive do
                 {:execute, child_id} ->
-                  send(scheduler, {:child_result, child_id, executor.(prepared), self()})
+                  result = executor.(prepared)
+                  result = workspace_finalize_fun.(prepared, result)
+                  send(scheduler, {:child_result, child_id, result, self()})
               end
 
             {:error, reason} ->
@@ -500,6 +509,23 @@ defmodule Twelvgaige.Manager.Scheduler do
 
       :error ->
         usage_missing_attrs(:success, handoff)
+    end
+  end
+
+  defp result_attrs({:error, reason, %{usage: raw_usage} = evidence}, _child) do
+    case Budget.new(raw_usage) do
+      {:ok, usage} ->
+        {%{
+           status: :failed,
+           error: reason,
+           usage: usage,
+           handoff: Map.get(evidence, :handoff),
+           verification: Map.get(evidence, :verification),
+           finished_at: DateTime.utc_now()
+         }, usage}
+
+      {:error, usage_reason} ->
+        invalid_usage_attrs(usage_reason)
     end
   end
 
@@ -1016,23 +1042,17 @@ defmodule Twelvgaige.Manager.Scheduler do
     now = DateTime.utc_now()
     {:ok, children} = store(state, :list_children, [plan.id])
 
-    state =
-      Enum.reduce(children, state, fn child, acc ->
+    {state, stopped_usage} =
+      Enum.reduce(children, {state, Budget.zero()}, fn child, {acc, usage_acc} ->
         if ChildRecord.terminal?(child) do
-          acc
+          {acc, usage_acc}
         else
-          maybe_cancel_runtime(child, acc)
+          {attrs, usage} = cancelled_child_attrs(child, child_error, now, acc)
           stop_running_process(child.id, acc)
           release_child_permit(child.id, acc)
+          update_child!(acc, child, attrs)
 
-          update_child!(acc, child, %{
-            status: :cancelled,
-            error: child_error,
-            resource_permit: nil,
-            finished_at: now
-          })
-
-          remove_running(child.id, acc)
+          {remove_running(child.id, acc), Budget.add(usage_acc, usage)}
         end
       end)
 
@@ -1040,6 +1060,7 @@ defmodule Twelvgaige.Manager.Scheduler do
       update_plan(state, plan, %{
         status: plan_status,
         error: child_error,
+        usage: Budget.add(plan.usage, stopped_usage),
         cancelled_at: now,
         updated_at: now
       })
@@ -1079,11 +1100,63 @@ defmodule Twelvgaige.Manager.Scheduler do
     %{usage | time_ms: max(usage.time_ms, observed)}
   end
 
-  defp maybe_cancel_runtime(child, state) do
+  defp cancelled_child_attrs(child, reason, now, state) do
+    case Map.get(state.running, child.id) do
+      %{phase: :running} = entry ->
+        {attrs, usage} = result_attrs(terminal_result(entry, reason, state), child)
+        usage = observe_wall_time(usage, entry.started_mono)
+
+        {attrs
+         |> Map.put(:status, :cancelled)
+         |> Map.put(:error, reason)
+         |> Map.put(:usage, usage)
+         |> Map.put(:resource_permit, nil)
+         |> Map.put(:finished_at, now), usage}
+
+      _entry ->
+        {%{
+           status: :cancelled,
+           error: reason,
+           usage: Budget.zero(),
+           resource_permit: nil,
+           finished_at: now
+         }, Budget.zero()}
+    end
+  end
+
+  defp terminal_result(%{phase: :running, child: child}, reason, state) do
+    evidence =
+      case cancel_runtime(child, state) do
+        {:ok, %{runtime_stopped: true} = quiescence} ->
+          %{usage: Budget.zero(), runtime_quiescence: quiescence}
+
+        %{runtime_stopped: true} = quiescence ->
+          %{usage: Budget.zero(), runtime_quiescence: quiescence}
+
+        _other ->
+          %{usage: Budget.zero()}
+      end
+
+    safe_workspace_finalize(child, {:error, reason, evidence}, state)
+  end
+
+  defp terminal_result(%{child: _child}, reason, _state),
+    do: {:error, reason, Budget.zero()}
+
+  defp safe_workspace_finalize(child, result, state) do
+    try do
+      state.workspace_finalize_fun.(child, result)
+    catch
+      kind, reason ->
+        {:error, {:manager_workspace_finalizer_crashed, {kind, reason}}, Budget.zero()}
+    end
+  end
+
+  defp cancel_runtime(child, state) do
     try do
       state.cancel_fun.(child)
     catch
-      _kind, _reason -> :ok
+      kind, reason -> {:error, {:manager_runtime_cancel_crashed, {kind, reason}}}
     end
   end
 

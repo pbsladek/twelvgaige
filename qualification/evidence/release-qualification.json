@@ -1,9 +1,9 @@
 {
-  "result": "pass",
+  "result": "fail",
   "schema_version": 1,
-  "generated_at": "2026-08-09T20:51:04Z",
+  "generated_at": "2026-08-11T18:19:18Z",
   "release_gate": {
-    "status": "pass",
+    "status": "fail",
     "schema_version": 1,
     "checks": [
       {
@@ -23,11 +23,64 @@
         "kind": "protocol"
       },
       {
+        "id": "developer_cli",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/cli/developer-workflow.json",
+          "generated_at": "2026-08-11T18:17:50Z"
+        },
+        "kind": "developer_cli",
+        "evidence": "qualification/evidence/cli/developer-workflow.json"
+      },
+      {
+        "id": "lifecycle_fault_matrix",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/lifecycle/fault-matrix.json",
+          "generated_at": "2026-08-11T18:17:43.849976Z"
+        },
+        "kind": "lifecycle_fault_matrix",
+        "evidence": "qualification/evidence/lifecycle/fault-matrix.json"
+      },
+      {
+        "id": "previous_release_migration",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/migrations/previous-release.json",
+          "generated_at": "2026-08-11T18:17:51.052407Z"
+        },
+        "kind": "previous_release_migration",
+        "evidence": "qualification/evidence/migrations/previous-release.json",
+        "previous_release": "0.0.3"
+      },
+      {
+        "id": "minimum_git_workspace",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/workspace/git-2.39.0-macos-arm64.json",
+          "generated_at": "2026-08-11T11:22:05Z"
+        },
+        "kind": "minimum_git_workspace",
+        "evidence": "qualification/evidence/workspace/git-2.39.0-macos-arm64.json",
+        "minimum_git_version": "2.39.0"
+      },
+      {
+        "id": "release_cli_interrupt",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/cli/release-interrupt.json",
+          "generated_at": "2026-08-11T18:19:04Z"
+        },
+        "kind": "release_cli_interrupt",
+        "evidence": "qualification/evidence/cli/release-interrupt.json",
+        "launcher": "_build/prod/rel/twelvgaige_native/bin/twelvgaige_interrupt"
+      },
+      {
         "id": "podman_live",
         "result": {
           "status": "pass",
           "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/podman-worker/live-qualification.json",
-          "generated_at": "2026-08-08T06:04:44Z"
+          "generated_at": "2026-08-11T09:35:14Z"
         },
         "kind": "backend",
         "evidence": "qualification/evidence/podman-worker/live-qualification.json",
@@ -59,7 +112,7 @@
         "result": {
           "status": "pass",
           "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/apple-container/live-qualification.json",
-          "generated_at": "2026-08-08T06:06:09Z"
+          "generated_at": "2026-08-11T09:38:33Z"
         },
         "kind": "backend",
         "evidence": "qualification/evidence/apple-container/live-qualification.json",
@@ -74,6 +127,48 @@
         },
         "kind": "driver_backend",
         "evidence": "qualification/evidence/apple-container/codex-provider-qualification.json"
+      },
+      {
+        "id": "podman_attached_session",
+        "result": {
+          "reason": "qualification_evidence_missing",
+          "status": "fail",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/attached-session/podman.json"
+        },
+        "kind": "attached_session",
+        "evidence": "qualification/evidence/attached-session/podman.json",
+        "backend": "podman"
+      },
+      {
+        "id": "apple_container_attached_session",
+        "result": {
+          "reason": "qualification_evidence_missing",
+          "status": "fail",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/attached-session/apple-container.json"
+        },
+        "kind": "attached_session",
+        "evidence": "qualification/evidence/attached-session/apple-container.json",
+        "backend": "apple-container"
+      },
+      {
+        "id": "podman_independent_verification",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/verification/podman-live-qualification.json",
+          "generated_at": "2026-08-11T09:34:12Z"
+        },
+        "kind": "independent_verification",
+        "evidence": "qualification/evidence/verification/podman-live-qualification.json"
+      },
+      {
+        "id": "apple_container_independent_verification",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/verification/apple-container-live-qualification.json",
+          "generated_at": "2026-08-11T09:34:19Z"
+        },
+        "kind": "independent_verification",
+        "evidence": "qualification/evidence/verification/apple-container-live-qualification.json"
       },
       {
         "id": "egress_proxy_image",
@@ -96,11 +191,21 @@
         "kind": "network_boundary"
       },
       {
+        "id": "platform_support_matrix",
+        "check": "platform_support_matrix",
+        "result": {
+          "status": "pass",
+          "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/platform-matrix.json",
+          "generated_at": "2026-08-11"
+        },
+        "kind": "support_matrix"
+      },
+      {
         "id": "operations_slo",
         "result": {
           "status": "pass",
           "path": "/Users/pbsladek/Code/elixir/twelvgaige/qualification/evidence/operations/live-qualification.json",
-          "generated_at": "2026-08-09T20:50:48Z"
+          "generated_at": "2026-08-11T15:44:47Z"
         },
         "kind": "operations",
         "evidence": "qualification/evidence/operations/live-qualification.json"

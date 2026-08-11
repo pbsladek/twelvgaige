@@ -39,8 +39,7 @@ Gaps to close:
 - No baseline coverage artifact is generated for review on pull requests.
 - CLI e2e coverage is spread across smoke targets and ExUnit command tests, but
   there is no explicit `e2e` suite that models user workflows end to end.
-- Remote GitHub e2e should prove the CLI on clean runners, including Linux,
-  macOS, and eventually Windows behavior.
+- Remote GitHub e2e should prove the CLI on clean Linux and macOS runners.
 - Unit tests need a more explicit gap-closure track so coverage increases come
   from meaningful branch and contract tests, not shallow assertions.
 - Daemon lifecycle e2e should cover a real background process, endpoint
@@ -113,10 +112,8 @@ Local testing centers on macOS:
   should be easy to run manually but remain opt-in.
 - Linux remains the main CI baseline because GitHub Linux runners are fast and
   cheap; macOS CI should cover the user-facing CLI contract and package smoke.
-- Linux and Windows validation should run in GitHub workflow jobs, not as a
-  normal local developer requirement.
-- Windows remains a compatibility contract in CI, with source-level CLI tests,
-  PowerShell e2e, and package/build checks before daemon transport is promoted.
+- Linux validation should run in GitHub workflow jobs, not as a normal local
+  developer requirement.
 
 ## Coverage Denominator
 
@@ -184,7 +181,6 @@ Likely coverage gap areas to inspect after the first report:
 
 - CLI branches for error formatting and rarely used options.
 - Native release/Burrito wrapper code.
-- Windows-specific path and named-pipe branches.
 - Failure branches in daemon IPC and HTTP API.
 - Store backup/restore/migration error paths.
 - Authoring patch partial-failure branches.
@@ -233,8 +229,7 @@ should stay in fast ExUnit tests.
   provider timeouts, retryable vs non-retryable errors, and store migration
   failures.
 - Add boundary tests for macOS-local paths and CI-platform paths: spaces in
-  paths, long Unix socket paths, temp runtime dirs, Windows-style paths, and
-  endpoint URI parsing.
+  paths, long Unix socket paths, temp runtime dirs, and endpoint URI parsing.
 - Add regression tests for resource cleanup: blocked starts, canceled rounds,
   failed tool calls, daemon stop, stale endpoint cleanup, and scheduler-owned
   recovered rounds.
@@ -289,9 +284,8 @@ Start with these areas after the first coverage report:
 
 ## E2E Test Model
 
-Use shell scripts under `test/e2e/` for true process-level CLI tests. Keep them
-portable POSIX shell where possible and write Windows-specific PowerShell tests
-separately when needed.
+Use portable POSIX shell scripts under `test/e2e/` for true process-level CLI
+tests.
 
 Recommended structure:
 
@@ -304,7 +298,6 @@ test/e2e/
   authoring_patch.sh
   store_backup_restore.sh
   package_artifact.sh
-  windows_cli.ps1
 ```
 
 Each script should:
@@ -485,17 +478,6 @@ Recommended jobs:
   - macOS package e2e should include the Apple Silicon Burrito host-runnable
     target when runtime permits.
 
-- `windows-cli-contract`
-  - Runs on `windows-latest`.
-  - Starts with source-level CLI contract tests through `mix test` and a
-    PowerShell e2e script for `version`, `shell validate`, `shell normalize`,
-    and `round run`.
-  - Defers daemon/native named-pipe e2e until Windows daemon transport is
-    verified. Windows default loopback TCP discovery should still be covered by
-    unit/component tests.
-  - Covers Windows compatibility in GitHub workflows rather than requiring a
-    local Windows machine.
-
 - `k3d-e2e`
   - Runs on `ubuntu-latest`.
   - Manual dispatch and nightly schedule only at first.
@@ -594,9 +576,9 @@ Implementation status:
   authoring, and store E2E scripts.
 - Phase T2 is complete with Linux coverage export, artifact upload, and gate
   enforcement in GitHub Actions.
-- Phase T3 is implemented with Linux/macOS offline E2E workflow jobs, a Windows
-  source-built CLI contract job, deterministic runner-temp artifact paths, and a
-  branch-protection checklist; remote confirmation remains pending.
+- Phase T3 is implemented with Linux/macOS offline E2E workflow jobs,
+  deterministic runner-temp artifact paths, and a branch-protection checklist;
+  remote confirmation remains pending.
 - Phase T1A is complete for the current unit-gap checklist: persisted error-map
   regression coverage, crypto key tests, deeper resource limiter cleanup
   coverage, scheduler-owned Breech recovery coverage, and provider DNS policy
@@ -742,28 +724,21 @@ Tasks:
 - Run Linux and macOS e2e CLI flows on PRs and pushes, with macOS treated as
   the local-developer parity check.
 - Run daemon and authoring e2e on Linux.
-- Add the initial Windows CLI contract job after POSIX e2e is stable.
-- Keep Linux and Windows coverage in GitHub workflows so local development can
-  stay centered on macOS.
+- Keep Linux coverage in GitHub workflows so local development can stay
+  centered on macOS.
 - Upload e2e artifacts on failure.
 
 Acceptance:
 
 - `[x]` Linux and macOS e2e jobs are defined without secrets.
 - `[ ]` Linux and macOS e2e jobs pass remotely.
-- `[ ]` Windows CLI contract job passes without secrets.
 - `[x]` E2E jobs are pinned to exact action SHAs.
 - `[x]` Forked PRs do not require secrets.
 
 Progress:
 
-- `[x]` Added `test/e2e/windows_cli.ps1` for source-built CLI checks on
-  `windows-latest`.
-- `[x]` Added the `windows-cli-contract` job to `.github/workflows/e2e.yml`.
-- `[x]` Added `make e2e-windows` as a local/CI convenience wrapper for
-  PowerShell-capable environments.
 - `[x]` E2E artifact paths are rooted under `${{ runner.temp }}` on GitHub
-  runners for Linux, macOS, and Windows.
+  runners for Linux and macOS.
 - `[x]` Added `docs/ci.md` with required e2e/package check names for branch
   protection.
 - `[x]` Added job-level timeouts to e2e jobs so stuck daemon or package commands
@@ -778,8 +753,8 @@ Tasks:
 - `[x]` Run e2e basic against the escript.
 - `[x]` Run e2e basic against Mix release CLI wrappers.
 - `[x]` Run host-runnable Burrito e2e on Linux and macOS.
-- `[x]` Keep cross-built Windows and ARM artifacts to build-only until native runners
-  or emulation are available.
+- `[x]` Keep cross-built ARM artifacts build-only until native runners or
+  emulation are available.
 
 Acceptance:
 
@@ -796,7 +771,7 @@ Progress:
 - `[x]` `make package` now runs package E2E for escript and native Mix release
   artifacts before copying release assets.
 - `[x]` Build and release workflows run package E2E for host-runnable Burrito
-  targets and keep cross-built Linux ARM64/Windows Burrito artifacts build-only.
+  targets and keep cross-built Linux ARM64 Burrito artifacts build-only.
 - `[x]` Local macOS validation passed for escript, native release, Burrito, and
   the combined `make package ARTIFACT_SUFFIX=local-package-e2e` path.
 - `[x]` Added job-level timeouts to build and release package jobs.
@@ -864,7 +839,6 @@ Priority areas:
 - `[x]` Store backup/restore/migration failure paths.
 - `[x]` Patch apply partial-failure and invalid validation paths.
 - `[x]` Provider transport error classification.
-- `[x]` Windows path/address parsing.
 - `[x]` Resource limiter queue cleanup and blocked-start accounting.
 - `[x]` Scheduler-owned recovered rounds.
 - `[x]` Security equality, provider config normalization, redaction, and
@@ -884,8 +858,6 @@ Progress:
   after singleton lock verification, allowing daemon startup/recovery to clear
   stale local state without deleting a live endpoint.
 - `[x]` TCP IPC endpoint strings round-trip IPv4 and bracketed IPv6 addresses.
-- `[x]` Windows named pipe endpoint strings round-trip encoded path segments and
-  reject malformed pipe addresses.
 
 ## Proposed GitHub Workflow Triggers
 

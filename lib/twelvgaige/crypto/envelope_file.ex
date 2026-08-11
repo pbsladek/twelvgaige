@@ -121,7 +121,6 @@ defmodule Twelvgaige.Crypto.EnvelopeFile do
   defp key_backend_atom("file"), do: {:ok, :file}
   defp key_backend_atom("test"), do: {:ok, :test}
   defp key_backend_atom("macos_keychain"), do: {:ok, :macos_keychain}
-  defp key_backend_atom("windows_dpapi"), do: {:ok, :windows_dpapi}
   defp key_backend_atom("linux_secret_service"), do: {:ok, :linux_secret_service}
   defp key_backend_atom(_backend), do: {:error, :unsupported_envelope_key_backend}
 end

@@ -12,102 +12,6 @@ defmodule Twelvgaige.Breech.IPCTest do
   @workflow_path "test/fixtures/shells/simple_workflow.yaml"
   @safety_workflow_path "test/fixtures/shells/safety_workflow.yaml"
 
-  defmodule FakeNpipeServerTransport do
-    @moduledoc false
-
-    @table __MODULE__
-
-    def listen(path, _opts) do
-      ensure_table()
-      {:ok, broker} = __MODULE__.Broker.start_link([])
-      :ets.insert(@table, {path, broker})
-      {:ok, {:listener, path, broker}}
-    end
-
-    def call(path, payload, opts) do
-      ensure_table()
-      timeout = Keyword.fetch!(opts, :timeout_ms)
-
-      case :ets.lookup(@table, path) do
-        [{^path, broker}] -> __MODULE__.Broker.connect(broker, payload, timeout)
-        [] -> {:error, :named_pipe_unsupported}
-      end
-    end
-
-    def accept({:listener, _path, broker}), do: __MODULE__.Broker.accept(broker)
-    def recv({:connection, payload, _from}, _timeout), do: {:ok, payload}
-
-    def send({:connection, _payload, from}, response) do
-      GenServer.reply(from, {:ok, response})
-      :ok
-    end
-
-    def close({:listener, path, broker}) do
-      ensure_table()
-      :ets.delete(@table, path)
-
-      if Process.alive?(broker) do
-        GenServer.stop(broker, :normal, 1_000)
-      end
-
-      :ok
-    catch
-      :exit, _reason -> :ok
-    end
-
-    def close({:connection, _payload, _from}), do: :ok
-
-    defp ensure_table do
-      case :ets.info(@table) do
-        :undefined ->
-          try do
-            :ets.new(@table, [:named_table, :public, :set, read_concurrency: true])
-          catch
-            :error, :badarg -> :ok
-          end
-
-        _info ->
-          :ok
-      end
-    end
-
-    defmodule Broker do
-      @moduledoc false
-
-      use GenServer
-
-      def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
-      def accept(broker), do: GenServer.call(broker, :accept, :infinity)
-
-      def connect(broker, payload, timeout),
-        do: GenServer.call(broker, {:connect, payload}, timeout)
-
-      @impl true
-      def init(_opts), do: {:ok, %{acceptor: nil, queue: :queue.new()}}
-
-      @impl true
-      def handle_call(:accept, from, state) do
-        case :queue.out(state.queue) do
-          {{:value, connection}, queue} ->
-            {:reply, {:ok, connection}, %{state | queue: queue}}
-
-          {:empty, _queue} ->
-            {:noreply, %{state | acceptor: from}}
-        end
-      end
-
-      def handle_call({:connect, payload}, from, %{acceptor: nil} = state) do
-        connection = {:connection, payload, from}
-        {:noreply, %{state | queue: :queue.in(connection, state.queue)}}
-      end
-
-      def handle_call({:connect, payload}, from, %{acceptor: acceptor} = state) do
-        GenServer.reply(acceptor, {:ok, {:connection, payload, from}})
-        {:noreply, %{state | acceptor: nil}}
-      end
-    end
-  end
-
   setup do
     server = start_supervised!({Server, port: 0, token: @token})
     address = {:tcp, {127, 0, 0, 1}, Server.port(server)}
@@ -154,7 +58,12 @@ defmodule Twelvgaige.Breech.IPCTest do
       "repository" => "/tmp/repository",
       "task" => "Fix the failing test",
       "auth_profile" => "codex-service",
-      "sandbox" => "podman"
+      "sandbox" => "podman",
+      "saved_plan" => %{
+        "schema" => "twelvgaige.session-plan",
+        "schema_version" => 1,
+        "plan_digest" => "sha256:ipc-boundary"
+      }
     }
 
     assert {:ok,
@@ -163,9 +72,14 @@ defmodule Twelvgaige.Breech.IPCTest do
               "child_id" => "child_ipc",
               "session_id" => "sess_ipc",
               "status" => "submitted"
-            }} = Client.start_session(address, attrs, token: @token)
+            }} =
+             Client.start_session(address, attrs,
+               token: @token,
+               request_id: "evt_session_start"
+             )
 
-    assert_receive {:session_start, ^attrs, :configured_manager}
+    assert_receive {:session_start, request, :configured_manager}
+    assert request == Map.put(attrs, "request_id", "evt_session_start")
   end
 
   test "streams session events, reviews handoffs, and requests bounded repair over IPC" do
@@ -445,90 +359,94 @@ defmodule Twelvgaige.Breech.IPCTest do
     assert status["status"] == "running"
   end
 
-  test "named pipe addresses carry the same length-prefixed JSON protocol through an injected transport" do
-    pipe_path = ~S(\\.\pipe\twelvgaige-test-breech)
+  test "a response timeout preserves the accepted request identity and unknown disposition" do
+    parent = self()
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, packet: 4, active: false, ip: {127, 0, 0, 1}])
+    {:ok, {{127, 0, 0, 1}, port}} = :inet.sockname(listener)
 
-    transport = fn ^pipe_path, payload, opts ->
-      assert Keyword.fetch!(opts, :timeout_ms) == 30_000
-      assert {:ok, request} = Protocol.decode(payload)
-      assert request["command"] == "status"
+    spawn_link(fn ->
+      {:ok, socket} = :gen_tcp.accept(listener)
+      {:ok, payload} = :gen_tcp.recv(socket, 0, 1_000)
+      {:ok, request} = Protocol.decode(payload)
+      send(parent, {:timeout_request, request})
+      Process.sleep(100)
+      :gen_tcp.close(socket)
+      :gen_tcp.close(listener)
+    end)
 
-      {:ok,
-       Protocol.encode(
-         Protocol.ok(request, %{
-           "status" => "running",
-           "version" => Twelvgaige.version()
-         })
-       )}
-    end
-
-    assert {:ok, status} =
-             Client.status({:npipe, pipe_path},
-               npipe_transport: transport
+    assert {:error, %Twelvgaige.Error{} = error} =
+             Client.call(
+               {:tcp, {127, 0, 0, 1}, port},
+               "workspace.cleanup",
+               %{"workspace_id" => "ws_timeout"},
+               request_id: "req_timeout_lookup",
+               timeout_ms: 25
              )
 
-    assert status["status"] == "running"
-    assert status["version"] == Twelvgaige.version()
+    assert_receive {:timeout_request, %{"request_id" => "req_timeout_lookup"}}
+
+    assert error.class == :timeout_error
+    assert error.reason == :client_timeout
+    assert error.retryable
+    assert error.details.request_id == "req_timeout_lookup"
+    assert error.details.disposition == "unknown"
+    assert error.details.operation_may_continue
+
+    assert error.details.lookup_command ==
+             "twelvgaige operation show req_timeout_lookup"
   end
 
-  test "server reports named pipe listener support explicitly when unavailable" do
-    trap_exit = Process.flag(:trap_exit, true)
+  test "looks up a durable session operation by its request ID" do
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "twelvgaige-operation-ipc-#{System.unique_integer([:positive])}"
+      )
 
-    try do
-      assert {:error, :named_pipe_unsupported} =
-               Server.start_link(
-                 transport: :npipe,
-                 pipe_path: ~S(\\.\pipe\twelvgaige-test-breech)
-               )
-    after
-      Process.flag(:trap_exit, trap_exit)
-    end
-  end
+    File.mkdir_p!(root)
+    on_exit(fn -> File.rm_rf!(root) end)
 
-  test "server dispatches named pipe listener protocol through an injected transport" do
-    dir = Path.join(System.tmp_dir!(), "twelvgaige_npipe_#{System.unique_integer([:positive])}")
-    endpoint_path = Path.join(dir, "breech.endpoint.json")
-    pipe_path = ~S(\\.\pipe\twelvgaige-test-server-breech)
-    on_exit(fn -> File.rm_rf(dir) end)
+    store = start_supervised!({Store, name: nil, path: Path.join(root, "operations.sqlite3")})
+
+    operations =
+      start_supervised!(
+        {SessionControl, name: nil, store: store, workspace_root: Path.join(root, "workspaces")}
+      )
+
+    assert {:ok, _session} =
+             SessionControl.register(
+               %{
+                 id: "sess_operation_lookup",
+                 plan_id: "plan_operation_lookup",
+                 status: :running,
+                 runtime: :codex,
+                 start_request: %{"request_id" => "req_operation_lookup"}
+               },
+               server: operations
+             )
 
     server =
-      start_supervised!(%{
-        id: {:npipe_ipc_server, pipe_path},
-        start:
-          {Server, :start_link,
-           [
-             [
-               transport: :npipe,
-               pipe_path: pipe_path,
-               token: @token,
-               endpoint_path: endpoint_path,
-               npipe_server_transport: FakeNpipeServerTransport
-             ]
-           ]}
-      })
+      start_supervised!(
+        {Server, port: 0, token: @token, operations: operations},
+        id: {:operation_lookup_server, root}
+      )
 
-    assert Server.address(server) == {:npipe, pipe_path}
+    address = {:tcp, {127, 0, 0, 1}, Server.port(server)}
 
-    assert {:ok, endpoint} = Endpoint.read(path: endpoint_path)
-    assert endpoint.address == {:npipe, pipe_path}
+    assert {:ok, operation} =
+             Client.get_operation(address, "req_operation_lookup", token: @token)
 
-    assert {:ok, status} =
-             Client.status({:npipe, pipe_path},
-               token: @token,
-               npipe_transport: &FakeNpipeServerTransport.call/3
-             )
+    assert operation == %{
+             "kind" => "session_start",
+             "request_id" => "req_operation_lookup",
+             "session_id" => "sess_operation_lookup",
+             "status" => "running",
+             "terminal" => false,
+             "updated_at" => operation["updated_at"]
+           }
 
-    assert status["status"] == "running"
-
-    assert {:ok, discovered_status} =
-             Twelvgaige.status(
-               endpoint_path: endpoint_path,
-               discover_breech?: true,
-               token: @token,
-               npipe_transport: &FakeNpipeServerTransport.call/3
-             )
-
-    assert discovered_status["status"] == "running"
+    assert {:error, %Twelvgaige.Error{reason: :operation_not_found}} =
+             Client.get_operation(address, "req_missing", token: @token)
   end
 
   test "server publishes endpoint file for discovery" do
@@ -584,37 +502,33 @@ defmodule Twelvgaige.Breech.IPCTest do
 
   @tag :daemon
   test "serves status over Unix socket IPC" do
-    if match?({:win32, _name}, :os.type()) do
-      :ok
-    else
-      dir =
-        Path.join(System.tmp_dir!(), "twelvgaige_unix_ipc_#{System.unique_integer([:positive])}")
+    dir =
+      Path.join(System.tmp_dir!(), "twelvgaige_unix_ipc_#{System.unique_integer([:positive])}")
 
-      socket_path = Path.join(dir, "breech.sock")
-      endpoint_path = Path.join(dir, "breech.endpoint.json")
-      on_exit(fn -> File.rm_rf(dir) end)
+    socket_path = Path.join(dir, "breech.sock")
+    endpoint_path = Path.join(dir, "breech.endpoint.json")
+    on_exit(fn -> File.rm_rf(dir) end)
 
-      server =
-        start_supervised!(%{
-          id: {:unix_ipc_server, socket_path},
-          start:
-            {Server, :start_link,
-             [[transport: :unix, socket_path: socket_path, endpoint_path: endpoint_path]]},
-          restart: :temporary
-        })
+    server =
+      start_supervised!(%{
+        id: {:unix_ipc_server, socket_path},
+        start:
+          {Server, :start_link,
+           [[transport: :unix, socket_path: socket_path, endpoint_path: endpoint_path]]},
+        restart: :temporary
+      })
 
-      assert Server.address(server) == {:unix, socket_path}
-      assert {:ok, endpoint} = Endpoint.read(path: endpoint_path)
-      assert endpoint.address == {:unix, socket_path}
-      assert endpoint.token == nil
+    assert Server.address(server) == {:unix, socket_path}
+    assert {:ok, endpoint} = Endpoint.read(path: endpoint_path)
+    assert endpoint.address == {:unix, socket_path}
+    assert endpoint.token == nil
 
-      assert {:ok, status} = Client.status({:unix, socket_path})
-      assert status["status"] == "running"
+    assert {:ok, status} = Client.status({:unix, socket_path})
+    assert status["status"] == "running"
 
-      :ok = GenServer.stop(server)
-      assert not File.exists?(socket_path)
-      assert :none = Endpoint.discover(path: endpoint_path)
-    end
+    :ok = GenServer.stop(server)
+    assert not File.exists?(socket_path)
+    assert :none = Endpoint.discover(path: endpoint_path)
   end
 
   test "protocol reports version mismatch" do
@@ -624,6 +538,123 @@ defmodule Twelvgaige.Breech.IPCTest do
              "ok" => false,
              "error" => %{reason: "daemon_version_mismatch"}
            } = Protocol.error(request, :daemon_version_mismatch)
+  end
+
+  test "serves workspace inspection, diff, and guarded cleanup over IPC" do
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "twelvgaige-workspace-ipc-#{System.unique_integer([:positive])}"
+      )
+
+    repository = Path.join(root, "repository")
+    File.mkdir_p!(repository)
+    on_exit(fn -> File.rm_rf!(root) end)
+    git!(repository, ["init", "--quiet"])
+    git!(repository, ["config", "user.name", "Test"])
+    git!(repository, ["config", "user.email", "test@localhost"])
+    File.write!(Path.join(repository, "base.txt"), "base")
+    git!(repository, ["add", "base.txt"])
+    git!(repository, ["commit", "--quiet", "-m", "base"])
+
+    artifact_store =
+      start_supervised!(
+        {Twelvgaige.Artifact.Store,
+         name: nil, root: Path.join(root, "artifacts"), key: :crypto.strong_rand_bytes(32)},
+        id: {:workspace_ipc_artifact_store, root}
+      )
+
+    manager =
+      start_supervised!(
+        {Twelvgaige.Workspace.Manager,
+         name: nil, root: Path.join(root, "workspaces"), artifact_store: artifact_store},
+        id: {:workspace_ipc_manager, root}
+      )
+
+    assert {:ok, workspace} =
+             Twelvgaige.Workspace.Manager.create(repository,
+               server: manager,
+               workspace_id: "ws_ipc_result"
+             )
+
+    File.write!(Path.join(workspace.path, "result.txt"), "captured over IPC")
+
+    assert {:ok, _workspace} =
+             Twelvgaige.Workspace.Manager.quiesce(
+               workspace.id,
+               %{
+                 runtime_stopped: true,
+                 runtime_identity: "sandbox-ipc",
+                 stopped_at: DateTime.utc_now()
+               },
+               server: manager
+             )
+
+    assert {:ok, finalized, _report} =
+             Twelvgaige.Workspace.Manager.finalize(workspace.id, server: manager)
+
+    assert {:ok, workspace_set} =
+             Twelvgaige.Workspace.Manager.create_set(%{app: repository},
+               server: manager,
+               set_id: "wsset_ipc",
+               owner_session_id: "sess_ipc_owner"
+             )
+
+    server =
+      start_supervised!(
+        {Server,
+         port: 0, token: @token, workspace_manager: manager, artifact_store: artifact_store},
+        id: {:workspace_ipc_server, root}
+      )
+
+    address = {:tcp, {127, 0, 0, 1}, Server.port(server)}
+
+    assert {:ok, listed_workspaces} = Client.list_workspaces(address, token: @token)
+
+    assert Enum.any?(
+             listed_workspaces,
+             &match?(%{"id" => "ws_ipc_result", "state" => "reviewable"}, &1)
+           )
+
+    assert {:ok, [%{"id" => "wsset_ipc"}]} =
+             Client.list_workspace_sets(address, token: @token)
+
+    assert {:ok, %{"id" => "wsset_ipc", "repositories" => repositories}} =
+             Client.get_workspace_set(address, workspace_set.id, token: @token)
+
+    assert repositories["app"]["base_commit"] == workspace_set.repositories["app"].base_commit
+
+    assert {:ok, %{"path" => path, "control_epoch" => epoch}} =
+             Client.get_workspace(address, workspace.id, token: @token)
+
+    assert path == workspace.path
+    assert epoch == finalized.control_epoch
+
+    assert {:ok, %{"patch" => %{"encoding" => "utf-8", "data" => patch}}} =
+             Client.workspace_diff(address, workspace.id, token: @token)
+
+    assert patch =~ "result.txt"
+
+    assert {:ok, %{"dry_run" => true, "expected_epoch" => ^epoch}} =
+             Client.cleanup_workspace(address, workspace.id, token: @token)
+
+    assert {:ok, %{"deleted" => true, "dry_run" => false}} =
+             Client.cleanup_workspace(address, workspace.id,
+               token: @token,
+               write?: true,
+               yes?: true,
+               expected_epoch: epoch,
+               request_id: "workspace-ipc-cleanup"
+             )
+
+    refute File.exists?(workspace.path)
+  end
+
+  defp git!(repository, args) do
+    case System.cmd("git", ["-C", repository | args], stderr_to_stdout: true) do
+      {_output, 0} -> :ok
+      {output, status} -> flunk("git failed with #{status}: #{output}")
+    end
   end
 
   defp eventually(fun), do: eventually(fun, 100)

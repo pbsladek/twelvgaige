@@ -58,44 +58,32 @@ defmodule Twelvgaige.CLI.Commands.RoundQuery do
     end
   end
 
-  @spec stream_watch(String.t(), [String.t()], (String.t() -> term())) :: :ok | no_return()
+  @spec stream_watch(String.t(), [String.t()], (String.t() -> term())) ::
+          {:ok, map()} | {:error, term()}
   def stream_watch(round_id, args, write) do
     with {:ok, opts} <- parse_watch_opts(args) do
-      result =
-        Watch.stream(
-          round_id,
-          fn events ->
-            write.(RoundFormat.events(events, opts[:format]))
-            :ok
-          end,
-          opts
-        )
-
-      case result do
-        {:ok, %{delivered: 0}} ->
-          write.(RoundFormat.events([], opts[:format]))
+      round_id
+      |> Watch.stream(
+        fn events ->
+          write.(RoundFormat.events(events, opts[:format]))
           :ok
-
-        {:ok, _summary} ->
-          :ok
-
-        {:error, error} ->
-          output = format_command_error(error, :human)
-          IO.write(:stderr, output)
-          System.halt(ExitCode.for_error(error))
-
-        {:halt, reason} ->
-          output = format_command_error(reason, :human)
-          IO.write(:stderr, output)
-          System.halt(ExitCode.for_error(reason))
-      end
+        end,
+        opts
+      )
+      |> normalize_stream_result(write, opts[:format])
     else
-      {:error, error} ->
-        output = format_command_error(error, :human)
-        IO.write(:stderr, output)
-        System.halt(ExitCode.for_error(error))
+      {:error, error} -> {:error, error}
     end
   end
+
+  defp normalize_stream_result({:ok, %{delivered: 0} = summary}, write, format) do
+    write.(RoundFormat.events([], format))
+    {:ok, summary}
+  end
+
+  defp normalize_stream_result({:ok, summary}, _write, _format), do: {:ok, summary}
+  defp normalize_stream_result({:error, error}, _write, _format), do: {:error, error}
+  defp normalize_stream_result({:halt, reason}, _write, _format), do: {:error, reason}
 
   defp parse_list_opts(args), do: parse_list_opts(args, format: :human)
   defp parse_list_opts([], opts), do: {:ok, opts}

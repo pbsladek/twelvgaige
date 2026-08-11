@@ -1,0 +1,101 @@
+{
+  "scope": "public no-mutation developer CLI",
+  "status": "pass",
+  "host": {
+    "architecture": "aarch64-apple-darwin25.6.0",
+    "cli_version": "0.0.3",
+    "operating_system": "macos"
+  },
+  "limits": {
+    "bash_completion_ms": 1000,
+    "fish_completion_ms": 1000,
+    "help_ms": 1000,
+    "repository_inspection_ms": 10000,
+    "saved_plan_handoff_ms": 10000,
+    "session_plan_ms": 10000,
+    "task_validation_ms": 2000,
+    "zsh_completion_ms": 1000
+  },
+  "evaluation": {
+    "status": "pass",
+    "checks": [
+      {
+        "status": "pass",
+        "limit": 1000,
+        "metric": "bash_completion_ms",
+        "observed": 6
+      },
+      {
+        "status": "pass",
+        "limit": 1000,
+        "metric": "fish_completion_ms",
+        "observed": 4
+      },
+      {
+        "status": "pass",
+        "limit": 1000,
+        "metric": "help_ms",
+        "observed": 3
+      },
+      {
+        "status": "pass",
+        "limit": 10000,
+        "metric": "repository_inspection_ms",
+        "observed": 273
+      },
+      {
+        "status": "pass",
+        "limit": 10000,
+        "metric": "saved_plan_handoff_ms",
+        "observed": 265
+      },
+      {
+        "status": "pass",
+        "limit": 10000,
+        "metric": "session_plan_ms",
+        "observed": 274
+      },
+      {
+        "status": "pass",
+        "limit": 2000,
+        "metric": "task_validation_ms",
+        "observed": 10
+      },
+      {
+        "status": "pass",
+        "limit": 1000,
+        "metric": "zsh_completion_ms",
+        "observed": 4
+      }
+    ]
+  },
+  "measurements": {
+    "bash_completion_ms": 6,
+    "fish_completion_ms": 4,
+    "help_ms": 3,
+    "repository_inspection_ms": 273,
+    "saved_plan_handoff_ms": 265,
+    "session_plan_ms": 274,
+    "task_validation_ms": 10,
+    "zsh_completion_ms": 4
+  },
+  "contracts": {
+    "configuration_provenance": "pass",
+    "complete_typed_default_inventory": "pass",
+    "completion_generation": "pass",
+    "exhaustive_command_semantic_parser_parity": "pass",
+    "exhaustive_command_shape_completion_parity": "pass",
+    "help_common_path": "pass",
+    "missing_daemon_fail_closed": "pass",
+    "repository_inspection_json": "pass",
+    "saved_plan_exact_handoff": "pass",
+    "saved_plan_owner_only": "pass",
+    "session_plan_no_mutation": "pass",
+    "session_plan_task_redaction": "pass",
+    "task_validation_json": "pass",
+    "typed_command_model": "pass",
+    "versioned_result_envelope": "pass"
+  },
+  "generated_at": "2026-08-11T18:17:50Z",
+  "schema_version": 1
+}

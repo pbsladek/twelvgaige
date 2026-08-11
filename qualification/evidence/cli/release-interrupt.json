@@ -1,0 +1,28 @@
+{
+  "release": {
+    "version": "0.0.3",
+    "launcher_sha256": "a20b1edcc601bfd2d72137386b5cd2c9206642aa5362c39324ce09317a74a62f"
+  },
+  "schema": "twelvgaige.cli.release-interrupt-qualification",
+  "schema_version": 1,
+  "observed_at": "2026-08-11T18:19:04Z",
+  "platform": {
+    "os": "unix/darwin",
+    "otp": "29",
+    "elixir": "1.20.3",
+    "architecture": "arm64"
+  },
+  "checks": {
+    "installed_launcher_invoked": true,
+    "daemon_protocol_used": true,
+    "first_interrupt_requested_cancellation": true,
+    "cancellation_persisted": true,
+    "second_interrupt_detached_truthfully": true,
+    "ordinary_interrupt_exit_status": 130,
+    "invalid_command_exit_status": 4,
+    "child_process_reaped": true,
+    "temporary_argument_files_removed": true,
+    "temporary_interrupt_files_removed": true
+  },
+  "qualified": true
+}

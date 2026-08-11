@@ -82,6 +82,11 @@ defmodule Twelvgaige.Round.Snapshot do
     }
   end
 
+  @doc "Upgrades a decoded versioned snapshot while preserving legacy map records."
+  @spec upgrade(t() | map()) :: t() | map()
+  def upgrade(%__MODULE__{} = snapshot), do: new(snapshot)
+  def upgrade(snapshot) when is_map(snapshot), do: snapshot
+
   @doc "Projects live round state into recovery-safe data."
   @spec from_state(Round.State.t()) :: t()
   def from_state(%Round.State{} = state) do
@@ -134,6 +139,8 @@ defmodule Twelvgaige.Round.Snapshot do
   @doc "Returns the canonical recovery snapshot accepted by a store boundary."
   @spec persistable(t() | map()) :: t()
   def persistable(%__MODULE__{} = snapshot) do
+    snapshot = upgrade(snapshot)
+
     %{
       snapshot
       | input: Redactor.redact_json(snapshot.input),

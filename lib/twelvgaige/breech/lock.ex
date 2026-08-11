@@ -130,12 +130,8 @@ defmodule Twelvgaige.Breech.Lock do
     case File.chmod(path, mode) do
       :ok -> :ok
       {:error, :enotsup} -> :ok
-      {:error, :eperm} -> if(windows?(), do: :ok, else: {:error, :eperm})
+      {:error, :eperm} -> {:error, :eperm}
       {:error, _reason} = error -> error
     end
-  end
-
-  defp windows? do
-    match?({:win32, _name}, :os.type())
   end
 end

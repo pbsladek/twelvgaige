@@ -201,24 +201,4 @@ defmodule Twelvgaige.Crypto.StatusTest do
 
     assert Enum.any?(warnings, &String.contains?(&1, "not universal headless server support"))
   end
-
-  test "reports Windows DPAPI backend as OS protected pending release verification" do
-    report =
-      Status.report(
-        store_config: Memory,
-        http_listener: false,
-        key_manager: Twelvgaige.Crypto.KeyManager.WindowsDPAPIBackend
-      )
-
-    assert %{
-             "key_manager" => %{
-               "enabled" => true,
-               "backend" => "windows_dpapi",
-               "os_protected" => true,
-               "warnings" => warnings
-             }
-           } = report
-
-    assert Enum.any?(warnings, &String.contains?(&1, "Windows release verification is pending"))
-  end
 end

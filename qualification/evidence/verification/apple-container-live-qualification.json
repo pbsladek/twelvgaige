@@ -1,0 +1,55 @@
+{
+  "result": "pass",
+  "image": {
+    "reference": "localhost/twelvgaige/worker:codex-0.146.0",
+    "digest": "sha256:c3edda97f103f9db0d61d0873589f4e08c093dae04030adc0c6b90deabc105c4"
+  },
+  "backend": "apple_container",
+  "schema_version": 1,
+  "generated_at": "2026-08-11T09:34:19Z",
+  "executor": {
+    "started_at": "2026-08-11T09:34:16.378283Z",
+    "commands": [
+      {
+        "exit_status": 0,
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "test \"$(cat verification-input.txt)\" = qualified"
+        ]
+      },
+      {
+        "exit_status": 0,
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "! env | grep -E '^(OPENAI|CODEX|AWS|GITHUB|HTTP_PROXY|HTTPS_PROXY)='"
+        ]
+      },
+      {
+        "exit_status": 0,
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "! grep -qE '^[[:space:]]*eth[0-9]+:' /proc/net/dev"
+        ]
+      }
+    ],
+    "backend": "apple_container",
+    "workspace_copy": true,
+    "network_mode": "none",
+    "request_digest": "sha256:1e95f4a161a6f14ab2c186e1da8c58f4ab5d3b865511c1dc5439911492b63aa7",
+    "credentials_present": false,
+    "provider_environment_present": false,
+    "finished_at": "2026-08-11T09:34:18.377113Z",
+    "runtime_exit_status": null
+  },
+  "security": {
+    "command_evidence_complete": "pass",
+    "copy_snapshot": "pass",
+    "network_none": "pass",
+    "credential_free": "pass",
+    "provider_environment_absent": "pass",
+    "cleanup_complete": "pass"
+  }
+}

@@ -94,6 +94,7 @@ defmodule Twelvgaige.DeveloperExperienceTest do
                project_root: root,
                auth_profile: "local-account",
                fix?: true,
+               disk_available_fun: fn _path -> {:ok, 10 * 1_024 * 1_024 * 1_024} end,
                executable_finder: fn "codex" -> "/usr/local/bin/codex" end,
                sandbox_check_fun: fn :podman, _opts -> {:error, :not_ready} end,
                sandbox_setup_fun: fn :podman, _opts -> {:ok, %{ready: true}} end
@@ -101,6 +102,13 @@ defmodule Twelvgaige.DeveloperExperienceTest do
 
     assert report.status == :ready
     assert report.fixes == [:project_initialized, :sandbox_configured]
+    assert report.versions.cli == Twelvgaige.version()
+    assert report.versions.daemon_protocol == Twelvgaige.Breech.IPC.Protocol.api_version()
+    assert report.versions.provider == Twelvgaige.Integration.Codex.descriptor().artifact_version
+    assert report.versions.credential_mode == :brokered_service
+    assert report.capabilities.provider.structured_protocol
+    assert report.capabilities.native_subagents
+    assert Enum.find(report.checks, &(&1.name == :disk_capacity)).status == :ok
 
     missing_auth_root = temp_dir("doctor-missing-auth")
     assert {:ok, _initialized} = Init.run(project_root: missing_auth_root)
@@ -109,12 +117,33 @@ defmodule Twelvgaige.DeveloperExperienceTest do
              Doctor.run(
                project_root: missing_auth_root,
                user_config_path: Path.join(missing_auth_root, "missing.yaml"),
+               disk_available_fun: fn _path -> {:ok, 10 * 1_024 * 1_024 * 1_024} end,
                executable_finder: fn "codex" -> "/usr/local/bin/codex" end,
                sandbox_check_fun: fn :podman, _opts -> {:ok, %{ready: true}} end
              )
 
     assert missing_auth.status == :action_required
     assert Enum.find(missing_auth.checks, &(&1.name == :authentication_profile)).status == :error
+  end
+
+  test "doctor reports actionable disk pressure without exposing a data path" do
+    root = temp_dir("doctor-disk-pressure")
+    assert {:ok, _initialized} = Init.run(project_root: root, auth_profile: "local-account")
+
+    assert {:ok, report} =
+             Doctor.run(
+               project_root: root,
+               executable_finder: fn "codex" -> "/usr/local/bin/codex" end,
+               sandbox_check_fun: fn :podman, _opts -> {:ok, %{ready: true}} end,
+               disk_available_fun: fn _path -> {:ok, 1_024} end
+             )
+
+    assert report.status == :action_required
+    disk = Enum.find(report.checks, &(&1.name == :disk_capacity))
+    assert disk.status == :error
+    assert disk.detail.available_bytes == 1_024
+    assert disk.remedy =~ "workspace retention status"
+    refute inspect(disk) =~ System.user_home!()
   end
 
   test "task validate and session plan catch errors without daemon submission" do

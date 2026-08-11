@@ -3,6 +3,7 @@ defmodule Twelvgaige.Manager.Plan do
 
   alias Twelvgaige.Manager.Budget
   alias Twelvgaige.Manager.Plan.Task, as: ChildTask
+  alias Twelvgaige.Workspace.Canonical
 
   @enforce_keys [
     :id,
@@ -28,6 +29,7 @@ defmodule Twelvgaige.Manager.Plan do
     :auth_profile_id,
     :sandbox_profile,
     :network_mode,
+    :source_state_token,
     :budget,
     :deadline,
     :created_at,
@@ -35,11 +37,14 @@ defmodule Twelvgaige.Manager.Plan do
     tasks: [],
     capabilities: [],
     allowed_paths: [],
+    source_mode: :committed,
+    include_untracked: false,
+    include_ignored: false,
     max_depth: 1,
     max_children: 16,
     max_fanout: 4,
-    schema_version: 1,
-    encoding_version: 1
+    schema_version: 2,
+    encoding_version: 2
   ]
 
   @type t :: %__MODULE__{}
@@ -59,6 +64,10 @@ defmodule Twelvgaige.Manager.Plan do
          auth_profile_id: value(attrs, :auth_profile_id),
          sandbox_profile: value(attrs, :sandbox_profile),
          network_mode: value(attrs, :network_mode),
+         source_state_token: value(attrs, :source_state_token),
+         source_mode: value(attrs, :source_mode, :committed),
+         include_untracked: value(attrs, :include_untracked, false),
+         include_ignored: value(attrs, :include_ignored, false),
          capabilities: value(attrs, :capabilities, []),
          allowed_paths: value(attrs, :allowed_paths, []),
          budget: budget,
@@ -78,13 +87,9 @@ defmodule Twelvgaige.Manager.Plan do
   def new(_attrs), do: {:error, :manager_plan_invalid}
 
   def digest(%__MODULE__{} = plan) do
-    plan
-    |> Map.from_struct()
-    |> Map.delete(:created_at)
-    |> canonical()
-    |> :erlang.term_to_binary()
-    |> then(&:crypto.hash(:sha256, &1))
-    |> Base.encode16(case: :lower)
+    payload = plan |> Map.from_struct() |> Map.delete(:created_at)
+    {:ok, digest} = Canonical.digest("manager-plan", plan.encoding_version, payload)
+    digest
   end
 
   defp child_tasks(tasks) when is_list(tasks) do
@@ -101,15 +106,6 @@ defmodule Twelvgaige.Manager.Plan do
   end
 
   defp child_tasks(_tasks), do: {:error, :manager_tasks_invalid}
-
-  defp canonical(%DateTime{} = date), do: DateTime.to_iso8601(date)
-  defp canonical(%_{} = struct), do: struct |> Map.from_struct() |> canonical()
-
-  defp canonical(map) when is_map(map),
-    do: map |> Enum.map(fn {key, val} -> {to_string(key), canonical(val)} end) |> Enum.sort()
-
-  defp canonical(list) when is_list(list), do: Enum.map(list, &canonical/1)
-  defp canonical(value), do: value
 
   defp required(attrs, key) do
     case value(attrs, key, :missing) do
@@ -142,6 +138,7 @@ defmodule Twelvgaige.Manager.Plan.Task do
     :auth_profile_id,
     :sandbox_profile,
     :network_mode,
+    :source_state_token,
     :budget,
     :deadline,
     :parent_task_id,
@@ -153,6 +150,9 @@ defmodule Twelvgaige.Manager.Plan.Task do
     mounts: [],
     depends_on: [],
     write: true,
+    source_mode: nil,
+    include_untracked: nil,
+    include_ignored: nil,
     external_effects: [],
     destructive: false,
     attempt: 0
@@ -172,6 +172,10 @@ defmodule Twelvgaige.Manager.Plan.Task do
          auth_profile_id: value(attrs, :auth_profile_id),
          sandbox_profile: value(attrs, :sandbox_profile),
          network_mode: value(attrs, :network_mode),
+         source_state_token: value(attrs, :source_state_token),
+         source_mode: value(attrs, :source_mode),
+         include_untracked: value(attrs, :include_untracked),
+         include_ignored: value(attrs, :include_ignored),
          capabilities: value(attrs, :capabilities, []),
          allowed_paths: value(attrs, :allowed_paths, []),
          mounts: value(attrs, :mounts, []),

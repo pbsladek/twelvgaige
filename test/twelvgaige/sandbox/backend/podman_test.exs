@@ -2,6 +2,7 @@ defmodule Twelvgaige.Sandbox.Backend.PodmanTest do
   use ExUnit.Case, async: true
 
   alias Twelvgaige.Sandbox.Backend.Podman
+  alias Twelvgaige.Sandbox.LaunchManifest
 
   test "requires the dedicated machine and creates with enforced security flags before start" do
     parent = self()
@@ -52,7 +53,8 @@ defmodule Twelvgaige.Sandbox.Backend.PodmanTest do
       limits: %{cpu: 2, memory_bytes: 1024, pids: 100},
       deadline: DateTime.add(DateTime.utc_now(), 300),
       policy_revision: "policy-1",
-      created_at: DateTime.utc_now()
+      created_at: DateTime.utc_now(),
+      environment_names: ["CODEX_HOME"]
     }
 
     assert {:ok, manifest} =
@@ -69,6 +71,7 @@ defmodule Twelvgaige.Sandbox.Backend.PodmanTest do
         security_options: manifest.security_options,
         network_mode: manifest.network_mode,
         limits: manifest.limits,
+        environment_names: manifest.environment_names,
         labels: manifest.labels
       }
     end
@@ -77,17 +80,33 @@ defmodule Twelvgaige.Sandbox.Backend.PodmanTest do
              Podman.create(manifest,
                command_runner: runner,
                observed_factory: observed_factory,
+               environment: %{"CODEX_HOME" => "/run/codex-home"},
                command: ["sleep", "infinity"]
              )
 
     assert_receive {:podman, create_args}
     assert hd(create_args) == "create"
     assert "--read-only" in create_args
+    assert "--interactive" in create_args
     assert contiguous?(create_args, ["--cap-drop", "ALL"])
     assert contiguous?(create_args, ["--security-opt", "no-new-privileges"])
     assert contiguous?(create_args, ["--network", "none"])
+    assert contiguous?(create_args, ["--env", "CODEX_HOME=/run/codex-home"])
 
     assert {:ok, %{status: :running}} = Podman.start(resource_id, command_runner: runner)
+
+    runtime_binary = System.find_executable("sh")
+
+    assert {:ok,
+            %{
+              binary: ^runtime_binary,
+              arguments: ["start", "--attach", "--interactive", ^resource_id],
+              environment: [{"PATH", "/qualified/bin"}]
+            }} =
+             Podman.stdio_transport(resource_id,
+               podman_binary: runtime_binary,
+               transport_environment: [{"PATH", "/qualified/bin"}]
+             )
   end
 
   test "restricted health rejects broad machine mounts and accepts declared roots" do
@@ -163,6 +182,46 @@ defmodule Twelvgaige.Sandbox.Backend.PodmanTest do
     assert observed.dropped_capabilities == ["ALL"]
     assert observed.limits.cpu == 1
     assert observed.labels == created_manifest.labels
+  end
+
+  test "full workspace export replaces the managed copy only after staging validation" do
+    root = temp_dir()
+    destination = Path.join(root, "managed-workspace")
+    File.mkdir_p!(destination)
+    File.write!(Path.join(destination, "deleted.txt"), "old\n")
+
+    spec = %{
+      profile: :coding_restricted,
+      image_reference: "localhost/twelvgaige/worker",
+      image_digest: "sha256:" <> String.duplicate("a", 64),
+      workspace_transport: :copy_snapshot,
+      mounts: [%{source: destination, destination: "/workspace", mode: :read_write}],
+      network_mode: :none,
+      allowed_destinations: [],
+      limits: %{cpu: 1, memory_bytes: 268_435_456, pids: 32},
+      deadline: DateTime.add(DateTime.utc_now(), 300),
+      policy_revision: "policy-1",
+      created_at: DateTime.utc_now()
+    }
+
+    assert {:ok, prepared} = Podman.prepare(spec, allowed_roots: [root])
+    manifest = LaunchManifest.bind_resource(prepared, "sbx_full_export")
+
+    runner = fn _binary, ["cp", "--archive=false", _source, staging], _opts ->
+      File.write!(Path.join(staging, "result.txt"), "qualified\n")
+      {:ok, %{status: 0, stdout: "", stderr: "", duration_ms: 1}}
+    end
+
+    assert {:ok, %{managed_snapshot_replaced: true, bytes: 10}} =
+             Podman.export_workspace("sbx_full_export", destination,
+               manifest: manifest,
+               allowed_export_roots: [root],
+               max_export_bytes: 1_024,
+               command_runner: runner
+             )
+
+    assert File.read!(Path.join(destination, "result.txt")) == "qualified\n"
+    refute File.exists?(Path.join(destination, "deleted.txt"))
   end
 
   defp contiguous?(values, pair),

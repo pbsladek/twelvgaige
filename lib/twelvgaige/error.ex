@@ -61,6 +61,12 @@ defmodule Twelvgaige.Error do
     :policy_denied,
     :round_timeout,
     :shot_timeout,
+    :client_timeout,
+    :session_cancel_request_failed,
+    :session_saved_plan_invalid,
+    :session_saved_plan_drift,
+    :session_saved_plan_write_failed,
+    :operation_not_found,
     :resource_queue_timeout,
     :output_too_large,
     :shot_crash,
@@ -121,6 +127,12 @@ defmodule Twelvgaige.Error do
           | :policy_denied
           | :round_timeout
           | :shot_timeout
+          | :client_timeout
+          | :session_cancel_request_failed
+          | :session_saved_plan_invalid
+          | :session_saved_plan_drift
+          | :session_saved_plan_write_failed
+          | :operation_not_found
           | :resource_queue_timeout
           | :output_too_large
           | :shot_crash

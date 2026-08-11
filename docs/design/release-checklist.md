@@ -4,9 +4,8 @@ This checklist gates the current local single-node CLI release. It assumes Twelv
 
 ## Release Target
 
-- Local single-node operation on macOS, Linux, and Windows laptops.
-- macOS/Linux default IPC: Unix socket.
-- Windows default IPC: authenticated loopback TCP.
+- Local single-node operation on macOS and Linux laptops.
+- Default IPC: Unix socket; authenticated loopback TCP is explicit.
 - Durable local stores: file store and SQLite store.
 - Provider adapters: OpenAI and Ollama with offline fixture coverage.
 - Optional single-user operations plane: delegated Codex sessions with Podman
@@ -21,7 +20,6 @@ This checklist gates the current local single-node CLI release. It assumes Twelv
 
 Not release blockers for this target:
 
-- Native Windows named-pipe listener I/O. Address parsing, discovery, client injection, and server dispatcher injection are implemented; actual listener I/O still needs Windows verification.
 - Multi-node execution, Postgres-backed coordination, and distributed registries.
 - Arbitrary `shell_exec`.
 - Native installers, code signing, notarization, auto-update, or package-manager distribution beyond the Burrito executable and Mix release tarball.
@@ -62,9 +60,11 @@ run:
 make release-qualification
 ```
 
-That target evaluates the fail-closed operations release matrix and reruns the
-default repository gate. It requires the pinned sandbox, worker-image, egress,
-and qualification artifacts for any backend claimed as supported on that host.
+That target regenerates the locally runnable CLI, workspace, migration,
+lifecycle-fault, completion, packaged-executable, and interrupt evidence; runs
+the default repository gate; and then evaluates the fail-closed 20-check release
+matrix. It requires the pinned sandbox, worker-image, egress, and authenticated
+attached-session artifacts for any backend claimed as supported on that host.
 Do not claim delegated-session support from unit tests alone.
 
 Run the daemon suite on machines where local IPC tests are supported:
@@ -98,8 +98,8 @@ make escript-smoke
 ```
 
 Build and verify the native Mix release bundle. Mix releases are target-specific:
-build the macOS artifact on macOS, Linux artifact on Linux, and Windows artifact
-on Windows. The tarball includes ERTS and the product CLI wrapper.
+build the macOS artifact on macOS and the Linux artifact on Linux. The tarball
+includes ERTS and the product CLI wrapper.
 
 ```bash
 make release-smoke
@@ -108,14 +108,10 @@ ls -lh _build/prod/twelvgaige_native-*.tar.gz
 
 In the release directory, `bin/twelvgaige` is the product CLI and
 `bin/twelvgaige_native` is the Mix-generated lifecycle script for `start`,
-`daemon`, `remote`, `rpc`, and `stop`. Windows release artifacts include
-`bin\twelvgaige.bat` and `bin\twelvgaige.ps1`; those must be smoke-tested on a
-Windows runner before publishing a Windows bundle.
+`daemon`, `remote`, `rpc`, and `stop`.
 
 Build and verify the Burrito single-file executable. Burrito v1.5.x requires
-Zig `0.15.2` and `xz` in `PATH`; Windows targets also require `7z` or `7zz`.
-Burrito supports cross-target builds from macOS and Linux, but not from native
-Windows shells. Use WSL for Windows build hosts.
+Zig `0.15.2` and `xz` in `PATH`.
 
 ```bash
 make burrito-smoke BURRITO_TARGET=macos_silicon
@@ -135,9 +131,9 @@ target names, or the global `BURRITO_CUSTOM_ERTS`. The custom ERTS must match
 the target OS and architecture. On macOS with newer SDKs, prefer Homebrew's
 patched `zig@0.15` if the upstream Zig binary fails during wrapper linking.
 
-Target names are `macos_silicon`, `linux`, `linux_arm64`, and `windows`.
-Burrito outputs `burrito_out/twelvgaige_<target>` or
-`burrito_out/twelvgaige_<target>.exe`. Use `make package-burrito-smoke` only
+Target names are `macos_silicon`, `linux`, and `linux_arm64`.
+Burrito outputs `burrito_out/twelvgaige_<target>`. Use
+`make package-burrito-smoke` only
 for host-runnable targets; cross-built targets should use `make package-burrito`
 and be smoke-tested on native or emulated runners.
 
@@ -193,7 +189,6 @@ Go only if:
 - The local CLI smoke succeeds.
 - File and SQLite durable stores survive restart for at least one terminal round and one awaiting-safety or recovered round.
 - Metrics and JSON logs expose useful operational state without high-cardinality labels or raw prompts/tool outputs.
-- The release notes clearly state the native Windows named-pipe listener limitation.
 
 No-go if:
 

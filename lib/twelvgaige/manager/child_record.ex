@@ -55,6 +55,8 @@ defmodule Twelvgaige.Manager.ChildRecord do
     encoding_version: 1
   ]
 
+  @type t :: %__MODULE__{}
+
   def new(compiled_plan, task, attrs \\ %{}) do
     plan = compiled_plan.plan
     attempt = value(attrs, :attempt, task.attempt)

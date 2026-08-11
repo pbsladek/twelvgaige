@@ -6,7 +6,8 @@ defmodule Twelvgaige.CLI.SessionTaskFile do
   @max_bytes 1_048_576
   @top_level_fields ~w(
     version task objective runtime repository repo base_ref auth_profile sandbox network
-    allow_unrestricted_network allowed_paths write timeout timeout_ms budget
+    allow_unrestricted_network allowed_paths source include_untracked include_ignored write
+    timeout timeout_ms budget
   )
   @budget_fields ~w(tokens cost_micros time_ms tool_calls)
 
@@ -84,6 +85,9 @@ defmodule Twelvgaige.CLI.SessionTaskFile do
         Map.get(document, "allow_unrestricted_network")
       )
       |> put_present(:allowed_paths, Map.get(document, "allowed_paths"))
+      |> put_present(:source_mode, Map.get(document, "source"))
+      |> put_present(:include_untracked?, Map.get(document, "include_untracked"))
+      |> put_present(:include_ignored?, Map.get(document, "include_ignored"))
       |> put_present(:write?, Map.get(document, "write"))
       |> put_present(:timeout_ms, timeout_ms)
       |> Map.merge(budget)
@@ -92,7 +96,10 @@ defmodule Twelvgaige.CLI.SessionTaskFile do
     with :ok <- optional_string(values, [:task, :runtime, :repository, :base_ref, :auth_profile]),
          :ok <- optional_enum(values, :sandbox, ["podman", "apple-container"]),
          :ok <- optional_enum(values, :network, ["none", "broker-only", "unrestricted"]),
+         :ok <- optional_enum(values, :source_mode, ["committed", "staged", "working-tree"]),
          :ok <- optional_boolean(values, :allow_unrestricted_network?),
+         :ok <- optional_boolean(values, :include_untracked?),
+         :ok <- optional_boolean(values, :include_ignored?),
          :ok <- optional_boolean(values, :write?),
          :ok <- allowed_paths(values),
          :ok <- non_negative_integers(values) do

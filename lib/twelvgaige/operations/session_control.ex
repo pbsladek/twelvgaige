@@ -60,6 +60,7 @@ defmodule Twelvgaige.Operations.SessionControl do
     do: call(opts, {:authorize, lease, session_id, capability, opts})
 
   def revoke(session_id, opts \\ []), do: call(opts, {:revoke, session_id, opts})
+  def cancel(session_id, opts \\ []), do: call(opts, {:cancel, session_id, opts})
   def reserve_retry(session_id, opts \\ []), do: call(opts, {:reserve_retry, session_id, opts})
   def release_retry(session_id, opts \\ []), do: call(opts, {:release_retry, session_id, opts})
   def backend_health(opts \\ []), do: call(opts, {:backend_health, opts}, 60_000)
@@ -347,6 +348,16 @@ defmodule Twelvgaige.Operations.SessionControl do
            :ok <- apply_session_retention(revoked, state) do
         audit(state, :session_revoked, session_id, %{cancel_result: inspect(cancel_result)})
         {:ok, public_session(revoked)}
+      end
+
+    {:reply, reply, state}
+  end
+
+  def handle_call({:cancel, session_id, opts}, _from, state) do
+    reply =
+      with :ok <- authorize_local_user(state, opts),
+           {:ok, session} <- fetch_session(state, session_id) do
+        cancel_session(session, state)
       end
 
     {:reply, reply, state}
@@ -754,6 +765,8 @@ defmodule Twelvgaige.Operations.SessionControl do
 
     %{
       id: required(session, :id),
+      request_id: value(session, :request_id),
+      request_intent_digest: value(session, :request_intent_digest),
       plan_id: value(session, :plan_id),
       child_id: value(session, :child_id),
       owner_uid: owner_uid,
@@ -764,6 +777,7 @@ defmodule Twelvgaige.Operations.SessionControl do
       workspace_path: value(session, :workspace_path),
       repository: value(session, :repository),
       base_commit: value(session, :base_commit),
+      source_state_token: value(session, :source_state_token),
       head_commit: value(session, :head_commit),
       sandbox_backend: value(session, :sandbox_backend),
       sandbox_profile: value(session, :sandbox_profile),
@@ -948,6 +962,30 @@ defmodule Twelvgaige.Operations.SessionControl do
         :ok
     end
   end
+
+  defp cancel_session(%{status: :cancelling} = session, _state),
+    do: {:ok, public_session(session)}
+
+  defp cancel_session(%{status: status} = session, state) when status in @active_statuses do
+    with :ok <- normalize_cancel(state.cancel_fun.(session)),
+         now <- state.now_fun.(),
+         cancelling <- %{session | status: :cancelling, updated_at: now},
+         :ok <-
+           Store.put(:session, session.id, cancelling,
+             server: state.store,
+             retention_class: :raw,
+             hold_until: retention_hold(cancelling),
+             now: now
+           ) do
+      audit(state, :session_cancellation_requested, session.id, %{
+        control_epoch: session.control_epoch
+      })
+
+      {:ok, public_session(cancelling)}
+    end
+  end
+
+  defp cancel_session(session, _state), do: {:ok, public_session(session)}
 
   defp normalize_cancel(value) when value in [:ok, :already_stopped], do: :ok
   defp normalize_cancel({:error, reason}), do: {:error, reason}

@@ -1,0 +1,86 @@
+{
+  "scope": "single-user local Git workspace qualification",
+  "status": "pass",
+  "host": {
+    "elixir_version": "1.20.3",
+    "otp_version": "29",
+    "git_version": "2.55.0",
+    "architecture": "aarch64-apple-darwin25.6.0",
+    "cli_version": "0.0.3",
+    "daemon_protocol_version": 1,
+    "operating_system": "macos"
+  },
+  "result": {
+    "changed_paths": 5,
+    "manifest_digest": "sha256:1fa5a8c176fe586e05a33c405e857bc46d4256040a8050f0677beaf4bdfaa6c8",
+    "integrity": "verified",
+    "patch_bytes": 1812
+  },
+  "limits": {
+    "disk_amplification_milli": 4000,
+    "manifest_verification_ms": 30000,
+    "memory_growth_bytes": 536870912,
+    "repository_inspection_ms": 10000,
+    "result_capture_ms": 30000,
+    "source_capture_ms": 60000
+  },
+  "evaluation": {
+    "status": "pass",
+    "checks": [
+      {
+        "status": "pass",
+        "limit": 10000,
+        "metric": "repository_inspection_ms",
+        "observed": 357
+      },
+      {
+        "status": "pass",
+        "limit": 60000,
+        "metric": "source_capture_ms",
+        "observed": 2090
+      },
+      {
+        "status": "pass",
+        "limit": 30000,
+        "metric": "result_capture_ms",
+        "observed": 1294
+      },
+      {
+        "status": "pass",
+        "limit": 30000,
+        "metric": "manifest_verification_ms",
+        "observed": 2
+      },
+      {
+        "status": "pass",
+        "limit": 536870912,
+        "metric": "memory_growth_bytes",
+        "observed": 4529996
+      },
+      {
+        "status": "pass",
+        "limit": 4000,
+        "metric": "disk_amplification_milli",
+        "observed": 994
+      }
+    ]
+  },
+  "fixture": {
+    "binary_bytes": 8388608,
+    "executable_files": 1,
+    "regular_files": 2000,
+    "symlinks": 1,
+    "unusual_paths": 4
+  },
+  "measurements": {
+    "managed_disk_bytes": 25382912,
+    "source_disk_bytes": 25526272,
+    "manifest_verification_ms": 2,
+    "memory_growth_bytes": 4529996,
+    "repository_inspection_ms": 357,
+    "result_capture_ms": 1294,
+    "source_capture_ms": 2090
+  },
+  "generated_at": "2026-08-11T15:52:26Z",
+  "schema_version": 1
+}

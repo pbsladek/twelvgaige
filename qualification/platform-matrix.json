@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-08-11",
+  "support_policy": "A capability is supported only when its named evidence passes on the named platform.",
+  "platforms": {
+    "macos-arm64": {
+      "cli_contract": {
+        "status": "locally_qualified",
+        "ci_required": true,
+        "evidence": "qualification/evidence/cli/developer-workflow.json"
+      },
+      "git_workspace": {
+        "status": "locally_qualified",
+        "minimum_version": "2.39.0",
+        "evidence": "qualification/evidence/workspace/git-2.39.0-macos-arm64.json"
+      },
+      "sandbox_execution": {
+        "podman": {
+          "status": "locally_qualified",
+          "evidence": "qualification/evidence/podman-worker/live-qualification.json",
+          "attached_session": {
+            "status": "pending_explicit_authorization",
+            "evidence": "qualification/evidence/attached-session/podman.json"
+          }
+        },
+        "apple-container": {
+          "status": "locally_qualified_opt_in",
+          "evidence": "qualification/evidence/apple-container/live-qualification.json",
+          "attached_session": {
+            "status": "pending_explicit_authorization",
+            "evidence": "qualification/evidence/attached-session/apple-container.json"
+          }
+        }
+      }
+    },
+    "linux-x86_64": {
+      "cli_contract": {
+        "status": "pending_ci"
+      },
+      "git_workspace": {
+        "status": "pending_ci",
+        "minimum_version": "2.39.0"
+      },
+      "sandbox_execution": {
+        "status": "not_advertised"
+      }
+    }
+  }
+}

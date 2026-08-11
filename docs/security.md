@@ -88,8 +88,7 @@ enforces:
 The default POSIX command runner captures stdout and stderr into separate
 bounded temp files, polls output size while the command is still running, and
 uses a separate process group for timeout cancellation when `setsid` and `kill`
-are available. Windows keeps the conservative fallback runner until native
-process-tree behavior is verified on Windows hardware or CI.
+are available.
 
 Relevant code:
 
@@ -161,9 +160,8 @@ Relevant code:
 
 ### Local IPC
 
-Breech uses a local control protocol. On macOS/Linux the default control path is
-a Unix socket. On Windows the default is authenticated loopback TCP until native
-named-pipe listener I/O is fully verified.
+Breech uses a local control protocol. The default control path is a Unix socket;
+authenticated loopback TCP is an explicit alternative.
 
 Endpoint files are written under the user runtime directory with owner-only
 permissions where the OS supports them. Stale endpoints are cleaned only after
@@ -275,8 +273,7 @@ directories, or OS-managed encrypted volumes for default local-store
 protection. A separate fail-closed SQLCipher store is available only when the
 loaded SQLite driver actually supports SQLCipher; it is not a default release
 dependency. File and SQLite stores plus JSON log files use private POSIX modes
-where supported; Windows ACL verification remains tracked in
-[`security-plan.md`](design/security-plan.md).
+on the supported POSIX platforms.
 
 `twelvgaige crypto sqlcipher-spike` probes the current `ecto_sqlite3`/`exqlite`
 driver for SQLCipher support. It first checks `PRAGMA cipher_version`; if the
@@ -313,16 +310,6 @@ That target runs an ExUnit test tagged `:keychain_live`. It creates a unique
 temporary generic password item in the login Keychain, fetches it, rotates it,
 and deletes it. The tag is excluded from normal `mix test` so unattended unit
 tests never prompt or mutate Keychain state.
-
-The Windows key backend decision is DPAPI protected files, not Credential
-Manager. Windows Credential Manager command-line tooling can write credentials
-but does not provide the narrow read/rotate contract this local encrypted-store
-design needs. `WindowsDPAPIBackend` writes a JSON file whose payload is protected
-with current-user DPAPI. The file can be backed up, but it cannot be decrypted
-without the same Windows user profile material. The backend uses a PowerShell
-wrapper and passes plaintext over stdin instead of argv. Unit tests use an
-injected runner; real Windows ACL, user-profile, and release-package
-verification remain pending for a qualified Windows release claim.
 
 The Linux key backend decision is FreeDesktop Secret Service for desktop Linux,
 not a blanket Linux-server promise. `LinuxSecretServiceBackend` wraps
@@ -394,15 +381,13 @@ The first security review identified these as the highest-priority gaps:
 - Command tools now scrub ambient environment by default, support explicit cwd,
   capture stdout/stderr separately on POSIX, enforce streaming output caps, and
   cancel the POSIX process group on timeout where OS helpers are available.
-  Native Windows process-tree behavior still needs verification.
 - Kubernetes tools now support runtime-owned context/kubeconfig, runtime
   allowlists for contexts, namespaces, resources, names, and selectors, and an
   option to require runtime-owned context for unattended workflows.
 - `approve_all_safety?` is blocked over HTTP/IPC unless a privileged runtime
   policy explicitly enables it; local foreground `--approve-safety` remains for
   controlled local use.
-- Store/log directories and files now use private POSIX modes where supported;
-  native Windows ACL behavior still needs real-Windows verification.
+- Store/log directories and files use private POSIX modes.
 - Redaction is best-effort. Journals are redacted before persistence, but stores
   may still contain sensitive workflow inputs, prompts, and tool data.
 

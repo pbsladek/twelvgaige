@@ -1,0 +1,23 @@
+{
+  "schema": "twelvgaige.result-manifest",
+  "schema_version": 1,
+  "encoding_version": 1,
+  "digest_algorithm": "sha256",
+  "digest": "sha256:ae99a61ae57043b5a046c98958c330eb3c28b8a2c536bef2c73c30f88f3ae5f2",
+  "payload": {
+    "schema_version": 1,
+    "encoding_version": 1,
+    "digest_algorithm": "sha256",
+    "workspace_id": "ws_legacy",
+    "source_base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "workspace_baseline_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "result_tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "result_commit": null,
+    "changed_paths": [],
+    "patch_digest": "sha256:legacy",
+    "patch_bytes": 0,
+    "no_change": true,
+    "outcomes": {},
+    "out_of_policy": []
+  }
+}

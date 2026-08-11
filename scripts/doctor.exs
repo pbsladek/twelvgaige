@@ -39,13 +39,7 @@ defmodule TwelvgaigeDoctor do
 
   defp optional_checks(false) do
     [
-      optional_command_check("zig", ["version"], @expected_zig, "Burrito builds"),
-      optional_command_check(
-        "pwsh",
-        ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"],
-        nil,
-        "Windows e2e"
-      )
+      optional_command_check("zig", ["version"], @expected_zig, "Burrito builds")
     ]
   end
 

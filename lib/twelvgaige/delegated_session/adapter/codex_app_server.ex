@@ -198,6 +198,10 @@ defmodule Twelvgaige.DelegatedSession.Adapter.CodexAppServer do
     end
   end
 
+  @impl true
+  def drain(handle, limit) when is_integer(limit) and limit > 0,
+    do: handle.client_module.drain(handle.client, limit)
+
   def fork(handle, opts \\ []) do
     params =
       handle.config

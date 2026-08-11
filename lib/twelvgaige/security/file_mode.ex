@@ -2,9 +2,9 @@ defmodule Twelvgaige.Security.FileMode do
   @moduledoc """
   Conservative local filesystem permission helpers.
 
-  These helpers are best-effort on Windows and strict on POSIX platforms. They
-  are intended for runtime, store, and log paths that may contain tokens,
-  prompts, tool output, audit events, or recovery snapshots.
+  These helpers are strict on supported POSIX platforms. They are intended for
+  runtime, store, and log paths that may contain tokens, prompts, tool output,
+  audit events, or recovery snapshots.
   """
 
   import Bitwise
@@ -72,13 +72,9 @@ defmodule Twelvgaige.Security.FileMode do
 
   @spec refuse_world_writable_parent(Path.t()) :: :ok | {:error, term()}
   def refuse_world_writable_parent(path) when is_binary(path) do
-    if windows?() do
-      :ok
-    else
-      path
-      |> nearest_existing_parent()
-      |> reject_insecure_parent()
-    end
+    path
+    |> nearest_existing_parent()
+    |> reject_insecure_parent()
   end
 
   def refuse_world_writable_parent(_path), do: {:error, :invalid_path}
@@ -88,7 +84,7 @@ defmodule Twelvgaige.Security.FileMode do
     case File.chmod(path, mode) do
       :ok -> :ok
       {:error, :enotsup} -> :ok
-      {:error, :eperm} -> if(windows?(), do: :ok, else: {:error, :eperm})
+      {:error, :eperm} -> {:error, :eperm}
       {:error, _reason} = error -> error
     end
   end
@@ -125,9 +121,5 @@ defmodule Twelvgaige.Security.FileMode do
 
   defp world_writable_without_sticky?(mode) do
     (mode &&& @world_writable) != 0 and (mode &&& @sticky) == 0
-  end
-
-  defp windows? do
-    match?({:win32, _name}, :os.type())
   end
 end

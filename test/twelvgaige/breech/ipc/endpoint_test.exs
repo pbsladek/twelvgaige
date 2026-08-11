@@ -29,12 +29,10 @@ defmodule Twelvgaige.Breech.IPC.EndpointTest do
     assert endpoint.api_version == Protocol.api_version()
     assert endpoint.version == Twelvgaige.version()
 
-    unless match?({:win32, _name}, :os.type()) do
-      assert {:ok, %{mode: dir_mode}} = File.stat(dir)
-      assert {:ok, %{mode: file_mode}} = File.stat(path)
-      assert Bitwise.band(dir_mode, 0o077) == 0
-      assert Bitwise.band(file_mode, 0o077) == 0
-    end
+    assert {:ok, %{mode: dir_mode}} = File.stat(dir)
+    assert {:ok, %{mode: file_mode}} = File.stat(path)
+    assert Bitwise.band(dir_mode, 0o077) == 0
+    assert Bitwise.band(file_mode, 0o077) == 0
   end
 
   test "writes and discovers a Unix socket endpoint file", %{path: path} do
@@ -48,29 +46,6 @@ defmodule Twelvgaige.Breech.IPC.EndpointTest do
     assert endpoint.address_text == "unix://#{socket_path}"
     assert endpoint.api_version == Protocol.api_version()
     assert endpoint.token == nil
-  end
-
-  test "writes and discovers a Windows named pipe endpoint file", %{path: path} do
-    pipe_path = ~S(\\.\pipe\twelvgaige-test-breech)
-    address = {:npipe, pipe_path}
-
-    assert :ok = Endpoint.write(%{address: address, token: nil}, path: path)
-
-    assert {:ok, endpoint} = Endpoint.discover(path: path)
-    assert endpoint.address == address
-    assert endpoint.address_text == "npipe:////./pipe/twelvgaige-test-breech"
-    assert endpoint.api_version == Protocol.api_version()
-    assert endpoint.token == nil
-  end
-
-  test "Windows runtime defaults use local app data", %{path: _path} do
-    runtime_dir =
-      Endpoint.default_runtime_dir(
-        os_type: {:win32, :nt},
-        env: %{"LOCALAPPDATA" => "C:/Users/test/AppData/Local"}
-      )
-
-    assert runtime_dir == Path.join(["C:/Users/test/AppData/Local", "Twelvgaige", "run"])
   end
 
   test "missing endpoint discovers as none", %{path: path} do

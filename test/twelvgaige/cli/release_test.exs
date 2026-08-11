@@ -3,6 +3,13 @@ defmodule Twelvgaige.CLI.ReleaseTest do
 
   alias Twelvgaige.CLI.Release
 
+  test "release application declares OTP HTTP runtime dependencies" do
+    applications = Application.spec(:twelvgaige, :applications)
+
+    assert :inets in applications
+    assert :ssl in applications
+  end
+
   test "reads NUL-delimited release wrapper arguments" do
     path =
       Path.join(

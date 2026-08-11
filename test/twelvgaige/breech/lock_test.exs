@@ -24,14 +24,12 @@ defmodule Twelvgaige.Breech.LockTest do
     assert owner["token"] == "owner-token"
     assert owner["pid"] == System.pid()
 
-    unless match?({:win32, _name}, :os.type()) do
-      assert {:ok, %{mode: dir_mode}} = File.stat(dir)
-      assert {:ok, %{mode: lock_mode}} = File.stat(lock_path)
-      assert {:ok, %{mode: owner_mode}} = File.stat(Path.join(lock_path, "owner.json"))
-      assert Bitwise.band(dir_mode, 0o077) == 0
-      assert Bitwise.band(lock_mode, 0o077) == 0
-      assert Bitwise.band(owner_mode, 0o077) == 0
-    end
+    assert {:ok, %{mode: dir_mode}} = File.stat(dir)
+    assert {:ok, %{mode: lock_mode}} = File.stat(lock_path)
+    assert {:ok, %{mode: owner_mode}} = File.stat(Path.join(lock_path, "owner.json"))
+    assert Bitwise.band(dir_mode, 0o077) == 0
+    assert Bitwise.band(lock_mode, 0o077) == 0
+    assert Bitwise.band(owner_mode, 0o077) == 0
 
     assert :ok = Lock.release(lock)
     refute File.exists?(lock_path)

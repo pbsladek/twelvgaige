@@ -27,6 +27,9 @@ defmodule Twelvgaige.CLI.SessionTaskFileTest do
         allowed_paths:
           - lib
           - test
+        source: working-tree
+        include_untracked: true
+        include_ignored: false
         write: false
         timeout: 20m
         budget:
@@ -44,6 +47,9 @@ defmodule Twelvgaige.CLI.SessionTaskFileTest do
     assert values.network == "unrestricted"
     assert values.allow_unrestricted_network?
     assert values.allowed_paths == ["lib", "test"]
+    assert values.source_mode == "working-tree"
+    assert values.include_untracked?
+    refute values.include_ignored?
     refute values.write?
     assert values.timeout_ms == 1_200_000
     assert values.budget_tokens == 30_000

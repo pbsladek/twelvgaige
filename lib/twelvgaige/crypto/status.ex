@@ -91,13 +91,11 @@ defmodule Twelvgaige.Crypto.Status do
     do: "linux_secret_service"
 
   defp backend_name(Twelvgaige.Crypto.KeyManager.MacOSKeychainBackend), do: "macos_keychain"
-  defp backend_name(Twelvgaige.Crypto.KeyManager.WindowsDPAPIBackend), do: "windows_dpapi"
   defp backend_name(Twelvgaige.Crypto.KeyManager.TestBackend), do: "test"
   defp backend_name(backend), do: inspect(backend)
 
   defp os_protected_backend?(Twelvgaige.Crypto.KeyManager.LinuxSecretServiceBackend), do: true
   defp os_protected_backend?(Twelvgaige.Crypto.KeyManager.MacOSKeychainBackend), do: true
-  defp os_protected_backend?(Twelvgaige.Crypto.KeyManager.WindowsDPAPIBackend), do: true
   defp os_protected_backend?(_backend), do: false
 
   defp key_manager_warnings(Twelvgaige.Crypto.KeyManager.MacOSKeychainBackend, _accepted?) do
@@ -109,12 +107,6 @@ defmodule Twelvgaige.Crypto.Status do
   defp key_manager_warnings(Twelvgaige.Crypto.KeyManager.LinuxSecretServiceBackend, _accepted?) do
     [
       "Linux Secret Service backend requires secret-tool, a user D-Bus session, and an unlocked collection; it is not universal headless server support"
-    ]
-  end
-
-  defp key_manager_warnings(Twelvgaige.Crypto.KeyManager.WindowsDPAPIBackend, _accepted?) do
-    [
-      "Windows DPAPI backend uses a PowerShell command wrapper and user-profile-bound protected files; Windows release verification is pending"
     ]
   end
 

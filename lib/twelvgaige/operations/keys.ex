@@ -5,8 +5,7 @@ defmodule Twelvgaige.Operations.Keys do
 
   alias Twelvgaige.Crypto.KeyManager.{
     LinuxSecretServiceBackend,
-    MacOSKeychainBackend,
-    WindowsDPAPIBackend
+    MacOSKeychainBackend
   }
 
   alias Twelvgaige.Operations.Paths
@@ -245,8 +244,8 @@ defmodule Twelvgaige.Operations.Keys do
   defp default_backend do
     case :os.type() do
       {:unix, :darwin} -> MacOSKeychainBackend
-      {:win32, _name} -> WindowsDPAPIBackend
-      _other -> LinuxSecretServiceBackend
+      {:unix, :linux} -> LinuxSecretServiceBackend
+      {_family, name} -> raise "unsupported Twelvgaige platform: #{name}"
     end
   end
 end

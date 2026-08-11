@@ -17,7 +17,7 @@ defmodule Twelvgaige.Breech.IPC.Protocol do
   @spec request(String.t(), map(), keyword()) :: map()
   def request(command, body, opts \\ []) when is_binary(command) and is_map(body) do
     %{
-      "request_id" => Keyword.get_lazy(opts, :request_id, fn -> Twelvgaige.ID.new(:event) end),
+      "request_id" => Keyword.get(opts, :request_id) || Twelvgaige.ID.new(:event),
       "api_version" => Keyword.get(opts, :api_version, @api_version),
       "command" => command,
       "body" => body
@@ -62,6 +62,14 @@ defmodule Twelvgaige.Breech.IPC.Protocol do
       "request_id" => request_id(request),
       "ok" => false,
       "error" => %{"reason" => "not_found", "message" => "round not found"}
+    }
+  end
+
+  def error(request, :workspace_set_not_found) do
+    %{
+      "request_id" => request_id(request),
+      "ok" => false,
+      "error" => %{"reason" => "workspace_set_not_found", "message" => "workspace set not found"}
     }
   end
 

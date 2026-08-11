@@ -85,6 +85,24 @@ defmodule Twelvgaige.Operations.SessionControlTest do
              SessionControl.attach(session.id, server: control, uid: 42)
   end
 
+  test "normal cancellation is durable and idempotent", %{control: control} do
+    session = session("session_cancel", "sbx_cancel")
+    assert {:ok, _registered} = SessionControl.register(session, server: control, uid: 42)
+
+    assert {:ok, %{status: :cancelling}} =
+             SessionControl.cancel(session.id, server: control, uid: 42)
+
+    assert_receive {:cancelled, "session_cancel"}
+
+    assert {:ok, %{status: :cancelling}} =
+             SessionControl.cancel(session.id, server: control, uid: 42)
+
+    refute_receive {:cancelled, "session_cancel"}
+
+    assert {:ok, stored} = SessionControl.get(session.id, server: control, uid: 42)
+    assert stored.status == :cancelling
+  end
+
   test "reconciliation reports resources, workspaces, and missing session ownership", %{
     control: control,
     workspace_root: workspace_root

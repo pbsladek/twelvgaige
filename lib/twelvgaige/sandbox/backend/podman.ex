@@ -70,7 +70,8 @@ defmodule Twelvgaige.Sandbox.Backend.Podman do
     resource_id = manifest.resource_id || Twelvgaige.ID.new(:sandbox)
     manifest = LaunchManifest.bind_resource(manifest, resource_id)
 
-    with :ok <- validate_proxy_environment(manifest, opts),
+    with :ok <- validate_runtime_environment(manifest, opts),
+         :ok <- prepare_copy_volumes(manifest, opts),
          args <- create_args(manifest, Keyword.get(opts, :command, []), opts),
          {:ok, output} <- command(args, opts),
          :ok <- verify_created_id(output, resource_id),
@@ -150,9 +151,66 @@ defmodule Twelvgaige.Sandbox.Backend.Podman do
   end
 
   @impl true
+  def export_workspace(resource_id, destination, opts) do
+    destination = Path.expand(destination)
+
+    with %LaunchManifest{workspace_transport: :copy_snapshot} <- Keyword.fetch!(opts, :manifest),
+         :ok <- allowed_export_destination(destination, opts) do
+      staging =
+        destination <>
+          ".runtime-staging-" <> Integer.to_string(System.unique_integer([:positive]))
+
+      result =
+        with :ok <- File.mkdir(staging),
+             {:ok, _output} <-
+               command(["cp", "--archive=false", "#{resource_id}:/workspace/.", staging], opts),
+             {:ok, report} <-
+               Twelvgaige.Workspace.RuntimeImport.replace(staging, destination, opts) do
+          {:ok, Map.put(report, :transport, :copy_snapshot)}
+        end
+
+      if File.exists?(staging), do: File.rm_rf(staging)
+      result
+    else
+      %LaunchManifest{} -> {:error, :sandbox_export_transport_invalid}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  @impl true
   def start(resource_id, opts) do
     with {:ok, output} <- command(["start", resource_id], opts) do
       {:ok, %{resource_id: resource_id, status: :running, output: String.trim(output)}}
+    end
+  end
+
+  @impl true
+  def stdio_transport(resource_id, opts) when is_binary(resource_id) and resource_id != "" do
+    with {:ok, binary} <- runtime_binary(Keyword.get(opts, :podman_binary, "podman")) do
+      {:ok,
+       %{
+         binary: binary,
+         arguments: ["start", "--attach", "--interactive", resource_id],
+         environment: transport_environment(opts)
+       }}
+    end
+  end
+
+  @impl true
+  def await(resource_id, opts) do
+    with {:ok, output} <- command(["wait", resource_id], opts),
+         {:ok, status} <- parse_wait_status(output) do
+      {:ok, %{status: :stopped, exit_status: status}}
+    end
+  end
+
+  @impl true
+  def logs(resource_id, opts), do: command(["logs", resource_id], opts)
+
+  defp parse_wait_status(output) do
+    case output |> String.trim() |> Integer.parse() do
+      {status, ""} when status >= 0 -> {:ok, status}
+      _invalid -> {:error, :podman_wait_status_invalid}
     end
   end
 
@@ -175,22 +233,41 @@ defmodule Twelvgaige.Sandbox.Backend.Podman do
     timeout = Keyword.get(opts, :grace_seconds, 10)
 
     case command(["stop", "--time", Integer.to_string(timeout), resource_id], opts) do
-      {:ok, _output} -> :ok
-      {:error, reason} -> {:error, reason}
+      {:ok, _output} ->
+        :ok
+
+      {:error, %{output: output}} when is_binary(output) ->
+        normalized = String.downcase(output)
+
+        if String.contains?(normalized, "already stopped") or
+             String.contains?(normalized, "not running"),
+           do: :ok,
+           else: {:error, output}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   @impl true
   def destroy(resource_id, opts) do
-    case command(["rm", "--force", "--volumes", resource_id], opts) do
-      {:ok, _output} ->
-        :ok
+    container_result =
+      case command(["rm", "--force", "--volumes", resource_id], opts) do
+        {:ok, _output} ->
+          :ok
 
-      {:error, %{status: 1, output: output}} ->
-        if String.contains?(output, "no such"), do: :ok, else: {:error, output}
+        {:error, %{status: 1, output: output}} ->
+          if String.contains?(String.downcase(output), "no such"), do: :ok, else: {:error, output}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
+
+    volume_result = cleanup_copy_volumes(resource_id, opts)
+
+    case {container_result, volume_result} do
+      {:ok, :ok} -> :ok
+      other -> {:error, {:podman_destroy_failed, other}}
     end
   end
 
@@ -277,7 +354,7 @@ defmodule Twelvgaige.Sandbox.Backend.Podman do
         memory_bytes: host["Memory"],
         pids: host["PidsLimit"]
       },
-      environment_names: proxy_environment_names(config["Env"] || []),
+      environment_names: declared_environment_names(config["Env"] || [], manifest),
       labels: expected_labels(labels, manifest)
     }
   end
@@ -295,6 +372,7 @@ defmodule Twelvgaige.Sandbox.Backend.Podman do
       |> Enum.flat_map(fn {name, value} -> ["--label", "#{name}=#{value}"] end)
 
     security = [
+      "--interactive",
       "--user",
       "#{manifest.uid}:#{manifest.gid}",
       "--read-only",
@@ -313,7 +391,7 @@ defmodule Twelvgaige.Sandbox.Backend.Podman do
     ]
 
     mount_args = mount_args(manifest)
-    environment_args = proxy_environment_args(manifest, opts)
+    environment_args = runtime_environment_args(opts)
 
     command = wrap_copy_snapshot_command(manifest, command)
 
@@ -338,10 +416,44 @@ defmodule Twelvgaige.Sandbox.Backend.Podman do
            scrub_env?: true,
            posix_port?: true
          ) do
-      {:ok, %{status: 0, stdout: stdout}} -> {:ok, stdout}
-      {:ok, %{status: status} = result} -> {:error, %{status: status, output: result.stdout}}
-      {:error, reason} -> {:error, reason}
+      {:ok, %{status: 0, stdout: stdout}} ->
+        {:ok, stdout}
+
+      {:ok, %{status: status} = result} ->
+        {:error,
+         %{
+           status: status,
+           output: IO.iodata_to_binary([result.stdout, Map.get(result, :stderr, "")])
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
     end
+  end
+
+  defp runtime_binary(binary) when is_binary(binary) do
+    case Path.type(binary) do
+      :absolute ->
+        if(File.regular?(binary), do: {:ok, binary}, else: {:error, :podman_binary_not_found})
+
+      _other ->
+        case System.find_executable(binary) do
+          nil -> {:error, :podman_binary_not_found}
+          resolved -> {:ok, resolved}
+        end
+    end
+  end
+
+  defp transport_environment(opts) do
+    Keyword.get_lazy(opts, :transport_environment, fn ->
+      ["PATH", "HOME", "TMPDIR", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR", "CONTAINERS_CONF"]
+      |> Enum.flat_map(fn name ->
+        case System.get_env(name) do
+          nil -> []
+          value -> [{name, value}]
+        end
+      end)
+    end)
   end
 
   defp validate_machine(machine_json, expected_name) do
@@ -386,43 +498,46 @@ defmodule Twelvgaige.Sandbox.Backend.Podman do
       else: :unrestricted
   end
 
-  defp validate_proxy_environment(%{network_mode: :broker_only} = manifest, opts) do
-    environment = Keyword.get(opts, :proxy_environment, %{})
+  defp validate_runtime_environment(manifest, opts) do
+    environment = runtime_environment(opts)
     names = environment |> Map.keys() |> Enum.sort()
 
     cond do
-      names != Enum.sort(@proxy_environment_names) ->
-        {:error, :proxy_environment_required}
-
       Enum.sort(manifest.environment_names) != names ->
         {:error, :proxy_environment_attestation_mismatch}
 
       not Enum.all?(environment, fn {name, value} ->
-        name in @proxy_environment_names and is_binary(value) and value != ""
+        name in manifest.environment_names and is_binary(value) and value != ""
       end) ->
         {:error, :proxy_environment_invalid}
+
+      manifest.network_mode == :broker_only and
+          not Enum.all?(@proxy_environment_names, &Map.has_key?(environment, &1)) ->
+        {:error, :proxy_environment_required}
 
       true ->
         :ok
     end
   end
 
-  defp validate_proxy_environment(%{environment_names: []}, _opts), do: :ok
-  defp validate_proxy_environment(_manifest, _opts), do: {:error, :unexpected_proxy_environment}
-
-  defp proxy_environment_args(%{network_mode: :broker_only}, opts) do
+  defp runtime_environment_args(opts) do
     opts
-    |> Keyword.fetch!(:proxy_environment)
+    |> runtime_environment()
     |> Enum.sort()
     |> Enum.flat_map(fn {name, value} -> ["--env", "#{name}=#{value}"] end)
   end
 
-  defp proxy_environment_args(_manifest, _opts), do: []
+  defp runtime_environment(opts) do
+    Keyword.get(opts, :environment, %{})
+    |> Map.merge(Keyword.get(opts, :proxy_environment, %{}))
+  end
 
-  defp proxy_environment_names(environment) do
+  defp declared_environment_names(environment, manifest) do
+    expected = MapSet.new(if(manifest, do: manifest.environment_names, else: []))
+
     environment
     |> Enum.map(&(&1 |> String.split("=", parts: 2) |> hd()))
-    |> Enum.filter(&(&1 in @proxy_environment_names))
+    |> Enum.filter(&MapSet.member?(expected, &1))
     |> Enum.uniq()
     |> Enum.sort()
   end
@@ -467,17 +582,12 @@ defmodule Twelvgaige.Sandbox.Backend.Podman do
 
   defp canonical_path(path), do: path |> Path.expand() |> Path.absname()
 
-  defp mount_args(%{workspace_transport: :copy_snapshot, mounts: mounts}) do
+  defp mount_args(%{workspace_transport: :copy_snapshot, mounts: mounts} = manifest) do
     Enum.flat_map(mounts, fn mount ->
-      import = "/run/twelvgaige-import" <> mount.destination
+      volume = copy_volume_name(manifest.resource_id, mount)
       mode = if mount.mode == :read_write, do: "rw", else: "ro"
 
-      [
-        "--mount",
-        "type=bind,src=#{mount.source},dst=#{import},ro",
-        "--mount",
-        "type=volume,dst=#{mount.destination},#{mode}"
-      ]
+      ["--mount", "type=volume,src=#{volume},dst=#{mount.destination},#{mode}"]
     end)
   end
 
@@ -488,20 +598,101 @@ defmodule Twelvgaige.Sandbox.Backend.Podman do
     end)
   end
 
-  defp wrap_copy_snapshot_command(%{workspace_transport: :copy_snapshot, mounts: mounts}, command)
-       when command != [] do
-    copies =
-      mounts
-      |> Enum.map(fn mount ->
-        import = "/run/twelvgaige-import" <> mount.destination
-        "cp -a #{shell_quote(import)}/. #{shell_quote(mount.destination)}/"
-      end)
-      |> Enum.join("; ")
+  defp wrap_copy_snapshot_command(_manifest, command), do: command
 
-    ["/bin/sh", "-lc", "set -eu; #{copies}; exec \"$@\"", "twelvgaige-copy-snapshot" | command]
+  defp prepare_copy_volumes(%{workspace_transport: :copy_snapshot} = manifest, opts) do
+    Enum.reduce_while(manifest.mounts, :ok, fn mount, :ok ->
+      volume = copy_volume_name(manifest.resource_id, mount)
+
+      with {:ok, _output} <- command(volume_create_args(volume, manifest), opts),
+           {:ok, _output} <- command(volume_initializer_args(volume, manifest, mount), opts) do
+        {:cont, :ok}
+      else
+        {:error, reason} ->
+          _ = command(["volume", "rm", "--force", volume], opts)
+          {:halt, {:error, {:copy_volume_create_failed, volume, reason}}}
+      end
+    end)
   end
 
-  defp wrap_copy_snapshot_command(_manifest, command), do: command
+  defp prepare_copy_volumes(_manifest, _opts), do: :ok
+
+  defp volume_create_args(volume, manifest) do
+    [
+      "volume",
+      "create",
+      "--label",
+      "io.twelvgaige.managed=true",
+      "--label",
+      "io.twelvgaige.resource=#{manifest.resource_id}",
+      "--label",
+      "io.twelvgaige.manifest=#{manifest.manifest_digest}",
+      volume
+    ]
+  end
+
+  defp volume_initializer_args(volume, manifest, mount) do
+    import = "/run/twelvgaige-import" <> mount.destination
+
+    [
+      "run",
+      "--rm",
+      "--name",
+      volume <> "-init",
+      "--label",
+      "io.twelvgaige.managed=true",
+      "--user",
+      "0:0",
+      "--read-only",
+      "--cap-drop",
+      "ALL",
+      "--cap-add",
+      "CHOWN",
+      "--cap-add",
+      "DAC_READ_SEARCH",
+      "--security-opt",
+      "no-new-privileges",
+      "--network",
+      "none",
+      "--mount",
+      "type=bind,src=#{mount.source},dst=#{import},ro",
+      "--mount",
+      "type=volume,src=#{volume},dst=#{mount.destination},rw,U=true",
+      manifest.image_reference <> "@" <> manifest.image_digest,
+      "/bin/sh",
+      "-lc",
+      "set -eu; cp -R #{shell_quote(import)}/. #{shell_quote(mount.destination)}/; chown -R #{manifest.uid}:#{manifest.gid} #{shell_quote(mount.destination)}"
+    ]
+  end
+
+  defp cleanup_copy_volumes(resource_id, opts) do
+    ["/workspace", "/artifacts", "/run/codex-home"]
+    |> Enum.map(&copy_volume_name(resource_id, %{destination: &1}))
+    |> Enum.reduce_while(:ok, fn volume, :ok ->
+      case command(["volume", "rm", "--force", volume], opts) do
+        {:ok, _output} ->
+          {:cont, :ok}
+
+        {:error, %{output: output}} ->
+          if String.contains?(String.downcase(output), "no such"),
+            do: {:cont, :ok},
+            else: {:halt, {:error, output}}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp copy_volume_name(resource_id, mount) when is_binary(resource_id) do
+    suffix =
+      mount.destination |> String.trim_leading("/") |> String.replace(~r/[^A-Za-z0-9_.-]/, "-")
+
+    resource_id <> "-" <> suffix
+  end
+
+  defp copy_volume_name(_resource_id, mount),
+    do: raise(ArgumentError, "copy volume requires a bound resource for #{mount.destination}")
 
   defp shell_quote(value), do: "'" <> String.replace(value, "'", "'\\''") <> "'"
 

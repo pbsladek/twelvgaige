@@ -1,12 +1,22 @@
 defmodule Twelvgaige.CLI.Commands.StoreCommandsTest do
   use ExUnit.Case, async: false
 
-  alias Twelvgaige.CLI.Main
+  alias Twelvgaige.CLI.{Main, ResultEnvelope}
   alias Twelvgaige.Crypto.EnvelopeCipher
   alias Twelvgaige.Crypto.EnvelopeFile
   alias Twelvgaige.Crypto.Key
   alias Twelvgaige.Crypto.KeyMaterial
   alias Twelvgaige.Store.SQLite, as: SQLiteStore
+
+  defp decode_cli_result!(output) do
+    decoded = Jason.decode!(output)
+
+    case ResultEnvelope.result(decoded) do
+      {:ok, result} -> result
+      {:error, :invalid_cli_result_envelope} -> decoded
+      {:error, error} -> %{"error" => error}
+    end
+  end
 
   @tag :persistence
   test "store backup command preserves plaintext export consent" do
@@ -46,7 +56,7 @@ defmodule Twelvgaige.CLI.Commands.StoreCommandsTest do
              "destination" => ^backup_path,
              "mode" => "plaintext",
              "plaintext" => true
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert File.exists?(backup_path)
 
@@ -79,7 +89,7 @@ defmodule Twelvgaige.CLI.Commands.StoreCommandsTest do
              "source" => ^source,
              "destination" => ^destination,
              "replaced" => false
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert File.read!(destination) == "backup"
 
@@ -112,7 +122,7 @@ defmodule Twelvgaige.CLI.Commands.StoreCommandsTest do
                "reason" => "backup_source_not_found",
                "message" => "backup source does not exist"
              }
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     Application.put_env(:twelvgaige, :store, Twelvgaige.Store.Memory)
 
@@ -124,7 +134,7 @@ defmodule Twelvgaige.CLI.Commands.StoreCommandsTest do
                "reason" => "store_backup_unsupported",
                "message" => message
              }
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert message =~ "does not support backup"
   end
@@ -200,7 +210,7 @@ defmodule Twelvgaige.CLI.Commands.StoreCommandsTest do
                "reason" => "migration_source_not_found",
                "message" => "migration source does not exist"
              }
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     File.write!(destination, "already exists")
 
@@ -223,7 +233,7 @@ defmodule Twelvgaige.CLI.Commands.StoreCommandsTest do
                "reason" => "migration_same_path",
                "message" => "migration source and destination must differ"
              }
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
   end
 
   test "store rewrap-envelope requires a backup and rotates envelope metadata" do
@@ -282,7 +292,7 @@ defmodule Twelvgaige.CLI.Commands.StoreCommandsTest do
              "path" => ^envelope_path,
              "backup" => ^backup_path,
              "database_rekeyed" => false
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert {:ok, rewrapped} = EnvelopeFile.read(envelope_path)
     assert rewrapped.metadata["rotation"] == "rewrap"

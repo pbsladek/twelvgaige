@@ -1,0 +1,1263 @@
+{
+  "schema_version": 1,
+  "case_count": 178,
+  "cases": [
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "capture.commit_bundle_capture.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "capture.commit_bundle_capture.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "capture.result_tree_capture.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "capture.result_tree_capture.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.completed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.completed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.failed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.failed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.intent_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.intent_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.managed_path_remove.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.managed_path_remove.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.needs_reconciliation_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.needs_reconciliation_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.side_effects_started_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.side_effects_started_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.workspace_record_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "cleanup.workspace_record_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.completed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.completed_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.failed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.failed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.intent_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.intent_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.needs_reconciliation_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.needs_reconciliation_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.side_effects_started_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.side_effects_started_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.workspace_materialize.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.workspace_materialize.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.workspace_record_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "create.workspace_record_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.backup_publish.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.backup_publish.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.completed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.completed_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.current_worktree_patch_apply.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.current_worktree_patch_apply.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.current_worktree_result_verify.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.current_worktree_result_verify.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.failed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.failed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.intent_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.intent_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.needs_reconciliation_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.needs_reconciliation_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.side_effects_started_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.side_effects_started_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.workspace_record_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "direct_apply.workspace_record_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.completed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.completed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.export_publish.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.export_publish.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.export_stage.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.export_stage.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.failed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.failed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.intent_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.intent_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.needs_reconciliation_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.needs_reconciliation_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.side_effects_started_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.side_effects_started_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.workspace_record_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "export.workspace_record_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.artifact_publish.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.artifact_publish.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.completed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.completed_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.failed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.failed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.intent_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.intent_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.needs_reconciliation_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.needs_reconciliation_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.side_effects_started_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.side_effects_started_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.workspace_record_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "finalize.workspace_record_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.backup_restore.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.backup_restore.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.cleanup_resume.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.cleanup_resume.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.completed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.completed_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.export_resume.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.export_resume.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.failed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.failed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.intent_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.intent_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.interrupted_operation_resolve.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.interrupted_operation_resolve.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.needs_reconciliation_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.needs_reconciliation_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.review_discard.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.review_discard.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.side_effects_started_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.side_effects_started_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.workspace_record_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "reconcile.workspace_record_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.completed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.completed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.failed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.failed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.intent_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.intent_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.managed_path_remove.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.managed_path_remove.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.needs_reconciliation_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.needs_reconciliation_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.side_effects_started_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.side_effects_started_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.workspace_record_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "retention_cleanup.workspace_record_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.completed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.completed_persist.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.failed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.failed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.intent_persist.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.intent_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.needs_reconciliation_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.needs_reconciliation_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.review_patch_apply.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.review_patch_apply.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.review_registration.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.review_registration.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.review_result_verify.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.review_result_verify.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.side_effects_started_persist.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.side_effects_started_persist.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.workspace_record_persist.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_apply.workspace_record_persist.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.completed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.completed_persist.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.failed_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.failed_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.intent_persist.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.intent_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.needs_reconciliation_persist.after",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.needs_reconciliation_persist.before",
+      "outcome": "needs_reconciliation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.review_registration_remove.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.review_registration_remove.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.side_effects_started_persist.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.side_effects_started_persist.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.workspace_record_persist.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "workspace_manager"
+      },
+      "case_id": "review_cleanup.workspace_record_persist.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.admission_release.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.admission_release.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.admission_reserve.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.admission_reserve.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.boundary_destroy.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.boundary_destroy.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.boundary_revoke.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.boundary_revoke.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.completion_intent_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.completion_intent_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.creation_intent_persist.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.creation_intent_persist.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.credential_revoke.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.credential_revoke.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.egress_revoke.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.egress_revoke.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.quiescence_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.quiescence_persist.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.resource_intent_persist.after",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.resource_intent_persist.before",
+      "outcome": "validated_compensation"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.resource_record_delete.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.resource_record_delete.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.worker_destroy.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.worker_destroy.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.worker_stop.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.worker_stop.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.workspace_export.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.workspace_export.before",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.workspace_export_persist.after",
+      "outcome": "safe_resume"
+    },
+    {
+      "metadata": {
+        "suite": "sandbox_manager"
+      },
+      "case_id": "sandbox_resource_cleanup.workspace_export_persist.before",
+      "outcome": "safe_resume"
+    }
+  ],
+  "generated_at": "2026-08-11T18:17:43.849976Z",
+  "matrix_schema_version": 1,
+  "platform": {
+    "os": "unix-darwin",
+    "otp": "29",
+    "elixir": "1.20.3",
+    "git": "git version 2.55.0",
+    "architecture": "aarch64-apple-darwin25.6.0"
+  },
+  "qualified": true,
+  "schema": "twelvgaige.lifecycle-fault-evidence"
+}

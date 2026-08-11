@@ -67,6 +67,14 @@ defmodule Twelvgaige.Operations.StoreTest do
 
     assert :ok =
              Store.put(
+               :sandbox_resource,
+               "sandbox_live",
+               %{resource_id: "sandbox_live", access_token: "sandbox-secret"},
+               server: store
+             )
+
+    assert :ok =
+             Store.put(
                :session,
                "session_1",
                %{
@@ -97,6 +105,9 @@ defmodule Twelvgaige.Operations.StoreTest do
 
     backup_store =
       start_supervised!({Store, name: nil, path: backup}, id: :sanitized_backup_store)
+
+    assert {:error, :not_found} =
+             Store.get(:sandbox_resource, "sandbox_live", server: backup_store)
 
     assert {:error, :not_found} = Store.get(:control_token, "current", server: backup_store)
 

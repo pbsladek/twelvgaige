@@ -5,7 +5,11 @@
 
 ## 1. Status
 
-Project status: The tracked Phase 0-5 local single-node implementation is complete for macOS/Linux and Windows default loopback TCP operation. Native Mix release packaging is implemented as a target-specific tarball bundle with included ERTS and product CLI wrappers. Burrito packaging is implemented as a single-file executable release path for configured macOS, Linux, and Windows targets. Native Windows named-pipe listener I/O remains the only tracked partial and is pending verification on Windows hardware.
+Project status: The tracked Phase 0-5 local single-node implementation is
+complete for macOS and Linux. Native Mix release packaging is implemented as a
+target-specific tarball bundle with included ERTS and a product CLI wrapper.
+Burrito packaging is implemented as a single-file executable release path for
+configured macOS and Linux targets.
 
 Release gates and manual smoke checks are tracked in [`release-checklist.md`](release-checklist.md).
 
@@ -117,7 +121,7 @@ Twelvgaige must never spawn one OS process, task, LLM call, or tool call per rea
 - `[x]` Logs and audit records redact secrets.
 - `[x]` Tool output is bounded by the tool executor per call, per shot, and before re-entering LLM context; memory/file/SQLite store retention is bounded, and JSON log file retention caps trim oldest complete log lines when configured.
 - `[x]` Concurrency, prompt size, tool output, shot trace budgets, and store retained history are bounded by named runtime profiles.
-- `[x]` The first production-capable local single-node version can run representative unattended workflows with durable state, audit logs, metrics, bounded resources, and scheduler support. Native Windows named-pipe listener I/O and multi-node operation are outside this milestone.
+- `[x]` The first production-capable local single-node version can run representative unattended workflows with durable state, audit logs, metrics, bounded resources, and scheduler support. Multi-node operation is outside this milestone.
 - `[x]` Native packaging uses Mix releases for OS/architecture-specific bundles. The release is named `twelvgaige_native` so the Mix lifecycle script and the product CLI wrapper do not collide.
 - `[x]` Burrito packaging produces single-file executables from the `twelvgaige` release. Burrito runtime detection launches the existing CLI dispatcher from the OTP application startup path without affecting normal Mix, escript, or Mix release operation.
 
@@ -2345,43 +2349,27 @@ Phase 3 provides foreground lifecycle commands:
 
 - `twelvgaige daemon serve` starts the local daemon listener in the current OS process and is intended for development, process managers, and future packaging.
 - `twelvgaige daemon stop` requests shutdown through the discovered IPC endpoint.
-- `twelvgaige daemon paths` prints the platform default runtime directory, endpoint file, lock path, socket path, and Windows named-pipe candidate.
+- `twelvgaige daemon paths` prints the platform default runtime directory, endpoint file, lock path, and socket path.
 
 The CLI discovers Breech from environment and platform defaults:
 
 - `TWELVGAIGE_BREECH_ADDR` overrides discovery.
 - `TWELVGAIGE_BREECH_ENDPOINT` may point to an explicit endpoint JSON file.
-- macOS/Linux default runtime directory: `$XDG_RUNTIME_DIR/twelvgaige` or `~/.twelvgaige/run`.
-- Windows default IPC transport: authenticated loopback TCP with endpoint-file discovery. This keeps standard Windows laptops usable until native named-pipe listener I/O can be verified on Windows.
-- Windows named-pipe candidate: `twelvgaige daemon paths` still reports the per-user named-pipe path, and the implementation supports named-pipe endpoint encoding, discovery, CLI `--transport npipe`, `TWELVGAIGE_BREECH_ADDR=npipe:...`, client-side injected pipe transport tests, and server-side injected pipe listener tests that exercise the same Breech command dispatcher. A native Windows named-pipe listener remains pending until it can be verified on Windows.
+- Default runtime directory: `$XDG_RUNTIME_DIR/twelvgaige` or `~/.twelvgaige/run`.
 - A daemon version mismatch returns a structured `daemon_version_mismatch` error.
 
-Stale IPC endpoints are cleaned up only after the daemon lock proves no live owner exists. The lock is an atomic per-runtime-directory owner lock with an owner metadata file. The CLI must not delete a socket or pipe just because connect failed once.
+Stale IPC endpoints are cleaned up only after the daemon lock proves no live owner exists. The lock is an atomic per-runtime-directory owner lock with an owner metadata file. The CLI must not delete a socket just because connect failed once.
 Unix socket and loopback TCP fallback listeners write endpoint JSON with owner-only file permissions where supported and remove it when the listener stops.
 
 ### 20.2 Local IPC
 
-macOS/Linux use a Unix domain socket by default:
+Twelvgaige uses a Unix domain socket by default:
 
 ```text
 $XDG_RUNTIME_DIR/twelvgaige/breech.sock
 ```
 
 If `$XDG_RUNTIME_DIR` is missing, use a user-owned directory under `~/.twelvgaige/run`. The socket directory must be owner-only. The implementation must account for Unix socket path length limits; if the default path is too long, it must fail with a clear error and suggested override.
-
-Windows uses authenticated loopback TCP by default until native named-pipe listener I/O is verified on Windows. The endpoint file stores the loopback address plus a generated per-user bearer token with owner-only permissions where supported.
-
-Windows named-pipe verification uses the candidate path:
-
-```text
-\\.\pipe\twelvgaige-<user-hash>-breech
-```
-
-Named-pipe endpoint strings use the URI form:
-
-```text
-npipe:////./pipe/twelvgaige-<user-hash>-breech
-```
 
 IPC protocol:
 
@@ -2395,7 +2383,6 @@ IPC protocol:
 Local IPC authentication:
 
 - Unix socket trust relies on filesystem permissions and daemon lock ownership.
-- Windows named pipe trust relies on per-user ACLs where available.
 - Loopback TCP fallback always requires bearer token auth.
 
 ### 20.3 HTTP API
@@ -2630,7 +2617,7 @@ Required networking tests:
 
 - `[x]` IPC envelope encode/decode over authenticated loopback TCP fallback
 - `[x]` daemon discovery and version mismatch
-- Unix socket or named-pipe command path under `:daemon`
+- Unix socket command path under `:daemon`
 - HTTP API request/response contract through local test server
 - auth failure redaction
 - event stream replay from `after_seq`
@@ -2932,7 +2919,6 @@ Local paths should follow platform conventions:
 | --- | --- |
 | Linux | XDG Base Directory Specification for config, data, cache, and runtime paths. |
 | macOS | `~/Library/Application Support/Twelvgaige` for durable app data, `~/Library/Logs/Twelvgaige` for logs, and a user-owned runtime directory for sockets. |
-| Windows | Windows Known Folders, especially `%LOCALAPPDATA%\Twelvgaige` for user-local state. Default IPC is authenticated loopback TCP; per-user named-pipe paths are supported for explicit verification. |
 
 The implementation may support environment overrides, but default paths should not surprise platform users.
 
@@ -3458,8 +3444,8 @@ Behaviour implementations must share contract tests where practical:
 | `[x]` | Shell cache | `Twelvgaige.Shell.Cache` loads configured workflow/agent shell paths under OTP supervision, rejects conflicting duplicate IDs, exposes list APIs, and lets daemon-owned runs resolve workflow IDs with loaded agent loadouts. |
 | `[x]` | Daemon-owned run submission | Breech accepts a workflow shell/path/map, starts a supervised in-VM round task, and stores queued/final snapshots. |
 | `[x]` | Round inspection | `round list` and `round show` read daemon-owned snapshots from the in-memory store. |
-| `[~]` | IPC | Loopback TCP fallback, Windows default loopback TCP, and macOS/Linux Unix sockets support status, run, list, show, event replay/follow, approve, reject, and cancel with length-prefixed JSON. Named-pipe address parsing, client injected transport tests, and server injected listener dispatcher tests are implemented; native Windows named-pipe listener I/O is pending Windows verification. |
-| `[x]` | Daemon discovery | Explicit IPC addresses, `TWELVGAIGE_BREECH_ADDR`, endpoint JSON discovery, endpoint API-version mismatch errors, generated loopback bearer tokens, Unix socket endpoints, named-pipe endpoint encoding, owner-only endpoint files, daemon singleton locks, lock-gated stale cleanup, and Windows-safe TCP defaults are supported. |
+| `[x]` | IPC | Loopback TCP and Unix sockets support status, run, list, show, event replay/follow, approve, reject, and cancel with length-prefixed JSON. |
+| `[x]` | Daemon discovery | Explicit IPC addresses, `TWELVGAIGE_BREECH_ADDR`, endpoint JSON discovery, endpoint API-version mismatch errors, generated loopback bearer tokens, Unix socket endpoints, owner-only endpoint files, daemon singleton locks, and lock-gated stale cleanup are supported. |
 | `[x]` | Watch stream | CLI can replay daemon-owned round events and bounded-follow from the store as human text or NDJSON, including `--until-terminal` cursor advancement through multiple callback-delivered batches without collecting the whole stream first. The concrete HTTP listener supports bounded chunked push for round events; unbounded PubSub streams remain intentionally out of scope. |
 | `[x]` | Deterministic CLI exit codes | `Twelvgaige.CLI.ExitCode` maps snapshots and command errors to the documented `0..8` contract; command tests cover invalid input, missing rounds, missing shell files, and policy-denied safety decisions. |
 | `[x]` | Targeted approval from second process | Paused safety shot can be approved or rejected externally by round ID and safety shot ID through Breech APIs and loopback IPC. |
@@ -3503,8 +3489,8 @@ Behaviour implementations must share contract tests where practical:
 | `[x]` | HTTP tool network policy | `http_get` enforces scheme, userinfo, redirect, explicit host allowlist, private host/IP denial, DNS resolution with every resolved IP checked, timeout, fake transport, and byte policies. |
 | `[x]` | Resource metrics | Limiter snapshots and Prometheus output expose active permits, configured limits, live queue depth, and denial counters by resource kind/reason/profile. |
 | `[x]` | Scheduler | Optional `Twelvgaige.Scheduler` GenServer runs configured interval and five-field cron jobs through `Breech.start_round/3`; Application starts it only when `:scheduler_jobs` is configured. Cron support covers the portable UTC subset `*`, numbers, comma lists, ranges, and stepped ranges with deterministic parser/next-run tests. |
-| `[x]` | Native Mix release bundle | `mix.exs` defines the `twelvgaige_native` release with included ERTS, Unix and Windows lifecycle scripts, tarball generation, and generated product CLI wrappers. `rel/` and generated release overlay paths are ignored so release scaffolding and generated wrappers are not checked in accidentally. `bin/twelvgaige` delegates to `Twelvgaige.CLI.Release.main/0` through the release lifecycle script; Windows artifacts include `bin\twelvgaige.bat` and `bin\twelvgaige.ps1`. |
-| `[x]` | Burrito single-file executable | `mix.exs` defines the `twelvgaige` Burrito release with targets `macos_silicon`, `linux`, `linux_arm64`, and `windows`. Target-specific `BURRITO_CUSTOM_ERTS_<TARGET>` overrides allow host builds to use a matching local ERTS when Burrito's archive mirror lacks the local OTP patch release. `Twelvgaige.Application` starts the normal supervision tree, then `Twelvgaige.CLI.Burrito` detects Burrito runtime, reads `Burrito.Util.Args.argv/0`, runs `Twelvgaige.CLI.Main.main_started/1`, and halts with the CLI result. |
+| `[x]` | Native Mix release bundle | `mix.exs` defines the `twelvgaige_native` release with included ERTS, Unix lifecycle scripts, tarball generation, and a generated product CLI wrapper. `rel/` and generated release overlay paths are ignored so release scaffolding and generated wrappers are not checked in accidentally. `bin/twelvgaige` delegates to `Twelvgaige.CLI.Release.main/0` through the release lifecycle script. |
+| `[x]` | Burrito single-file executable | `mix.exs` defines the `twelvgaige` Burrito release with targets `macos_silicon`, `linux`, and `linux_arm64`. Target-specific `BURRITO_CUSTOM_ERTS_<TARGET>` overrides allow host builds to use a matching local ERTS when Burrito's archive mirror lacks the local OTP patch release. `Twelvgaige.Application` starts the normal supervision tree, then `Twelvgaige.CLI.Burrito` detects Burrito runtime, reads `Burrito.Util.Args.argv/0`, runs `Twelvgaige.CLI.Main.main_started/1`, and halts with the CLI result. |
 | `[x]` | GitHub automation | `Makefile` owns CI and packaging commands. GitHub workflows cover CI, smoke-tested package artifacts, multi-platform Burrito build artifacts, build metadata capture, SHA-256 checksum generation, and tag/manual release publishing. Package smoke validates, normalizes, converts, and runs YAML, JSON, and TOML traphouse shells through the real CLI. Every reusable workflow action is pinned to a full commit SHA. E2E jobs remain deferred. |
 
 ### Phase 6 - Shell Authoring Formats
@@ -3555,7 +3541,7 @@ Resolved implementation decisions:
   actual SQLCipher support before creating the target, and is selected by
   `TWELVGAIGE_STORE_SQLCIPHER` plus `TWELVGAIGE_STORE_SQLCIPHER_KEY`.
   Key-manager backends include test, explicit insecure env/file, macOS
-  Keychain, Windows DPAPI, and desktop Linux Secret Service implementations.
+  Keychain, and desktop Linux Secret Service implementations.
   Platform qualification is stated separately from implementation. Backup and
   restore, plaintext-to-SQLCipher migration, and backup-gated DEK-envelope
   rewrap are implemented; full database-page rekey remains separate work.
@@ -3563,13 +3549,12 @@ Resolved implementation decisions:
 
 Remaining release follow-ups:
 
-- `[!]` Verify native Windows named-pipe listener I/O on Windows. Windows defaults to authenticated loopback TCP until this is proven.
-- `[ ]` Measure `minimal`, `laptop`, and `workstation` profile defaults on common MacBook and Windows laptop hardware.
+- `[ ]` Measure `minimal`, `laptop`, and `workstation` profile defaults on common macOS and Linux developer hardware.
 - `[ ]` Decide whether the default `queue_timeout` should stay disabled or receive a conservative laptop default after measurement.
 - `[ ]` Validate durable retention defaults with real local workloads, especially retained bytes, retained terminal rounds, and cleanup cadence.
 - `[ ]` Decide whether cleanup must require an audit export checkpoint before terminal round records are removed.
-- `[ ]` Build and smoke-test Mix release bundles on Linux and Windows CI runners. Mix releases are target-specific; the macOS bundle does not validate Linux or Windows runtime behavior.
-- `[~]` Build and smoke-test Burrito binaries on supported runners with Zig `0.15.2`, `xz`, and `7z`/`7zz` for Windows targets. macOS Apple Silicon host smoke is verified locally with Homebrew `zig@0.15` and `BURRITO_CUSTOM_ERTS_MACOS_SILICON`; Linux, Linux ARM64, and Windows executable artifacts still need runner-native smoke coverage.
+- `[ ]` Build and smoke-test Mix release bundles on Linux CI runners. Mix releases are target-specific; the macOS bundle does not validate Linux runtime behavior.
+- `[~]` Build and smoke-test Burrito binaries on supported runners with Zig `0.15.2` and `xz`. macOS Apple Silicon host smoke is verified locally with Homebrew `zig@0.15` and `BURRITO_CUSTOM_ERTS_MACOS_SILICON`; Linux and Linux ARM64 executable artifacts still need runner-native smoke coverage.
 
 ## 29. Implementation Rules
 

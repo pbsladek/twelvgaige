@@ -1,0 +1,77 @@
+#!/usr/bin/expect -f
+
+set timeout 30
+
+if {$argc != 5} {
+  puts stderr "usage: qualify_release_cli_interrupt.exp RELEASE_BIN RUNTIME_DIR TEMP_DIR SESSION_ID SECOND_RUNTIME_DIR"
+  exit 2
+}
+
+lassign $argv release_bin runtime_dir temp_dir session_id second_runtime_dir
+
+proc wait_for_interrupt_ready {temp_dir} {
+  for {set attempt 0} {$attempt < 200} {incr attempt} {
+    foreach directory [glob -nocomplain -directory $temp_dir "twelvgaige-cli-*"] {
+      if {[file exists [file join $directory "interrupt.ready"]]} {
+        return 1
+      }
+    }
+
+    after 25
+  }
+
+  return 0
+}
+
+spawn env TMPDIR=$temp_dir $release_bin session watch $session_id --runtime-dir $runtime_dir --poll-ms 50 --timeout-ms 15000 --cancel-request-id req_cli_interrupt_cancel
+
+if {![wait_for_interrupt_ready $temp_dir]} {
+  puts stderr "packaged session watch did not publish interrupt readiness"
+  exit 1
+}
+
+send "\003"
+expect {
+  "Cancellation requested for $session_id" {}
+  timeout { exit 1 }
+  eof { exit 1 }
+}
+
+after 250
+send "\003"
+expect {
+  "Client detached from $session_id" {}
+  timeout { exit 1 }
+  eof { exit 1 }
+}
+
+expect {
+  "The operation may still be running." {}
+  timeout { exit 1 }
+  eof { exit 1 }
+}
+
+expect eof
+set attached_result [wait]
+if {[lindex $attached_result 3] != 0} {
+  puts stderr "packaged attached CLI exited with [lindex $attached_result 3]"
+  exit 1
+}
+
+file mkdir $second_runtime_dir
+spawn env TMPDIR=$temp_dir $release_bin daemon serve --transport tcp --runtime-dir $second_runtime_dir
+expect {
+  "Breech daemon listening" {}
+  timeout { exit 1 }
+  eof { exit 1 }
+}
+
+send "\003"
+expect eof
+set ordinary_result [wait]
+if {[lindex $ordinary_result 3] != 130} {
+  puts stderr "ordinary packaged interrupt exited with [lindex $ordinary_result 3], expected 130"
+  exit 1
+}
+
+exit 0

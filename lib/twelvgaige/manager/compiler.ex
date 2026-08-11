@@ -81,6 +81,15 @@ defmodule Twelvgaige.Manager.Compiler do
         auth_profile_id: task.auth_profile_id || plan.auth_profile_id,
         sandbox_profile: task.sandbox_profile || plan.sandbox_profile,
         network_mode: task.network_mode || plan.network_mode,
+        source_state_token: task.source_state_token || plan.source_state_token,
+        source_mode: task.source_mode || plan.source_mode,
+        include_untracked:
+          if(is_nil(task.include_untracked),
+            do: plan.include_untracked,
+            else: task.include_untracked
+          ),
+        include_ignored:
+          if(is_nil(task.include_ignored), do: plan.include_ignored, else: task.include_ignored),
         deadline: task.deadline || plan.deadline
     }
   end
@@ -91,6 +100,10 @@ defmodule Twelvgaige.Manager.Compiler do
       is_list(task.capabilities) and is_list(task.allowed_paths) and is_list(task.depends_on) and
       is_list(task.mounts) and is_list(task.external_effects) and
       is_boolean(task.write) and is_boolean(task.destructive) and
+      task.source_mode in [:committed, :staged, :working_tree] and
+      is_boolean(task.include_untracked) and is_boolean(task.include_ignored) and
+      (is_nil(task.source_state_token) or nonempty?(task.source_state_token)) and
+      (not task.include_ignored or task.include_untracked) and
       is_integer(task.attempt) and task.attempt >= 0 and
       optional_id?(task.parent_task_id) and optional_id?(task.retry_of_task_id) and
       Enum.all?(task.allowed_paths, &safe_relative_path?/1)
@@ -109,7 +122,11 @@ defmodule Twelvgaige.Manager.Compiler do
       ],
       &nonempty?/1
     ) and match?(%DateTime{}, plan.deadline) and is_list(plan.capabilities) and
-      is_list(plan.allowed_paths) and Enum.all?(plan.allowed_paths, &safe_relative_path?/1)
+      is_list(plan.allowed_paths) and Enum.all?(plan.allowed_paths, &safe_relative_path?/1) and
+      plan.source_mode in [:committed, :staged, :working_tree] and
+      is_boolean(plan.include_untracked) and is_boolean(plan.include_ignored) and
+      (is_nil(plan.source_state_token) or nonempty?(plan.source_state_token)) and
+      (not plan.include_ignored or plan.include_untracked)
   end
 
   defp nonempty?(value), do: is_binary(value) and value != ""

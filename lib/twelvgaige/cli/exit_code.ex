@@ -14,11 +14,43 @@ defmodule Twelvgaige.CLI.ExitCode do
     :tool_timeout,
     :safety_timeout,
     :shot_timeout,
+    :client_timeout,
     :resource_queue_timeout,
     :session_follow_timeout
   ]
 
-  @not_found_reasons [:definition_not_found, :unknown_agent, :unknown_tool]
+  @not_found_reasons [
+    :definition_not_found,
+    :unknown_agent,
+    :unknown_tool,
+    :workspace_not_found,
+    :workspace_set_not_found,
+    :operation_not_found,
+    :session_not_found,
+    :review_worktree_not_found
+  ]
+
+  @input_reasons [
+    :workspace_expected_epoch_required,
+    :workspace_expected_epoch_invalid,
+    :workspace_cleanup_confirmation_required,
+    :workspace_apply_confirmation_required,
+    :workspace_reconcile_confirmation_required,
+    :review_worktree_cleanup_confirmation_required,
+    :workspace_export_output_required,
+    :session_export_output_required,
+    :workspace_apply_target_invalid,
+    :session_request_id_invalid,
+    :session_saved_plan_invalid,
+    :session_saved_plan_drift,
+    :session_saved_plan_write_failed,
+    :session_task_required,
+    :session_auth_profile_required,
+    :session_source_mode_invalid,
+    :session_network_invalid,
+    :include_ignored_requires_include_untracked,
+    :source_include_requires_working_tree
+  ]
 
   @policy_reasons [
     :policy_denied,
@@ -55,6 +87,8 @@ defmodule Twelvgaige.CLI.ExitCode do
   def for_error(:not_found), do: 6
   def for_error(:invalid_ipc_address), do: 4
   def for_error(:invalid_ipc_request), do: 4
+  def for_error(reason) when reason in @not_found_reasons, do: 6
+  def for_error(reason) when reason in @input_reasons, do: 4
 
   def for_error(%Error{reason: :invalid_shell, message: "unable to read shell file"} = error) do
     if shell_file_missing?(error), do: 6, else: 4

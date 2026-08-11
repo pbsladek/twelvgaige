@@ -547,6 +547,5 @@ defmodule Twelvgaige.Store.SQLiteTest do
     mode &&& 0o777
   end
 
-  defp posix_only(fun), do: unless(windows?(), do: fun.())
-  defp windows?, do: match?({:win32, _name}, :os.type())
+  defp posix_only(fun), do: fun.()
 end

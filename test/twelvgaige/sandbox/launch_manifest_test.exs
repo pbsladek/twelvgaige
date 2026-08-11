@@ -49,6 +49,27 @@ defmodule Twelvgaige.Sandbox.LaunchManifestTest do
              )
   end
 
+  test "admits a private copied Codex home without admitting ambient account paths" do
+    root = temp_dir()
+    workspace = Path.join(root, "workspace")
+    codex_home = Path.join(root, "credential-material/session")
+    File.mkdir_p!(workspace)
+    File.mkdir_p!(codex_home)
+
+    spec =
+      attrs(workspace)
+      |> Map.put(:workspace_transport, :copy_snapshot)
+      |> Map.put(:environment_names, ["CODEX_HOME"])
+      |> Map.put(:mounts, [
+        %{source: workspace, destination: "/workspace", mode: :read_write},
+        %{source: codex_home, destination: "/run/codex-home", mode: :read_write}
+      ])
+
+    assert {:ok, manifest} = LaunchManifest.new(spec, allowed_roots: [root])
+    assert Enum.any?(manifest.mounts, &(&1.destination == "/run/codex-home"))
+    assert manifest.environment_names == ["CODEX_HOME"]
+  end
+
   defp attrs(workspace) do
     %{
       backend: :podman,

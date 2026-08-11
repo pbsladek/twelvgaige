@@ -10,6 +10,8 @@
     "reference": "localhost/twelvgaige/worker:codex-0.146.0",
     "digest": "sha256:c3edda97f103f9db0d61d0873589f4e08c093dae04030adc0c6b90deabc105c4"
   },
+  "schema_version": 1,
+  "generated_at": "2026-08-11T09:35:14Z",
   "security": {
     "copy_snapshot": "pass",
     "dropped_capabilities": "pass",
@@ -30,43 +32,42 @@
     "credential_revocation": "pass",
     "copy_snapshot_no_writable_host_mount": "pass",
     "copy_snapshot_import_read_only": "pass",
+    "copy_snapshot_source_not_mounted": "pass",
     "copy_snapshot_declared_export": "pass",
     "copy_snapshot_export_bytes": 10
   },
   "performance": {
     "definition": "cached image; cold is first container launch, warm is subsequent launch",
-    "cancellation_ms": 1205,
-    "recovery_ms": 75,
-    "cold_launch_ms": 284,
+    "cancellation_ms": 1333,
+    "recovery_ms": 65,
+    "cold_launch_ms": 319,
     "warm_launch_ms": [
-      289,
-      284,
+      293,
+      328,
       304,
-      304
+      275
     ],
     "warm_summary_ms": {
-      "max": 304,
-      "min": 284,
+      "max": 328,
+      "min": 275,
       "median": 304
     },
     "concurrent_sessions": 2,
     "concurrent_individual_ms": [
-      314,
-      317
+      340,
+      297
     ],
-    "concurrent_wall_ms": 394
+    "concurrent_wall_ms": 546
   },
-  "schema_version": 1,
-  "generated_at": "2026-08-08T06:04:44Z",
   "podman": {
     "version": "5.8.1",
     "available": true,
     "backend": "podman",
-    "machine_id": "twelvgaige",
     "capabilities": {
       "network_none": true,
       "inspect_json": true,
       "oci": true
-    }
+    },
+    "machine_id": "twelvgaige"
   }
 }

@@ -3,6 +3,7 @@ defmodule Twelvgaige.Operations.OperatorIPCTest do
 
   alias Twelvgaige.Artifact.Store, as: ArtifactStore
   alias Twelvgaige.Breech.IPC.{Client, Server}
+  alias Twelvgaige.CLI.ResultEnvelope
 
   alias Twelvgaige.Operations.{
     AuditAnchor,
@@ -106,7 +107,8 @@ defmodule Twelvgaige.Operations.OperatorIPCTest do
                "json"
              ])
 
-    assert %{"status" => "healthy"} = Jason.decode!(cli_status)
+    assert {:ok, %{"status" => "healthy"}} =
+             cli_status |> Jason.decode!() |> ResultEnvelope.result()
 
     assert {:ok, cli_checkpoint, 0} =
              Twelvgaige.CLI.Dispatcher.run([
@@ -119,7 +121,8 @@ defmodule Twelvgaige.Operations.OperatorIPCTest do
                "json"
              ])
 
-    assert %{"sequence" => 2} = Jason.decode!(cli_checkpoint)
+    assert {:ok, %{"sequence" => 2}} =
+             cli_checkpoint |> Jason.decode!() |> ResultEnvelope.result()
 
     assert {:ok, _session} =
              SessionControl.register(

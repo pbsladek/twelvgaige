@@ -1,0 +1,86 @@
+{
+  "scope": "single-user local Git workspace qualification",
+  "status": "pass",
+  "host": {
+    "elixir_version": "1.20.3",
+    "otp_version": "29",
+    "git_version": "2.39.0",
+    "architecture": "aarch64-apple-darwin25.6.0",
+    "cli_version": "0.0.3",
+    "daemon_protocol_version": 1,
+    "operating_system": "macos"
+  },
+  "result": {
+    "changed_paths": 5,
+    "manifest_digest": "sha256:e8be71cf90086d6571033fd3e81ac22200b867df008da30f63128d14126ce054",
+    "integrity": "verified",
+    "patch_bytes": 1812
+  },
+  "limits": {
+    "disk_amplification_milli": 4000,
+    "manifest_verification_ms": 30000,
+    "memory_growth_bytes": 536870912,
+    "repository_inspection_ms": 10000,
+    "result_capture_ms": 30000,
+    "source_capture_ms": 60000
+  },
+  "evaluation": {
+    "status": "pass",
+    "checks": [
+      {
+        "status": "pass",
+        "limit": 10000,
+        "metric": "repository_inspection_ms",
+        "observed": 329
+      },
+      {
+        "status": "pass",
+        "limit": 60000,
+        "metric": "source_capture_ms",
+        "observed": 2278
+      },
+      {
+        "status": "pass",
+        "limit": 30000,
+        "metric": "result_capture_ms",
+        "observed": 1260
+      },
+      {
+        "status": "pass",
+        "limit": 30000,
+        "metric": "manifest_verification_ms",
+        "observed": 1
+      },
+      {
+        "status": "pass",
+        "limit": 536870912,
+        "metric": "memory_growth_bytes",
+        "observed": 1214859
+      },
+      {
+        "status": "pass",
+        "limit": 4000,
+        "metric": "disk_amplification_milli",
+        "observed": 1005
+      }
+    ]
+  },
+  "fixture": {
+    "binary_bytes": 8388608,
+    "executable_files": 1,
+    "regular_files": 2000,
+    "symlinks": 1,
+    "unusual_paths": 4
+  },
+  "measurements": {
+    "managed_disk_bytes": 33800192,
+    "source_disk_bytes": 33607680,
+    "manifest_verification_ms": 1,
+    "memory_growth_bytes": 1214859,
+    "repository_inspection_ms": 329,
+    "result_capture_ms": 1260,
+    "source_capture_ms": 2278
+  },
+  "generated_at": "2026-08-11T11:22:05Z",
+  "schema_version": 1
+}

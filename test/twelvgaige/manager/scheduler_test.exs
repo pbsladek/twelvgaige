@@ -191,6 +191,72 @@ defmodule Twelvgaige.Manager.SchedulerTest do
              Scheduler.status("cancel-plan", server: scheduler)
   end
 
+  test "an unexpected worker exit stops the runtime and captures a terminal handoff" do
+    parent = self()
+    store = start_store()
+
+    executor = fn child ->
+      send(parent, {:crashing_child_running, child.id})
+      exit(:simulated_crash)
+    end
+
+    cancel = fn child ->
+      send(parent, {:crashing_runtime_stopped, child.id})
+
+      {:ok,
+       %{
+         runtime_stopped: true,
+         runtime_identity: "sandbox-#{child.id}",
+         stopped_at: DateTime.utc_now()
+       }}
+    end
+
+    finalize = fn child, {:error, reason, evidence} ->
+      send(parent, {:crashing_workspace_finalized, child.id, reason, evidence})
+
+      handoff =
+        Handoff.new(%{
+          objective_status: :failed,
+          summary: "partial work captured",
+          workspace_id: child.workspace_id,
+          base_commit: "base",
+          diff_artifact: "artifact:partial-#{child.id}"
+        })
+
+      {:error, reason, Map.put(evidence, :handoff, handoff)}
+    end
+
+    scheduler =
+      start_scheduler(store, executor,
+        max_running: 1,
+        cancel_fun: cancel,
+        workspace_finalize_fun: finalize
+      )
+
+    plan = compiled("worker-crash-finalization", [task("crash")])
+
+    assert {:ok, "worker-crash-finalization", :submitted} =
+             Scheduler.submit(plan, server: scheduler)
+
+    assert_receive {:crashing_child_running, child_id}
+    assert_receive {:crashing_runtime_stopped, ^child_id}
+
+    assert_receive {:crashing_workspace_finalized, ^child_id, {:worker_exit, :simulated_crash},
+                    %{runtime_quiescence: %{runtime_stopped: true}}}
+
+    assert_eventually(fn ->
+      match?(
+        {:ok, %{status: :failed}},
+        Scheduler.status("worker-crash-finalization", server: scheduler)
+      )
+    end)
+
+    assert {:ok, failed} = Memory.get_child(child_id, server: store)
+    assert failed.status == :failed
+    assert failed.handoff.objective_status == :failed
+    assert failed.handoff.diff_artifact == "artifact:partial-#{child_id}"
+  end
+
   test "maximum supported fanout stays bounded and reconciles tree-wide usage" do
     store = start_store()
     concurrency = start_supervised!({Agent, fn -> %{active: 0, peak: 0} end})

@@ -4,6 +4,12 @@ VERSION := $(shell awk -F'"' '/version:/ {print $$2; exit}' mix.exs)
 ARTIFACT_DIR ?= artifacts
 ARTIFACT_SUFFIX ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)
 COVERAGE_SUMMARY ?= $(ARTIFACT_DIR)/coverage-summary.txt
+WORKSPACE_PERF_EVIDENCE ?= qualification/evidence/workspace/performance.json
+CLI_QUALIFICATION_EVIDENCE ?= qualification/evidence/cli/developer-workflow.json
+FAULT_MATRIX_EVIDENCE ?= qualification/evidence/lifecycle/fault-matrix.json
+MIGRATION_EVIDENCE ?= qualification/evidence/migrations/previous-release.json
+COMPLETION_SHELLS ?= bash,zsh,fish
+GIT_MINIMUM_PREFIX ?= $(HOME)/.cache/twelvgaige/git-2.39.0
 NATIVE_RELEASE := twelvgaige_native
 BUMP ?= patch
 RELEASE_VERSION ?=
@@ -68,11 +74,7 @@ E2E_ARTIFACT_DIR ?= $(ARTIFACT_DIR)/e2e
 NATIVE_BIN := _build/prod/rel/$(NATIVE_RELEASE)/bin/$(APP)
 NATIVE_TARBALL := _build/prod/$(NATIVE_RELEASE)-$(VERSION).tar.gz
 
-BURRITO_EXT :=
-ifeq ($(BURRITO_TARGET),windows)
-BURRITO_EXT := .exe
-endif
-BURRITO_BIN := burrito_out/$(APP)_$(BURRITO_TARGET)$(BURRITO_EXT)
+BURRITO_BIN := burrito_out/$(APP)_$(BURRITO_TARGET)
 RELEASE_ARGS := $(if $(RELEASE_VERSION),--version $(RELEASE_VERSION),--bump $(BUMP))
 
 .DEFAULT_GOAL := help
@@ -115,8 +117,28 @@ help:
 	@printf "%s\n" "                         Qualify broker-only egress on Podman and Apple backends"
 	@printf "%s\n" "  make operations-live-qualify"
 	@printf "%s\n" "                         Record queue, retention, backend, SLO, and error-budget evidence"
+	@printf "%s\n" "  make verification-live-qualify"
+	@printf "%s\n" "                         Qualify credential-free verification on Podman and Apple containers"
+	@printf "%s\n" "  make attached-session-podman-qualify"
+	@printf "%s\n" "                         Qualify the production attached-session lifecycle on Podman"
+	@printf "%s\n" "  make attached-session-apple-qualify"
+	@printf "%s\n" "                         Qualify the production attached-session lifecycle on Apple containers"
 	@printf "%s\n" "  make release-qualification"
 	@printf "%s\n" "                         Evaluate and record the complete fail-closed release matrix"
+	@printf "%s\n" "  make workspace-performance-qualify"
+	@printf "%s\n" "                         Qualify real large-repository Git and workspace performance"
+	@printf "%s\n" "  make completion-syntax-check"
+	@printf "%s\n" "                         Parse generated completion with bash, zsh, and fish"
+	@printf "%s\n" "  make git-minimum-install"
+	@printf "%s\n" "                         Build checksum-pinned Git 2.39.0 in an isolated prefix"
+	@printf "%s\n" "  make git-minimum-qualify"
+	@printf "%s\n" "                         Run workspace fixtures and performance on Git 2.39.0"
+	@printf "%s\n" "  make developer-cli-qualify"
+	@printf "%s\n" "                         Measure public help, completion, inspect, validate, and plan paths"
+	@printf "%s\n" "  make migration-qualify"
+	@printf "%s\n" "                         Qualify previous-release records, recovery, and digest compatibility"
+	@printf "%s\n" "  make fault-matrix-qualify"
+	@printf "%s\n" "                         Terminate at every lifecycle boundary and retain exact recovery evidence"
 	@printf "%s\n" "  make check             Format, compile, static analysis, and unit tests"
 	@printf "%s\n" "  make quality           Run Credo, Sobelow, and dependency audits"
 	@printf "%s\n" "  make credo             Run the strict Elixir static-analysis baseline"
@@ -130,7 +152,6 @@ help:
 	@printf "%s\n" "  make e2e-artifacts     Run offline E2E and keep artifacts under $(E2E_ARTIFACT_DIR)"
 	@printf "%s\n" "  make e2e-cli           Run CLI E2E with E2E_BIN=$(E2E_BIN)"
 	@printf "%s\n" "  make e2e-package       Run package-level E2E against escript/native/Burrito"
-	@printf "%s\n" "  make e2e-windows       Run Windows CLI contract E2E with PowerShell"
 	@printf "%s\n" "  make smoke             Build escript and run CLI smoke checks"
 	@printf "%s\n" "  make authoring-check   Run traphouse authoring docs/drift checks"
 	@printf "%s\n" "  make authoring-drift   Run authoring CLI checks against a temp traphouse"
@@ -171,6 +192,10 @@ help:
 
 .PHONY: all
 all: ci
+
+.PHONY: fault-matrix-qualify
+fault-matrix-qualify:
+	@TWELVGAIGE_FAULT_EVIDENCE="$(FAULT_MATRIX_EVIDENCE)" scripts/qualify_fault_matrix.sh
 
 .PHONY: setup deps
 setup: deps
@@ -294,14 +319,69 @@ egress-proxy-status:
 egress-live-qualify:
 	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" MIX_ENV=dev mix run scripts/qualify_egress_boundary.exs
 
-.PHONY: operations-live-qualify release-qualification
+.PHONY: operations-live-qualify verification-live-qualify attached-session-podman-qualify attached-session-apple-qualify release-qualification workspace-performance-qualify migration-qualify
 operations-live-qualify:
 	@MIX_ENV=dev mix run scripts/qualify_operations.exs
 
+verification-live-qualify:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	MIX_ENV=dev mix run scripts/qualify_verification_executor.exs
+
+attached-session-podman-qualify:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_PODMAN_MACHINE="$(TWELVGAIGE_PODMAN_MACHINE)" \
+	TWELVGAIGE_ATTACHED_BACKEND=podman \
+	MIX_ENV=dev mix run scripts/qualify_attached_session.exs
+
+attached-session-apple-qualify:
+	@TWELVGAIGE_DATA_ROOT="$(TWELVGAIGE_DATA_ROOT)" \
+	TWELVGAIGE_ATTACHED_BACKEND=apple-container \
+	MIX_ENV=dev mix run scripts/qualify_attached_session.exs
+
 release-qualification:
 	@MIX_ENV=dev mix run scripts/qualify_operations.exs
+	@$(MAKE) workspace-performance-qualify
+	@$(MAKE) developer-cli-qualify
+	@$(MAKE) migration-qualify
+	@$(MAKE) fault-matrix-qualify
+	@$(MAKE) completion-syntax-check
 	@$(MAKE) check
+	@$(MAKE) e2e-package
+	@$(MAKE) release-cli-interrupt-qualify
 	@MIX_ENV=dev mix run scripts/qualify_release.exs
+
+workspace-performance-qualify:
+	@TWELVGAIGE_WORKSPACE_PERF_EVIDENCE="$(WORKSPACE_PERF_EVIDENCE)" \
+	MIX_ENV=test mix run scripts/qualify_workspace_performance.exs
+
+.PHONY: developer-cli-qualify
+developer-cli-qualify:
+	@TWELVGAIGE_CLI_QUALIFICATION_EVIDENCE="$(CLI_QUALIFICATION_EVIDENCE)" \
+	MIX_ENV=test mix run scripts/qualify_developer_cli.exs
+
+migration-qualify:
+	@TWELVGAIGE_MIGRATION_EVIDENCE="$(MIGRATION_EVIDENCE)" \
+	MIX_ENV=test mix run scripts/qualify_previous_release_migration.exs
+
+.PHONY: completion-syntax-check
+completion-syntax-check:
+	@TWELVGAIGE_COMPLETION_SHELLS="$(COMPLETION_SHELLS)" \
+	MIX_ENV=test mix run scripts/check_completions.exs
+
+.PHONY: git-minimum-install git-minimum-qualify
+git-minimum-install:
+	@scripts/install_git_minimum.sh "$(GIT_MINIMUM_PREFIX)"
+
+git-minimum-qualify:
+	@PATH="$(GIT_MINIMUM_PREFIX)/bin:$$PATH" \
+	MIX_ENV=test mix test test/twelvgaige/workspace \
+		test/twelvgaige/cli/repository_command_test.exs \
+		test/twelvgaige/cli/session_result_test.exs \
+		test/twelvgaige/cli/workspace_command_test.exs
+	@PATH="$(GIT_MINIMUM_PREFIX)/bin:$$PATH" \
+	TWELVGAIGE_REQUIRE_GIT_VERSION=2.39.0 \
+	$(MAKE) workspace-performance-qualify
 
 .PHONY: compile
 compile:
@@ -412,10 +492,6 @@ e2e-authoring: escript
 .PHONY: e2e-store
 e2e-store: escript
 	TWELVGAIGE_E2E_BIN=$(E2E_BIN) TWELVGAIGE_E2E_TMP=$(E2E_TMP) test/e2e/store_backup_restore.sh
-
-.PHONY: e2e-windows
-e2e-windows: escript
-	pwsh -NoLogo -NoProfile -File test/e2e/windows_cli.ps1
 
 .PHONY: e2e-package
 e2e-package: e2e-package-escript e2e-package-release e2e-package-burrito
@@ -585,7 +661,18 @@ build: escript release
 
 .PHONY: escript
 escript: deps
-	mix escript.build
+	TWELVGAIGE_ESCRIPT_PATH=./$(APP).escript mix escript.build
+	go -C native/cli_launcher build -o ../../$(APP).launcher .
+	mv ./$(APP).launcher ./$(APP)
+	chmod 755 ./$(APP) ./$(APP).escript
+
+.PHONY: cli-interrupt-qualify
+cli-interrupt-qualify: escript
+	scripts/qualify_cli_interrupt.exp
+
+.PHONY: release-cli-interrupt-qualify
+release-cli-interrupt-qualify: release
+	scripts/qualify_release_cli_interrupt.sh
 
 .PHONY: smoke
 smoke: escript-smoke
@@ -705,4 +792,5 @@ release-github: ci authoring-check typecheck
 .PHONY: clean
 clean:
 	mix clean
+	rm -f ./$(APP) ./$(APP).escript
 	rm -rf $(ARTIFACT_DIR) burrito_out

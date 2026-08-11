@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "producer": {
+    "version": "0.0.3",
+    "git_ref": "v0.0.3",
+    "git_commit": "c30eed906ddec54872434375690c8581e9ad471e"
+  },
+  "artifact": {
+    "encoding": "base64+gzip",
+    "path": "store.sqlite3.gz.base64",
+    "compressed_bytes": 4347,
+    "compressed_sha256": "605045c66783fefd62334cce27eeac28fac71c8a3d5fe4170d8d492720efd08b",
+    "uncompressed_bytes": 131072,
+    "uncompressed_sha256": "a07ed35d98aadecafa0eba49c69e853416c8e47ea5ee2ed562d91c26de3ec8fd"
+  },
+  "file_artifact": {
+    "encoding": "base64+gzip",
+    "path": "store.term.gz.base64",
+    "compressed_bytes": 976,
+    "compressed_sha256": "60122936fe927b6f04136e8c8e1bc7bbb4a703b450307a4188cb7d610c7586e8",
+    "uncompressed_bytes": 3164,
+    "uncompressed_sha256": "12deb3561942b53da17ede0ef7b6f4c39c0292a0d96363911e6a29f3b9482f68"
+  },
+  "records": {
+    "completed_round": "previous_complete",
+    "interrupted_round": "previous_interrupted",
+    "unresolved_tool_intent": "unresolved-write"
+  }
+}

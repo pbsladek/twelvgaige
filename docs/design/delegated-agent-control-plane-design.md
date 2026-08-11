@@ -2,13 +2,17 @@
 
 Date: 2026-08-01
 
-Status: Complete and qualified for the supported single-user local mode
+Status: Implementation complete; authenticated attached-session qualification pending
 
 Audience: Maintainers and contributors
 
 ## Implementation status — 2026-08-09
 
-The code slices for all seven phases are implemented. The default repository gate, both sandbox backends, the Codex compatibility paths, broker-only egress, and the single-user operational release matrix pass on the named host.
+The code slices for all seven phases are implemented. The default repository
+gate, both sandbox backends, the Codex compatibility paths, and broker-only
+egress pass on the named host. The aggregate release matrix remains fail-closed
+until explicitly authorized authenticated attached-session runs pass through
+both outer sandboxes.
 
 | Phase | Implementation state | Qualification state |
 |---|---|---|
@@ -19,7 +23,7 @@ The code slices for all seven phases are implemented. The default repository gat
 | 4 — Codex driver | Complete and provider-qualified | The supported driver is pinned to Codex CLI `0.146.0` and its generated stable protocol-v2 schema digest. The real stable App Server stdio handshake, digest-bound approval, exact resume, and provider-authenticated coding fixtures pass through the qualified Podman worker. |
 | 5 — Apple container backend | Complete and qualified on the named host | The signed Apple CLI, pinned runtime, exact image identity, per-worker VM identity, resource-bound manifest seal, non-root/read-only launch, dropped capabilities, network-none, mount, limits, recovery, cancellation, credential revocation, concurrency, repeated-session memory, and Codex fixture pass live qualification. |
 | 6 — Manager orchestration | Complete | Typed plans, exact approvals, registered authority, bounded tree depth/children/fan-out, aggregate budgets, atomic durable admission, fair scheduling, resource permits, isolated child identities, native-subagent inheritance, integration isolation, independent verification, one repair attempt, deadlines, cancellation, crash recovery, and load accounting are covered by tests. |
-| 7 — Single-user operations | Complete and qualified on the named host | Local-user-bound control, operator session and sandbox commands, durable scheduling, provider limits, retention, backup/restore, artifact rotation, cross-repository provenance, broker-only egress, SLO/error-budget evaluation, and the ten-check fail-closed release matrix pass tests and live qualification. |
+| 7 — Single-user operations | Complete; final qualification pending | Local-user-bound control, operator session and sandbox commands, durable scheduling, provider limits, retention, backup/restore, artifact rotation, cross-repository provenance, broker-only egress, and SLO/error-budget evaluation pass. The 20-check matrix currently has 18 passing checks and awaits the two authenticated attached-session records. |
 
 Current evidence:
 
@@ -1257,7 +1261,17 @@ The proxy image is built without network access from a scratch image, runs as `6
 
 Versioned SLO profile `1` covers availability, launch success and latency, cancellation, recovery success and latency, queue admission, retention success, and retention lag. Candidate qualification records five successful launches per backend plus live queue and retention samples, then evaluates the associated error budgets. Rolling availability and error-budget consumption still require real elapsed operational history; the candidate artifact does not pretend that five launches equal a 30-day production window.
 
-The [release qualification artifact](../../qualification/evidence/release-qualification.json) evaluates ten mandatory checks covering Codex schema and protocol conformance, both sandbox backends, signed egress supply-chain evidence, broker-only egress, and operational SLOs. Evidence binds named security checks to source digests, so a changed contract fails closed until qualification is regenerated. Tests prove that a backend security regression, driver schema regression, incomplete evidence, unsigned image record, or stale source digest blocks release.
+The [release qualification artifact](../../qualification/evidence/release-qualification.json)
+evaluates 20 mandatory checks covering Codex schema and protocol conformance,
+the developer CLI, lifecycle fault matrix, previous-release migration, minimum
+Git, packaged interrupt behavior, both sandbox backends, authenticated attached
+sessions, independent verification, signed egress supply-chain evidence,
+broker-only egress, the published support matrix, and operational SLOs. Evidence
+binds named security checks to source digests or validates the complete retained
+contract, so a top-level passing label is insufficient. Tests prove that a
+backend security regression, driver schema regression, incomplete CLI or
+lifecycle evidence, an unsupported Git claim, unsigned image record, or stale
+source digest blocks release.
 
 Qualification traceability:
 
@@ -1273,7 +1287,7 @@ Qualification traceability:
 | Active holds and encrypted artifact lifecycle | `retention_integration_test.exs`, artifact-store tests, credential and egress broker tests, and key-rotation tests |
 | Cross-repository inputs and outputs | `workspace/set_test.exs`, including persistence and store-restart recovery of every base and resulting commit |
 | Protocol and backend release failure | `protocol_conformance_test.exs`, backend live evidence, and `release_gate_test.exs` regression cases |
-| Published SLOs and error budgets | `operations/live-qualification.json`, source-bound security evidence, and the ten-check `release-qualification.json` matrix |
+| Published SLOs and error budgets | `operations/live-qualification.json`, source-bound security evidence, and the 20-check `release-qualification.json` matrix |
 
 Runtime activation remains explicit for this single-user mode. `TWELVGAIGE_OPERATIONS_ENABLED=1` enables the operations supervisor; runtime configuration registers both supported backends, uses the dedicated Podman machine name, retains the OS-protected master key, and accepts user overrides for the data root, both retention periods, and an optional private external audit-checkpoint path.
 

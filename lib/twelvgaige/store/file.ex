@@ -20,6 +20,7 @@ defmodule Twelvgaige.Store.File do
   alias Twelvgaige.Round.Snapshot
   alias Twelvgaige.Security.FileMode
   alias Twelvgaige.Store.Retention
+  alias Twelvgaige.Store.SQLite.TermCodec
 
   @terminal_statuses MapSet.new([:complete, :failed, :halted, :cancelled])
   @max_event_wait_ms 30_000
@@ -53,7 +54,8 @@ defmodule Twelvgaige.Store.File do
   def init(opts) do
     path = opts |> Keyword.fetch!(:path) |> Path.expand()
 
-    with :ok <- FileMode.ensure_private_parent_dir(path),
+    with :ok <- TermCodec.preload(),
+         :ok <- FileMode.ensure_private_parent_dir(path),
          {:ok, state} <- load_state(path) do
       state =
         state
@@ -457,7 +459,7 @@ defmodule Twelvgaige.Store.File do
     case File.read(path) do
       {:ok, binary} ->
         case :erlang.binary_to_term(binary, [:safe]) do
-          %__MODULE__{} = state -> {:ok, %{state | path: path}}
+          %__MODULE__{} = state -> upgrade_state(state, path)
           _other -> {:error, :store_corrupt}
         end
 
@@ -469,6 +471,56 @@ defmodule Twelvgaige.Store.File do
     end
   rescue
     _error -> {:error, :store_corrupt}
+  end
+
+  defp upgrade_state(%__MODULE__{} = state, path) do
+    defaults = Map.from_struct(%__MODULE__{})
+    persisted = Map.from_struct(state)
+    state = struct!(__MODULE__, Map.merge(defaults, persisted))
+
+    rounds =
+      Map.new(state.rounds, fn {round_id, snapshot} -> {round_id, Snapshot.upgrade(snapshot)} end)
+
+    with {:ok, audit_events} <- upgrade_audit_events(state.audit_events) do
+      {:ok, %{state | path: path, rounds: rounds, audit_events: audit_events}}
+    end
+  end
+
+  defp upgrade_audit_events(audit_events) do
+    Enum.reduce_while(audit_events, {:ok, %{}}, fn {round_id, events}, {:ok, migrated} ->
+      case upgrade_round_audit_events(round_id, events) do
+        {:ok, upgraded} -> {:cont, {:ok, Map.put(migrated, round_id, upgraded)}}
+        {:error, _reason} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp upgrade_round_audit_events(round_id, events) do
+    cond do
+      Enum.all?(events, &legacy_unchained_audit?/1) ->
+        {:ok, AuditChain.extend(AuditChain.genesis(), events)}
+
+      Enum.all?(events, &chained_audit?/1) ->
+        case AuditChain.verify(events) do
+          :ok -> {:ok, events}
+          {:error, reason} -> {:error, {:audit_chain_invalid, round_id, reason}}
+        end
+
+      true ->
+        {:error, {:audit_chain_migration_ambiguous, round_id}}
+    end
+  end
+
+  defp legacy_unchained_audit?(event) do
+    is_nil(value(event, :audit_chain_algorithm)) and
+      is_nil(value(event, :audit_previous_hash)) and
+      is_nil(value(event, :audit_chain_hash))
+  end
+
+  defp chained_audit?(event) do
+    is_binary(value(event, :audit_chain_algorithm)) and
+      is_binary(value(event, :audit_previous_hash)) and
+      is_binary(value(event, :audit_chain_hash))
   end
 
   defp persist_state(%__MODULE__{} = state) do

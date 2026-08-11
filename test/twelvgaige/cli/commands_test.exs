@@ -1,9 +1,32 @@
 defmodule Twelvgaige.CLI.CommandsTest do
   use ExUnit.Case, async: false
 
-  alias Twelvgaige.CLI.Main
+  alias Twelvgaige.CLI.{Main, ResultEnvelope}
 
   @workflow_path "test/fixtures/shells/simple_workflow.yaml"
+
+  defp decode_cli_result!(output) do
+    decoded = Jason.decode!(output)
+
+    case ResultEnvelope.result(decoded) do
+      {:ok, result} -> result
+      {:error, :invalid_cli_result_envelope} -> decoded
+      {:error, error} -> %{"error" => error}
+    end
+  end
+
+  defp decode_cli_events!(output) do
+    records = output |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
+    {events, terminal} = Enum.split_with(records, &(not &1["terminal"]))
+
+    assert [terminal] = terminal
+    assert terminal["schema"] == "twelvgaige.cli.event"
+    assert terminal["schema_version"] == 1
+    assert terminal["event_type"] == "terminal"
+    assert terminal["event_count"] == length(events)
+
+    {Enum.map(events, & &1["event"]), terminal}
+  end
 
   test "shell validate succeeds for workflow shells" do
     assert {:ok, output, 0} = Main.run(["shell", "validate", @workflow_path])
@@ -29,7 +52,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "mtls_supported" => false
              },
              "providers" => %{"hosted_tls_verification" => "configured"}
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
   end
 
   test "crypto sqlcipher-spike reports current driver feasibility" do
@@ -52,7 +75,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "driver" => "ecto_sqlite3/exqlite",
              "path" => ^path,
              "migrations" => "skipped"
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     refute File.exists?(path)
   end
@@ -75,7 +98,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} = Main.run(["shell", "validate", @workflow_path, "--format", "json"])
 
     assert %{"kind" => "workflow", "id" => "simple", "shots" => ["first", "second"]} =
-             Jason.decode!(output)
+             decode_cli_result!(output)
   end
 
   test "shell new prints a scaffolded workflow without writing" do
@@ -102,7 +125,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "kind" => "workflow",
              "id" => "demo_json",
              "shots" => [%{"id" => "analyze", "agent" => "demo_json_agent"}]
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
   end
 
   test "shell new rejects the removed mock-agent option" do
@@ -124,7 +147,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} =
              Main.run(["shell", "scaffold", "list", "--root", root, "--format", "json"])
 
-    scaffolds = Jason.decode!(output)
+    scaffolds = decode_cli_result!(output)
     assert Enum.any?(scaffolds, &(&1["namespace"] == "team" and &1["id"] == "team.review"))
 
     assert {:ok, output, 0} =
@@ -191,7 +214,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "kind" => "twelvgaige.author_review",
              "disclosure" => %{"writes_files" => false},
              "patch_plan" => %{"plan_digest" => "sha256:" <> _}
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
   end
 
   test "shell author review requires consent for hosted providers" do
@@ -233,7 +256,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "json"
              ])
 
-    assert %{"status" => "ok", "changed" => false, "findings" => []} = Jason.decode!(output)
+    assert %{"status" => "ok", "changed" => false, "findings" => []} = decode_cli_result!(output)
   end
 
   test "shell patch verify catches stale files" do
@@ -291,7 +314,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "kind" => "twelvgaige.patch.apply",
              "mode" => "dry_run",
              "changed" => false
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
   end
 
   test "shell patch apply --write requires approval" do
@@ -398,7 +421,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "mode" => "write",
              "post_write_validations" => [_ok_validation, failed_validation],
              "findings" => findings
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert failed_validation["status"] == "failed"
     assert Enum.any?(findings, &(&1["status"] == "post_write_validation_target_unknown"))
@@ -540,7 +563,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "new_id" => "inspect",
              "updated_conditions" => 1,
              "diff" => diff
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert diff =~ "shots.inspect.status"
   end
@@ -569,7 +592,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "message" => message,
                "details" => %{"dependent_ids" => ["analyze", "verify"]}
              }
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert message =~ "--cascade --yes"
   end
@@ -1105,7 +1128,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} =
              Main.run(["shot", "library", "list", "--root", root, "--format", "json"])
 
-    templates = Jason.decode!(output)
+    templates = decode_cli_result!(output)
     assert Enum.any?(templates, &(&1["id"] == "team.review" and &1["namespace"] == "team"))
   end
 
@@ -1126,7 +1149,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} =
              Main.run(["shot", "library", "verify", "--root", root, "--format", "json"])
 
-    assert %{"status" => "ok", "findings" => []} = Jason.decode!(output)
+    assert %{"status" => "ok", "findings" => []} = decode_cli_result!(output)
 
     File.write!(
       template_path,
@@ -1153,7 +1176,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} =
              Main.run(["shot", "library", "verify", "--root", root, "--format", "json"])
 
-    assert %{"status" => "ok", "findings" => []} = Jason.decode!(output)
+    assert %{"status" => "ok", "findings" => []} = decode_cli_result!(output)
   end
 
   test "shot library outdated reports stale copied template shots" do
@@ -1171,7 +1194,8 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} =
              Main.run(["shot", "library", "outdated", root, "--root", root, "--format", "json"])
 
-    assert %{"status" => "ok", "findings" => [], "checked_shots" => 1} = Jason.decode!(output)
+    assert %{"status" => "ok", "findings" => [], "checked_shots" => 1} =
+             decode_cli_result!(output)
 
     File.write!(
       template_path,
@@ -1222,7 +1246,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                %{"id" => "first", "agent" => "mock_agent"},
                %{"id" => "second", "depends_on" => ["first"]}
              ]
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert {:ok, toml_output, 0} =
              Main.run(["shell", "normalize", @workflow_path, "--format", "toml"])
@@ -1265,7 +1289,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "json"
              ])
 
-    assert %{"kind" => "workflow", "id" => "simple"} = Jason.decode!(output)
+    assert %{"kind" => "workflow", "id" => "simple"} = decode_cli_result!(output)
   end
 
   test "shell convert requires a target format" do
@@ -1294,7 +1318,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
 
     assert {:ok, output, 1} = Main.run(["shell", "fmt", path, "--check", "--format", "json"])
 
-    assert %{"changed" => true, "mode" => "check", "exit_code" => 1} = Jason.decode!(output)
+    assert %{"changed" => true, "mode" => "check", "exit_code" => 1} = decode_cli_result!(output)
   end
 
   test "shell fmt writes atomically and validates the formatted shell" do
@@ -1380,7 +1404,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              ])
 
     assert %{"action" => "approve", "lifecycle" => "approved", "wrote" => true} =
-             Jason.decode!(output)
+             decode_cli_result!(output)
 
     assert {:ok, workflow} = Twelvgaige.validate_shell(path)
     assert workflow.metadata.lifecycle == :approved
@@ -1427,7 +1451,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "lifecycle" => "retired",
              "reason" => "audit only",
              "wrote" => true
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert {:ok, workflow} = Twelvgaige.validate_shell(path)
     assert workflow.metadata.lifecycle == :retired
@@ -1486,7 +1510,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "action" => "set",
              "changed_fields" => changed_fields,
              "wrote" => true
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert changed_fields == ["lifecycle", "owner"]
 
@@ -1540,7 +1564,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "action" => "clear",
              "cleared_fields" => ["review", "approval"],
              "wrote" => true
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert {:ok, workflow} = Twelvgaige.validate_shell(path)
     assert workflow.metadata.review == nil
@@ -1575,13 +1599,14 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} =
              Main.run(["shell", "admit", path, "--policy", "approved", "--format", "json"])
 
-    assert %{"status" => "ok", "policy" => "approved", "findings" => []} = Jason.decode!(output)
+    assert %{"status" => "ok", "policy" => "approved", "findings" => []} =
+             decode_cli_result!(output)
 
     assert {:ok, output, 1} =
              Main.run(["shell", "admit", path, "--policy", "scheduled", "--format", "json"])
 
     assert %{"status" => "failed", "policy" => "scheduled", "findings" => findings} =
-             Jason.decode!(output)
+             decode_cli_result!(output)
 
     assert Enum.any?(findings, &(&1["id"] == "lifecycle.scheduled_required"))
   end
@@ -1625,7 +1650,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                  "write_capable" => false
                }
              ]
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
   end
 
   test "shell graph emits mermaid output" do
@@ -1665,7 +1690,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              Main.run(["shell", "graph", outside_path, "--root", root, "--format", "json"])
 
     assert %{"error" => %{"reason" => "invalid_shell", "message" => message}} =
-             Jason.decode!(output)
+             decode_cli_result!(output)
 
     assert message =~ "outside the resolved traphouse root"
   end
@@ -1697,7 +1722,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "errors" => [],
              "skipped" => [],
              "findings" => findings
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert Enum.any?(findings, &(&1["id"] == "shot.output_schema.missing"))
   end
@@ -1726,7 +1751,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              Main.run(["shell", "lint", workflow_path, "--strict", "--format", "json"])
 
     assert %{"status" => "failed", "exit_code" => 1, "findings" => findings} =
-             Jason.decode!(output)
+             decode_cli_result!(output)
 
     assert Enum.any?(findings, &(&1["id"] == "shot.safety.write_without_gate"))
   end
@@ -1755,7 +1780,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "status" => "ok",
              "reports" => [%{"path" => ^workflow_path}],
              "skipped" => [%{"path" => ^agent_path, "reason" => "agent_shell"}]
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert path == Path.expand(root)
   end
@@ -1799,7 +1824,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "status" => "failed",
              "exit_code" => 1,
              "recommendations" => recommendations
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert Enum.any?(recommendations, &(&1["id"] == "shot.safety.write_without_gate"))
   end
@@ -1819,7 +1844,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 4} =
              Main.run(["shell", "doctor", agent_path, "--root", root, "--format", "json"])
 
-    assert %{"error" => %{"message" => message}} = Jason.decode!(output)
+    assert %{"error" => %{"message" => message}} = decode_cli_result!(output)
     assert message =~ "requires a workflow shell"
   end
 
@@ -1858,7 +1883,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                }
              ],
              "agents" => [%{"id" => "operator"}]
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert {:ok, output, 0} = Main.run(["shell", "inventory", root, "--root", root])
     assert output =~ "Shell inventory:"
@@ -1917,7 +1942,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                  "matching_shots" => [%{"id" => "apply", "tools" => ["kubectl_apply"]}]
                }
              ]
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert {:ok, output, 0} =
              Main.run(["shell", "impact", root, "--root", root, "--agent", "operator"])
@@ -2066,7 +2091,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "status" => "ok",
              "summary" => %{"changed_workflows" => 2, "changed_shots" => 2},
              "changes" => changes
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert Enum.map(changes, & &1["path"]) == [first_path, second_path]
     assert File.read!(first_path) =~ "new_agent"
@@ -2103,7 +2128,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "status" => "failed",
              "summary" => %{"changed_workflows" => 0, "error_count" => 1},
              "errors" => [%{"path" => ^workflow_path, "error" => %{"message" => message}}]
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert message =~ "contextual lint"
     assert File.read!(workflow_path) =~ "old_agent"
@@ -2183,7 +2208,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "status" => "ok",
              "summary" => %{"changed_workflows" => 2, "changed_shots" => 2},
              "changes" => changes
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert Enum.map(changes, & &1["path"]) == [first_path, second_path]
     assert File.read!(first_path) =~ "http_get"
@@ -2226,7 +2251,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "status" => "failed",
              "summary" => %{"changed_workflows" => 0, "error_count" => 1},
              "errors" => [%{"path" => ^workflow_path, "error" => %{"message" => message}}]
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert message =~ "contextual lint"
     assert File.read!(workflow_path) =~ "kubectl_get"
@@ -2252,14 +2277,14 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} = Main.run(["shell", "reload", root, "--format", "json"])
 
     assert %{"workflows" => ["cli_cached_workflow"], "agents" => ["cli_cached_agent"]} =
-             Jason.decode!(output)
+             decode_cli_result!(output)
 
     assert {:ok, output, 0} = Main.run(["shell", "list", "--format", "json"])
 
     assert [
              %{"kind" => "agent", "id" => "cli_cached_agent"},
              %{"kind" => "workflow", "id" => "cli_cached_workflow"}
-           ] = Jason.decode!(output)
+           ] = decode_cli_result!(output)
 
     assert {:ok, output, 0} = Main.run(["shell", "show", "cli_cached_workflow"])
     assert output =~ "Workflow shell: cli_cached_workflow 1.0.0"
@@ -2277,7 +2302,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              ])
 
     assert %{"kind" => "agent", "id" => "cli_cached_agent", "model" => "mock-model"} =
-             Jason.decode!(output)
+             decode_cli_result!(output)
   end
 
   test "round run accepts inline JSON input" do
@@ -2335,7 +2360,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "json"
              ])
 
-    decoded = Jason.decode!(output)
+    decoded = decode_cli_result!(output)
     assert decoded["shell_id"] == "simple"
     assert decoded["status"] == "complete"
     assert [%{"status" => "complete"}, %{"status" => "complete"}] = decoded["shots"]
@@ -2352,7 +2377,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "reason" => "policy_denied",
                "details" => %{"policy" => "approved", "findings" => findings}
              }
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     assert Enum.any?(findings, &(&1["id"] == "lifecycle.approval_required"))
   end
@@ -2371,7 +2396,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "json"
              ])
 
-    decoded = Jason.decode!(output)
+    decoded = decode_cli_result!(output)
     assert decoded["status"] == "complete"
     assert decoded["resource_profile"] == "minimal"
     assert decoded["policy"]["resource_profile"] == "minimal"
@@ -2405,7 +2430,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "json"
              ])
 
-    decoded = Jason.decode!(output)
+    decoded = decode_cli_result!(output)
     assert "round_" <> _ = round_id = decoded["id"]
     assert decoded["status"] == "queued"
 
@@ -2433,36 +2458,11 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "json"
              ])
 
-    decoded = Jason.decode!(output)
+    decoded = decode_cli_result!(output)
     assert decoded["runtime_dir"] == dir
     assert decoded["endpoint_path"] == Path.join(dir, "breech.endpoint.json")
     assert decoded["lock_path"] == Path.join(dir, "breech.lock")
     assert decoded["transport"] == "tcp"
-  end
-
-  test "daemon paths accepts named pipe transport" do
-    dir =
-      Path.join(
-        System.tmp_dir!(),
-        "twelvgaige_cli_paths_npipe_#{System.unique_integer([:positive])}"
-      )
-
-    assert {:ok, output, 0} =
-             Main.run([
-               "daemon",
-               "paths",
-               "--runtime-dir",
-               dir,
-               "--transport",
-               "npipe",
-               "--format",
-               "json"
-             ])
-
-    decoded = Jason.decode!(output)
-    assert decoded["transport"] == "npipe"
-    assert decoded["socket_path"] == nil
-    assert decoded["pipe_path"] =~ ~S(\\.\pipe\twelvgaige-)
   end
 
   test "daemon stop requests endpoint-published daemon shutdown" do
@@ -2487,7 +2487,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} =
              Main.run(["daemon", "stop", "--endpoint", endpoint_path, "--format", "json"])
 
-    assert %{"status" => "stopping"} = Jason.decode!(output)
+    assert %{"status" => "stopping"} = decode_cli_result!(output)
     assert_receive {:DOWN, ^ref, :process, ^server, :normal}, 1_000
   end
 
@@ -2500,7 +2500,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
 
     assert {:ok, output, 0} = Main.run(["round", "show", round_id, "--format", "json"])
 
-    decoded = Jason.decode!(output)
+    decoded = decode_cli_result!(output)
     assert decoded["id"] == round_id
     assert decoded["status"] == "complete"
   end
@@ -2508,7 +2508,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
   test "round show returns not-found exit code for missing rounds" do
     assert {:ok, output, 6} = Main.run(["round", "show", "round_missing", "--format", "json"])
 
-    assert %{"error" => %{"reason" => "round_not_found"}} = Jason.decode!(output)
+    assert %{"error" => %{"reason" => "round_not_found"}} = decode_cli_result!(output)
   end
 
   test "round watch replays daemon-owned round events as ndjson" do
@@ -2521,13 +2521,14 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} =
              Main.run(["round", "watch", round_id, "--format", "ndjson"])
 
-    events = output |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
+    {events, terminal} = decode_cli_events!(output)
     event = List.last(events)
 
     assert event["round_id"] == round_id
     assert Enum.map(events, & &1["seq"]) == Enum.to_list(1..length(events))
     assert event["event_type"] == "round_completed"
     assert event["payload"]["status"] == "complete"
+    assert terminal["disposition"] == "succeeded"
   end
 
   test "round audit displays daemon-owned audit events" do
@@ -2540,7 +2541,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} =
              Main.run(["round", "audit", round_id, "--format", "json"])
 
-    decoded = Jason.decode!(output)
+    decoded = decode_cli_result!(output)
     event_types = Enum.map(decoded, & &1["event_type"])
 
     assert Enum.all?(decoded, &(&1["round_id"] == round_id))
@@ -2560,7 +2561,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
     assert {:ok, output, 0} =
              Main.run(["round", "audit", round_id, "--format", "checkpoint"])
 
-    checkpoint = Jason.decode!(output)
+    checkpoint = decode_cli_result!(output)
 
     assert checkpoint["kind"] == "twelvgaige.audit.checkpoint"
     assert checkpoint["round_id"] == round_id
@@ -2593,7 +2594,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "valid" => true,
              "round_id" => ^round_id,
              "algorithm" => "sha256-chain-v1"
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
   end
 
   test "round audit can emit and verify a signed checkpoint" do
@@ -2635,7 +2636,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "status" => "ok",
              "valid" => true,
              "signature" => %{"algorithm" => "hmac-sha256-v1", "key_ref" => ^env}
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
 
     System.put_env(env, "wrong")
 
@@ -2664,7 +2665,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "valid" => false,
              "reason" => "event_hash_mismatch",
              "details" => %{"seq" => 1}
-           } = Jason.decode!(output)
+           } = decode_cli_result!(output)
   end
 
   test "round watch can follow for the next daemon-owned round event" do
@@ -2705,9 +2706,10 @@ defmodule Twelvgaige.CLI.CommandsTest do
              )
 
     assert {:ok, output, 0} = Task.await(watcher)
-    assert [event] = output |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
+    assert {[event], terminal} = decode_cli_events!(output)
     assert event["round_id"] == round_id
     assert event["event_type"] == "safety_approved"
+    assert terminal["disposition"] == "succeeded"
   end
 
   test "round watch can follow until a daemon-owned round reaches terminal state" do
@@ -2745,7 +2747,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
 
     assert {:ok, output, 0} = Task.await(watcher)
 
-    events = output |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
+    {events, terminal} = decode_cli_events!(output)
 
     assert Enum.all?(events, &(&1["round_id"] == round_id))
 
@@ -2757,6 +2759,8 @@ defmodule Twelvgaige.CLI.CommandsTest do
              "shot_completed",
              "round_completed"
            ]
+
+    assert terminal["disposition"] == "succeeded"
   end
 
   test "round list includes daemon-owned rounds" do
@@ -2768,7 +2772,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
 
     assert {:ok, output, 0} = Main.run(["round", "list", "--format", "json"])
 
-    decoded = Jason.decode!(output)
+    decoded = decode_cli_result!(output)
     assert Enum.any?(decoded, &(&1["id"] == round_id))
   end
 
@@ -2795,7 +2799,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "json"
              ])
 
-    assert %{"status" => "accepted", "decision" => "approve"} = Jason.decode!(output)
+    assert %{"status" => "accepted", "decision" => "approve"} = decode_cli_result!(output)
 
     assert eventually(fn ->
              match?({:ok, %{status: :complete}}, Twelvgaige.get_round(round_id))
@@ -2820,7 +2824,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "json"
              ])
 
-    assert %{"error" => %{"reason" => "policy_denied"}} = Jason.decode!(output)
+    assert %{"error" => %{"reason" => "policy_denied"}} = decode_cli_result!(output)
   end
 
   test "round reject halts a daemon-owned safety round" do
@@ -2869,7 +2873,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "json"
              ])
 
-    assert %{"status" => "accepted", "decision" => "cancel"} = Jason.decode!(output)
+    assert %{"status" => "accepted", "decision" => "cancel"} = decode_cli_result!(output)
     assert {:ok, snapshot} = Twelvgaige.get_round(round_id)
     assert snapshot.status == :cancelled
   end
@@ -2927,7 +2931,7 @@ defmodule Twelvgaige.CLI.CommandsTest do
                "json"
              ])
 
-    assert %{"error" => %{"reason" => "invalid_shell"}} = Jason.decode!(output)
+    assert %{"error" => %{"reason" => "invalid_shell"}} = decode_cli_result!(output)
   end
 
   defp eventually(fun), do: eventually(fun, 20)

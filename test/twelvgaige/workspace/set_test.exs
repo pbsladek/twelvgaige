@@ -31,6 +31,8 @@ defmodule Twelvgaige.Workspace.SetTest do
              )
 
     assert %Set{} = set
+    assert {:ok, [listed]} = Manager.list_sets(server: manager)
+    assert listed.id == set.id
     assert Map.keys(set.repositories) |> Enum.sort() == ["app", "library"]
 
     assert Enum.all?(set.repositories, fn {_name, workspace} ->
@@ -52,6 +54,19 @@ defmodule Twelvgaige.Workspace.SetTest do
     File.write!(Path.join(app_workspace.path, "new.txt"), "result\n")
     git!(app_workspace.path, ["add", "--all"])
     git!(app_workspace.path, ["commit", "--quiet", "-m", "result"])
+
+    Enum.each(set.repositories, fn {_name, workspace} ->
+      assert {:ok, _workspace} =
+               Manager.quiesce(
+                 workspace.id,
+                 %{
+                   runtime_stopped: true,
+                   runtime_identity: "workspace-set-test",
+                   stopped_at: ~U[2026-08-11 12:00:00Z]
+                 },
+                 server: manager
+               )
+    end)
 
     assert {:ok, finalized, provenance} = Manager.finalize_set(set.id, server: manager)
     assert Map.keys(provenance.inputs) |> Enum.sort() == ["app", "library"]

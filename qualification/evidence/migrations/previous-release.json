@@ -1,0 +1,50 @@
+{
+  "scope": {
+    "canonical_contract": "result-manifest-v1",
+    "consumer_version": "0.0.3",
+    "persisted_stores": [
+      "sqlite",
+      "file"
+    ],
+    "previous_commit": "c30eed906ddec54872434375690c8581e9ad471e",
+    "previous_release": "0.0.3"
+  },
+  "status": "pass",
+  "host": {
+    "os": "{:unix, :darwin}",
+    "otp": "29",
+    "elixir": "1.20.3",
+    "architecture": "aarch64-apple-darwin25.6.0"
+  },
+  "checks": {
+    "completed_record_readable": "pass",
+    "fixture_integrity": "pass",
+    "interrupted_write_not_retried": "pass",
+    "legacy_audit_chain_migrated": "pass",
+    "manifest_and_events_readable": "pass",
+    "previous_release_provenance": "pass",
+    "reconciliation_persisted_after_restart": "pass",
+    "result_manifest_v1_digest_preserved": "pass",
+    "snapshot_schema_upgraded": "pass"
+  },
+  "generated_at": "2026-08-11T18:17:51.052407Z",
+  "schema_version": 1,
+  "artifacts": {
+    "file": {
+      "path": "qualification/fixtures/migrations/v0.0.3/store.term.gz.base64",
+      "encoding": "base64+gzip",
+      "compressed_bytes": 976,
+      "compressed_sha256": "60122936fe927b6f04136e8c8e1bc7bbb4a703b450307a4188cb7d610c7586e8",
+      "uncompressed_bytes": 3164,
+      "uncompressed_sha256": "12deb3561942b53da17ede0ef7b6f4c39c0292a0d96363911e6a29f3b9482f68"
+    },
+    "sqlite": {
+      "path": "qualification/fixtures/migrations/v0.0.3/store.sqlite3.gz.base64",
+      "encoding": "base64+gzip",
+      "compressed_bytes": 4347,
+      "compressed_sha256": "605045c66783fefd62334cce27eeac28fac71c8a3d5fe4170d8d492720efd08b",
+      "uncompressed_bytes": 131072,
+      "uncompressed_sha256": "a07ed35d98aadecafa0eba49c69e853416c8e47ea5ee2ed562d91c26de3ec8fd"
+    }
+  }
+}

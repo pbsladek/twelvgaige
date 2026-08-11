@@ -69,6 +69,26 @@ defmodule Twelvgaige.CLI.Commands.Developer do
         "  #{check.status}: #{check.name} (#{inspect(check.detail)})#{remedy}"
       end)
 
-    "Developer readiness: #{result.status}\n#{checks}\n"
+    versions =
+      result
+      |> Map.get(:versions, %{})
+      |> Enum.sort()
+      |> Enum.map_join("\n", fn {name, version} -> "  #{name}: #{version}" end)
+
+    capability_names =
+      result
+      |> Map.get(:capabilities, %{})
+      |> Map.get(:provider, %{})
+      |> Enum.filter(fn {_name, enabled} -> enabled == true end)
+      |> Enum.map(&elem(&1, 0))
+      |> Enum.sort()
+      |> Enum.join(", ")
+
+    version_section = if versions == "", do: "", else: "\nVersions:\n#{versions}"
+
+    capability_section =
+      if capability_names == "", do: "", else: "\nProvider capabilities: #{capability_names}"
+
+    "Developer readiness: #{result.status}\n#{checks}#{version_section}#{capability_section}\n"
   end
 end

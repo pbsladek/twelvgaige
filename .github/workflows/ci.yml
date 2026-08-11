@@ -38,6 +38,14 @@ jobs:
           otp-version: "28"
           elixir-version: "1.20.3"
 
+      - name: Install completion shells on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zsh fish
+
+      - name: Install completion shells on macOS
+        if: runner.os == 'macOS'
+        run: brew install fish
+
       - name: Cache Mix
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
@@ -50,6 +58,116 @@ jobs:
 
       - name: CI gates
         run: make ci
+
+      - name: Validate generated shell completions
+        run: make completion-syntax-check COMPLETION_SHELLS=bash,zsh,fish
+
+      - name: Qualify Git workspace performance
+        run: make workspace-performance-qualify WORKSPACE_PERF_EVIDENCE=artifacts/workspace-performance.json
+
+      - name: Qualify public developer CLI
+        run: make developer-cli-qualify CLI_QUALIFICATION_EVIDENCE=artifacts/developer-cli-qualification.json
+
+      - name: Qualify previous-release migration
+        run: make migration-qualify MIGRATION_EVIDENCE=artifacts/previous-release-migration.json
+
+      - name: Qualify lifecycle interruption matrix
+        run: make fault-matrix-qualify FAULT_MATRIX_EVIDENCE=artifacts/fault-matrix-qualification.json
+
+      - name: Upload Git workspace qualification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: twelvgaige-workspace-performance-${{ matrix.os }}
+          path: artifacts/workspace-performance.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload developer CLI qualification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: twelvgaige-developer-cli-${{ matrix.os }}
+          path: artifacts/developer-cli-qualification.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload previous-release migration evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: twelvgaige-previous-release-migration-${{ matrix.os }}
+          path: artifacts/previous-release-migration.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload lifecycle fault-matrix evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: twelvgaige-fault-matrix-${{ matrix.os }}
+          path: artifacts/fault-matrix-qualification.json
+          if-no-files-found: error
+          retention-days: 14
+
+  minimum-git:
+    name: Git 2.39.0 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@8251c48667b97e88a0a24ec512f5b72a039fcea7
+        with:
+          otp-version: "28"
+          elixir-version: "1.20.3"
+
+      - name: Cache Mix
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-minimum-git-mix-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-minimum-git-mix-
+
+      - name: Cache Git 2.39.0
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/.cache/twelvgaige/git-2.39.0
+          key: ${{ runner.os }}-git-2.39.0-v1
+
+      - name: Install Git 2.39.0 build dependencies on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential xz-utils zlib1g-dev
+
+      - name: Build checksum-pinned Git 2.39.0
+        run: make git-minimum-install
+
+      - name: Fetch Elixir dependencies
+        run: mix deps.get
+
+      - name: Qualify minimum Git workspace contract
+        run: make git-minimum-qualify WORKSPACE_PERF_EVIDENCE=artifacts/git-2.39.0-workspace-performance.json
+
+      - name: Upload minimum Git qualification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: twelvgaige-git-2.39.0-${{ matrix.os }}
+          path: artifacts/git-2.39.0-workspace-performance.json
+          if-no-files-found: error
+          retention-days: 14
 
   authoring:
     name: authoring checks

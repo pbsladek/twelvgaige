@@ -5,6 +5,7 @@ defmodule Twelvgaige.CLI.Commands.Daemon do
   alias Twelvgaige.Breech.IPC.Endpoint
   alias Twelvgaige.Breech.IPC.Server
   alias Twelvgaige.CLI.ExitCode
+  alias Twelvgaige.CLI.ResultEnvelope
 
   import Twelvgaige.CLI.CommandHelpers,
     only: [encode_line: 1, format_command_error: 2, parse_format: 1]
@@ -18,7 +19,7 @@ defmodule Twelvgaige.CLI.Commands.Daemon do
         |> Server.address()
         |> format_started(opts[:format])
 
-      IO.write(output)
+      IO.write(wrap_serve_output(output, opts[:format]))
       ref = Process.monitor(pid)
 
       receive do
@@ -26,8 +27,7 @@ defmodule Twelvgaige.CLI.Commands.Daemon do
       end
     else
       {:error, error} ->
-        IO.write(:stderr, format_command_error(error, :human))
-        System.halt(ExitCode.for_error(error))
+        emit_serve_error(error, args)
     end
   end
 
@@ -94,13 +94,13 @@ defmodule Twelvgaige.CLI.Commands.Daemon do
   end
 
   defp parse_opts(["--transport", transport | rest], opts)
-       when transport in ["unix", "tcp", "npipe"] do
+       when transport in ["unix", "tcp"] do
     parse_opts(rest, Keyword.put(opts, :transport, parse_transport(transport)))
   end
 
   defp parse_opts(["--transport", _transport | _rest], _opts) do
     {:error,
-     Twelvgaige.Error.new(:input_error, :invalid_shell, "--transport must be unix, tcp, or npipe")}
+     Twelvgaige.Error.new(:input_error, :invalid_shell, "--transport must be unix or tcp")}
   end
 
   defp parse_opts(["--runtime-dir", runtime_dir | rest], opts) do
@@ -133,16 +133,41 @@ defmodule Twelvgaige.CLI.Commands.Daemon do
     Lock: #{paths.lock_path}
     Transport: #{paths.transport}
     Socket: #{paths.socket_path}
-    Named pipe: #{paths.pipe_path}
     """
   end
 
   defp format_stop(:json), do: encode_line(%{status: "stopping"})
   defp format_stop(:human), do: "Breech daemon stopping\n"
 
+  defp wrap_serve_output(output, :json) do
+    {:ok, wrapped, 0} =
+      ResultEnvelope.wrap({:ok, output, 0}, ["daemon", "serve", "--format", "json"])
+
+    wrapped
+  end
+
+  defp wrap_serve_output(output, :human), do: output
+
+  @spec emit_serve_error(term(), [String.t()]) :: no_return()
+  defp emit_serve_error(error, args) do
+    code = ExitCode.for_error(error)
+
+    if ResultEnvelope.requested_format(args) == :json do
+      {:ok, output, ^code} =
+        error
+        |> format_command_error(:json)
+        |> then(&ResultEnvelope.wrap({:ok, &1, code}, ["daemon", "serve", "--format", "json"]))
+
+      IO.write(output)
+    else
+      IO.write(:stderr, format_command_error(error, :human))
+    end
+
+    System.halt(code)
+  end
+
   defp parse_transport("unix"), do: :unix
   defp parse_transport("tcp"), do: :tcp
-  defp parse_transport("npipe"), do: :npipe
 
   defp compact_nil(opts, key) do
     if is_nil(opts[key]), do: Keyword.delete(opts, key), else: opts

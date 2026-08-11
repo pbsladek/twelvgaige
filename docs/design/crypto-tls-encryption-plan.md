@@ -32,7 +32,7 @@ The current security posture is intentionally conservative:
   release integrity ahead of application-level store encryption.
 - Provide a clear path to optional application-level encryption at rest for
   SQLite stores.
-- Keep laptop usage simple on macOS, Windows, and Linux.
+- Keep laptop usage simple on macOS and Linux.
 - Use OS-native secret storage for encryption keys wherever practical.
 - Add native TLS/mTLS for the Twelvgaige HTTP API without weakening the current
   local-first defaults.
@@ -150,9 +150,8 @@ Current gaps:
   than resolving keys through the OS key-manager backends,
 - envelope rewrap, backup, restore, and migration exist, but database-page
   rekeying and broader packaged recovery qualification remain,
-- OS key-manager adapters exist, but Windows and Linux live packaging coverage
-  and macOS Burrito integration remain incomplete,
-- Windows ACL behavior still needs stronger verification,
+- OS key-manager adapters exist, but Linux live packaging coverage and macOS
+  Burrito integration remain incomplete,
 - live store is not cryptographically immutable.
 
 ### Transport
@@ -178,8 +177,6 @@ Twelvgaige HTTP API:
 IPC:
 
 - Unix sockets rely on filesystem permissions and lock ownership,
-- Windows defaults to authenticated loopback TCP until native named-pipe listener
-  I/O is verified,
 - loopback TCP fallback requires bearer auth,
 - IPC auth comparison uses constant-time comparison.
 
@@ -212,7 +209,7 @@ covered by tests yet, the status should say so.
 | Constant-time token comparison exists. | `lib/twelvgaige/security.ex` | Implemented. |
 | Webhooks use HMAC, timestamp, and nonce handling. | `lib/twelvgaige/api/webhook.ex` and API tests. | Implemented. |
 | Mutating HTTP routes require bearer auth. | `lib/twelvgaige/api/router.ex`, `test/twelvgaige/standards_contract_test.exs`. | Implemented. |
-| File/SQLite stores use private modes where supported. | `lib/twelvgaige/store/file.ex`, `lib/twelvgaige/store/sqlite.ex`, store tests. | Implemented on POSIX; Windows ACL verification pending. |
+| File/SQLite stores use private modes. | `lib/twelvgaige/store/file.ex`, `lib/twelvgaige/store/sqlite.ex`, store tests. | Implemented on supported platforms. |
 | Optional SQLCipher storage fails closed when SQLCipher or a key is unavailable. | `lib/twelvgaige/store/sqlite_encrypted.ex`, `lib/twelvgaige/store/sqlite/migration.ex`, and their unit/live tests. | Implemented; packaged-target qualification remains explicit. |
 | OS key-manager adapters do not expose raw key material in status output. | `lib/twelvgaige/crypto/key_manager*` and crypto status tests. | Implemented with platform-specific live qualification limits. |
 | Audit checkpoint export uses a hash chain. | audit checkpoint modules/tests. | Implemented for exports, not live-store immutability. |
@@ -280,7 +277,6 @@ Store.SQLiteEncrypted
 
 KeyManager
   -> macOS Keychain KEK/reference
-  -> Windows DPAPI / Credential Manager KEK/reference
   -> Linux backend decision: Secret Service, passphrase, external command, or KMS
   -> env/file fallback for explicit CI/headless/dev only
   -> future Vault/KMS backend
@@ -536,8 +532,7 @@ CTE0 claims/config/status
   -> CTE5 SQLCipher/Burrito feasibility spike
       -> CTE6a KeyManager behaviour and test backends
       -> CTE6b macOS keychain
-      -> CTE6c Windows key backend
-      -> CTE6d Linux key backend decision
+      -> CTE6c Linux key backend decision
       -> CTE6.5 backup, restore, and rotation semantics
           -> CTE7 encrypted SQLite store
               -> CTE8 live audit signing
@@ -694,8 +689,6 @@ Acceptance:
   smoke flows. `[x]`
 - The same spike works from a Burrito-built binary on macOS Silicon and Linux
   with SQLCipher-backed `exqlite`. `[~]`
-- Windows feasibility is documented before claiming Windows encrypted-store
-  support. `[ ]`
 - If SQLCipher packaging is too brittle, the plan is revised before CTE7. `[ ]`
 
 Current finding: the default bundled `exqlite` NIF reports no
@@ -724,8 +717,8 @@ default bundled SQLite build.
 Packaging constraint: Burrito and Mix releases must carry the same
 SQLCipher-linked NIF and any required native SQLCipher/OpenSSL/LibreSSL runtime
 libraries for the target OS/architecture. Do not claim encrypted-store support
-for macOS, Linux, or Windows until the spike has passed from the packaged
-artifact on that platform.
+for macOS or Linux until the spike has passed from the packaged artifact on that
+platform.
 
 ### Phase CTE6a - Key Manager Behaviour And Explicit Backends
 
@@ -776,28 +769,7 @@ directly into the optional SQLCipher store. Live verification is available with
 unique temporary generic password item in the user's login keychain and is
 excluded from normal tests.
 
-### Phase CTE6c - Windows Key Backend
-
-- Decide between DPAPI, Credential Manager, or a supported wrapper approach. `[x]`
-- Add Windows DPAPI protected-file backend with injected-runner tests. `[x]`
-- Verify ACL and user binding behavior. `[ ]`
-- Verify behavior in Windows release packaging before documenting support. `[ ]`
-
-Acceptance:
-
-- Key create/fetch/delete flows work through the backend contract. `[x]`
-- Key create/fetch/delete flows work on real Windows. `[ ]`
-- Lost Windows user profile/key material produces a clear recovery error. `[ ]`
-- Docs explain backup and recovery limitations. `[x]`
-
-Current implementation note: `WindowsDPAPIBackend` stores a DPAPI-protected JSON
-key payload in a local file. DPAPI is scoped to the current Windows user profile,
-so copied files are not useful without that user's profile material. The backend
-uses a PowerShell command wrapper and passes plaintext over stdin rather than
-argv. Unit tests use an injected runner; real Windows, ACL, and Burrito release
-verification remain pending for a qualified Windows release claim.
-
-### Phase CTE6d - Linux Key Backend Decision
+### Phase CTE6c - Linux Key Backend Decision
 
 - Evaluate Secret Service/libsecret for desktop Linux. `[x]`
 - Add desktop Linux Secret Service backend with injected-runner tests. `[x]`
@@ -961,7 +933,6 @@ Platform tests:
 
 - Burrito smoke test for encrypted SQLite spike before feature commitment,
 - macOS Keychain backend,
-- Windows DPAPI/Credential Manager backend,
 - Linux Secret Service backend,
 - fallback env/file backend for CI.
 

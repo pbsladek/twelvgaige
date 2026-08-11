@@ -10,8 +10,10 @@ defmodule Twelvgaige.CLI.Commands.Operations do
   def session_attach(id, args), do: run(:session_attach, id, args)
   def session_takeover(id, args), do: run(:session_takeover, id, args)
   def session_revoke(id, args), do: run(:session_revoke, id, args)
+  def session_cancel(id, args), do: run(:session_cancel, id, args)
   def sandbox_health(args), do: run(:sandbox_health, nil, args)
   def sandbox_reconcile(args), do: run(:sandbox_reconcile, nil, args)
+  def operation_show(request_id, args), do: run(:operation_show, request_id, args)
   def dashboard(args), do: run(:dashboard, nil, args)
   def rotate_token(args), do: run(:rotate_token, nil, args)
   def audit_status(args), do: run(:audit_status, nil, args)
@@ -35,8 +37,8 @@ defmodule Twelvgaige.CLI.Commands.Operations do
          {:ok, result} <- execute(action, value, endpoint, opts) do
       {:ok, format(result, opts[:format]), 0}
     else
-      :none -> error(:daemon_unavailable, :human)
-      {:error, reason} -> error(reason, :human)
+      :none -> error(:daemon_unavailable, error_format(args))
+      {:error, reason} -> error(reason, error_format(args))
     end
   end
 
@@ -62,6 +64,9 @@ defmodule Twelvgaige.CLI.Commands.Operations do
   defp execute(:session_revoke, id, endpoint, opts),
     do: Client.revoke_session(endpoint.address, id, client_opts(endpoint, opts))
 
+  defp execute(:session_cancel, id, endpoint, opts),
+    do: Client.cancel_session(endpoint.address, id, client_opts(endpoint, opts))
+
   defp execute(:sandbox_health, _value, endpoint, opts),
     do: Client.sandbox_health(endpoint.address, client_opts(endpoint, opts))
 
@@ -74,6 +79,9 @@ defmodule Twelvgaige.CLI.Commands.Operations do
           destroy_orphans?: opts[:destroy_orphans?]
         )
       )
+
+  defp execute(:operation_show, request_id, endpoint, opts),
+    do: Client.get_operation(endpoint.address, request_id, client_opts(endpoint, opts))
 
   defp execute(:dashboard, _value, endpoint, opts),
     do: Client.operations_dashboard(endpoint.address, client_opts(endpoint, opts))
@@ -127,11 +135,17 @@ defmodule Twelvgaige.CLI.Commands.Operations do
   end
 
   defp client_opts(endpoint, opts),
-    do: [token: endpoint.token, timeout_ms: opts[:timeout_ms]]
+    do: [token: endpoint.token, timeout_ms: opts[:timeout_ms], request_id: opts[:request_id]]
 
   defp parse_opts(args),
     do:
-      parse_opts(args, format: :human, timeout_ms: 30_000, apply?: false, destroy_orphans?: false)
+      parse_opts(args,
+        format: :human,
+        timeout_ms: 30_000,
+        request_id: Twelvgaige.ID.new(:event),
+        apply?: false,
+        destroy_orphans?: false
+      )
 
   defp parse_opts([], opts), do: validate_opts(opts)
 
@@ -143,6 +157,9 @@ defmodule Twelvgaige.CLI.Commands.Operations do
 
   defp parse_opts(["--endpoint", path | rest], opts),
     do: parse_opts(rest, Keyword.put(opts, :endpoint_path, path))
+
+  defp parse_opts(["--request-id", value | rest], opts) when value != "",
+    do: parse_opts(rest, Keyword.put(opts, :request_id, value))
 
   defp parse_opts(["--expected-epoch", value | rest], opts) do
     case Integer.parse(value) do
@@ -187,6 +204,8 @@ defmodule Twelvgaige.CLI.Commands.Operations do
   defp error(reason, format) do
     {:ok, CommandHelpers.format_command_error(reason, format), ExitCode.for_error(reason)}
   end
+
+  defp error_format(args), do: if("json" in args, do: :json, else: :human)
 
   defp value(map, key), do: Map.get(map, key, Map.get(map, String.to_existing_atom(key)))
 end

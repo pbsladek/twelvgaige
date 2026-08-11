@@ -737,6 +737,7 @@ defmodule Twelvgaige.Store.SQLite do
     with :ok <- migrate(Initial),
          :ok <- migrate(ShotRuns),
          :ok <- migrate(RoundQueryColumns),
+         :ok <- backfill_audit_chains(),
          :ok <- backfill_round_query_columns(),
          :ok <- backfill_shot_runs() do
       :ok
@@ -761,7 +762,7 @@ defmodule Twelvgaige.Store.SQLite do
     case query("SELECT id, snapshot FROM rounds ORDER BY id", []) do
       {:ok, %{rows: rows}} ->
         Enum.reduce_while(rows, :ok, fn [round_id, snapshot], :ok ->
-          case replace_shot_runs(round_id, decode(snapshot)) do
+          case replace_shot_runs(round_id, decode_snapshot(snapshot)) do
             :ok -> {:cont, :ok}
             {:error, _reason} = error -> {:halt, error}
           end
@@ -772,11 +773,71 @@ defmodule Twelvgaige.Store.SQLite do
     end
   end
 
+  defp backfill_audit_chains do
+    case query("SELECT round_id, id, event FROM audit_events ORDER BY round_id, id", []) do
+      {:ok, %{rows: rows}} ->
+        rows
+        |> Enum.group_by(fn [round_id, _id, _event] -> round_id end)
+        |> Enum.reduce_while(:ok, fn {round_id, records}, :ok ->
+          case migrate_round_audit_chain(round_id, records) do
+            :ok -> {:cont, :ok}
+            {:error, _reason} = error -> {:halt, error}
+          end
+        end)
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp migrate_round_audit_chain(round_id, records) do
+    events = Enum.map(records, fn [_round_id, _id, event] -> decode(event) end)
+
+    cond do
+      Enum.all?(events, &legacy_unchained_audit?/1) ->
+        chained = AuditChain.extend(AuditChain.genesis(), events)
+
+        transaction(fn ->
+          records
+          |> Enum.zip(chained)
+          |> Enum.each(fn {[_round_id, id, _event], event} ->
+            case query_ok("UPDATE audit_events SET event = ? WHERE id = ?", [encode(event), id]) do
+              :ok -> :ok
+              {:error, reason} -> Repo.rollback(reason)
+            end
+          end)
+
+          :ok
+        end)
+
+      Enum.all?(events, &chained_audit?/1) ->
+        case AuditChain.verify(events) do
+          :ok -> :ok
+          {:error, reason} -> {:error, {:audit_chain_invalid, round_id, reason}}
+        end
+
+      true ->
+        {:error, {:audit_chain_migration_ambiguous, round_id}}
+    end
+  end
+
+  defp legacy_unchained_audit?(event) do
+    is_nil(value(event, :audit_chain_algorithm)) and
+      is_nil(value(event, :audit_previous_hash)) and
+      is_nil(value(event, :audit_chain_hash))
+  end
+
+  defp chained_audit?(event) do
+    is_binary(value(event, :audit_chain_algorithm)) and
+      is_binary(value(event, :audit_previous_hash)) and
+      is_binary(value(event, :audit_chain_hash))
+  end
+
   defp backfill_round_query_columns do
     case query("SELECT id, snapshot FROM rounds ORDER BY id", []) do
       {:ok, %{rows: rows}} ->
         Enum.reduce_while(rows, :ok, fn [round_id, snapshot], :ok ->
-          snapshot = decode(snapshot)
+          snapshot = decode_snapshot(snapshot)
 
           case update_round_query_columns(round_id, snapshot) do
             :ok -> {:cont, :ok}
@@ -1054,7 +1115,7 @@ defmodule Twelvgaige.Store.SQLite do
 
   defp get_round_query(round_id) do
     case query("SELECT snapshot FROM rounds WHERE id = ?", [round_id]) do
-      {:ok, %{rows: [[snapshot]]}} -> {:ok, decode(snapshot)}
+      {:ok, %{rows: [[snapshot]]}} -> {:ok, decode_snapshot(snapshot)}
       {:ok, %{rows: []}} -> {:error, :not_found}
       {:error, _reason} = error -> error
     end
@@ -1074,8 +1135,11 @@ defmodule Twelvgaige.Store.SQLite do
     limit_sql = round_list_limit(opts)
 
     case query("SELECT snapshot FROM rounds #{where_sql} #{order_sql} #{limit_sql}", params) do
-      {:ok, %{rows: rows}} -> {:ok, Enum.map(rows, fn [snapshot] -> decode(snapshot) end)}
-      {:error, _reason} = error -> error
+      {:ok, %{rows: rows}} ->
+        {:ok, Enum.map(rows, fn [snapshot] -> decode_snapshot(snapshot) end)}
+
+      {:error, _reason} = error ->
+        error
     end
   end
 
@@ -1188,8 +1252,11 @@ defmodule Twelvgaige.Store.SQLite do
            "SELECT snapshot FROM rounds WHERE status NOT IN (#{placeholders}) ORDER BY id",
            Enum.map(@terminal_statuses, &normalize_status/1)
          ) do
-      {:ok, %{rows: rows}} -> {:ok, Enum.map(rows, fn [snapshot] -> decode(snapshot) end)}
-      {:error, _reason} = error -> error
+      {:ok, %{rows: rows}} ->
+        {:ok, Enum.map(rows, fn [snapshot] -> decode_snapshot(snapshot) end)}
+
+      {:error, _reason} = error ->
+        error
     end
   end
 
@@ -1610,6 +1677,7 @@ defmodule Twelvgaige.Store.SQLite do
 
   defp encode(term), do: TermCodec.encode(term)
   defp decode(binary), do: TermCodec.decode(binary)
+  defp decode_snapshot(binary), do: binary |> decode() |> Snapshot.upgrade()
   defp encode_nullable(term), do: TermCodec.encode_nullable(term)
   defp decode_nullable(binary), do: TermCodec.decode_nullable(binary)
 

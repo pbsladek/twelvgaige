@@ -15,22 +15,12 @@ defmodule Twelvgaige.Breech.IPC.ClientTest do
     assert Client.parse_address(Endpoint.address_to_string(ipv6)) == {:ok, ipv6}
   end
 
-  test "Windows named pipe endpoint addresses round-trip encoded path segments" do
-    pipe = ~S(\\.\pipe\twelvgaige team\breech)
-    address = {:npipe, pipe}
-
-    assert Endpoint.address_to_string(address) == "npipe:////./pipe/twelvgaige%20team/breech"
-    assert Client.parse_address(Endpoint.address_to_string(address)) == {:ok, address}
-    assert Client.parse_address(pipe) == {:ok, address}
-  end
-
   test "rejects malformed endpoint addresses" do
     assert Client.parse_address("tcp://127.0.0.1") == {:error, :invalid_ipc_address}
     assert Client.parse_address("tcp://localhost:44321") == {:error, :invalid_ipc_address}
     assert Client.parse_address("tcp://::1:44321") == {:error, :invalid_ipc_address}
     assert Client.parse_address("unix://") == {:error, :invalid_ipc_address}
-    assert Client.parse_address("npipe:////./pipe") == {:error, :invalid_ipc_address}
-    assert Client.parse_address("\\\\.\\pipe\\") == {:error, :invalid_ipc_address}
+    assert Client.parse_address("unsupported://endpoint") == {:error, :invalid_ipc_address}
   end
 
   test "does not create atoms while decoding unknown remote errors" do
@@ -39,19 +29,28 @@ defmodule Twelvgaige.Breech.IPC.ClientTest do
     assert_raise ArgumentError, fn -> String.to_existing_atom(class) end
     assert_raise ArgumentError, fn -> String.to_existing_atom(reason) end
 
-    transport = fn _path, _payload, _opts ->
-      {:ok,
-       Twelvgaige.Breech.IPC.Protocol.encode(%{
-         "ok" => false,
-         "error" => %{
-           "class" => class,
-           "reason" => reason,
-           "message" => "malformed remote error"
-         }
-       })}
-    end
+    response =
+      Twelvgaige.Breech.IPC.Protocol.encode(%{
+        "ok" => false,
+        "error" => %{
+          "class" => class,
+          "reason" => reason,
+          "message" => "malformed remote error"
+        }
+      })
 
-    assert Client.status({:npipe, ~S(\\.\pipe\twelvgaige-test)}, npipe_transport: transport) ==
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, packet: 4, active: false, ip: {127, 0, 0, 1}])
+    {:ok, {{127, 0, 0, 1}, port}} = :inet.sockname(listener)
+
+    spawn_link(fn ->
+      {:ok, socket} = :gen_tcp.accept(listener)
+      {:ok, _request} = :gen_tcp.recv(socket, 0, 1_000)
+      :ok = :gen_tcp.send(socket, response)
+      :gen_tcp.close(socket)
+      :gen_tcp.close(listener)
+    end)
+
+    assert Client.status({:tcp, {127, 0, 0, 1}, port}) ==
              {:error, reason}
 
     assert_raise ArgumentError, fn -> String.to_existing_atom(class) end

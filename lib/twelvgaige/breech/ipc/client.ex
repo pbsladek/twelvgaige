@@ -10,14 +10,12 @@ defmodule Twelvgaige.Breech.IPC.Client do
   alias Twelvgaige.Round.Snapshot
 
   @timeout_ms 30_000
-  @windows_pipe_prefix "\\\\.\\pipe\\"
   @classes_by_string Map.new(Error.classes(), &{Atom.to_string(&1), &1})
   @reasons_by_string Map.new(Error.reasons(), &{Atom.to_string(&1), &1})
 
   @type address ::
           {:tcp, :inet.ip_address(), :inet.port_number()}
           | {:unix, Path.t()}
-          | {:npipe, String.t()}
 
   @spec status(address(), keyword()) :: {:ok, map()} | {:error, term()}
   def status(address, opts \\ []) do
@@ -42,6 +40,99 @@ defmodule Twelvgaige.Breech.IPC.Client do
     end
   end
 
+  def list_workspaces(address, opts \\ []), do: call(address, "workspace.list", %{}, opts)
+
+  def get_workspace(address, workspace_id, opts \\ []),
+    do: call(address, "workspace.show", %{"workspace_id" => workspace_id}, opts)
+
+  def workspace_diff(address, workspace_id, opts \\ []),
+    do: call(address, "workspace.diff", %{"workspace_id" => workspace_id}, opts)
+
+  def cleanup_workspace(address, workspace_id, opts \\ []) do
+    call(
+      address,
+      "workspace.cleanup",
+      %{
+        "workspace_id" => workspace_id,
+        "write" => Keyword.get(opts, :write?, false),
+        "yes" => Keyword.get(opts, :yes?, false),
+        "expected_epoch" => Keyword.get(opts, :expected_epoch)
+      },
+      opts
+    )
+  end
+
+  def export_workspace(address, workspace_id, destination, opts \\ []) do
+    call(
+      address,
+      "workspace.export",
+      %{"workspace_id" => workspace_id, "destination" => destination},
+      opts
+    )
+  end
+
+  def apply_workspace(address, workspace_id, opts \\ []) do
+    call(
+      address,
+      "workspace.apply",
+      %{
+        "workspace_id" => workspace_id,
+        "target" => Keyword.get(opts, :target, "review-worktree"),
+        "write" => Keyword.get(opts, :write?, false),
+        "yes" => Keyword.get(opts, :yes?, false),
+        "expected_epoch" => Keyword.get(opts, :expected_epoch)
+      },
+      opts
+    )
+  end
+
+  def reconcile_workspace(address, workspace_id, opts \\ []) do
+    call(
+      address,
+      "workspace.reconcile",
+      %{
+        "workspace_id" => workspace_id,
+        "write" => Keyword.get(opts, :write?, false),
+        "yes" => Keyword.get(opts, :yes?, false),
+        "action" => reconcile_action(Keyword.get(opts, :action, "quarantine")),
+        "expected_epoch" => Keyword.get(opts, :expected_epoch)
+      },
+      opts
+    )
+  end
+
+  defp reconcile_action(:restore_backup), do: "restore-backup"
+  defp reconcile_action(:resume_export), do: "resume-export"
+  defp reconcile_action(:resume_cleanup), do: "resume-cleanup"
+  defp reconcile_action(:discard_review), do: "discard-review"
+  defp reconcile_action(action), do: action
+
+  def cleanup_review_worktree(address, workspace_id, opts \\ []) do
+    call(
+      address,
+      "workspace.review.cleanup",
+      %{
+        "workspace_id" => workspace_id,
+        "write" => Keyword.get(opts, :write?, false),
+        "yes" => Keyword.get(opts, :yes?, false),
+        "expected_epoch" => Keyword.get(opts, :expected_epoch)
+      },
+      opts
+    )
+  end
+
+  def workspace_retention_status(address, opts \\ []),
+    do: call(address, "workspace.retention.status", %{}, opts)
+
+  def run_workspace_retention(address, opts \\ []),
+    do: call(address, "workspace.retention.run", %{}, opts)
+
+  def list_workspace_sets(address, opts \\ []),
+    do: call(address, "workspace.set.list", %{}, opts)
+
+  def get_workspace_set(address, set_id, opts \\ []),
+    do: call(address, "workspace.set.show", %{"set_id" => set_id}, opts)
+
   def list_sessions(address, opts \\ []) do
     body = maybe_put(%{}, "status", Keyword.get(opts, :status))
     call(address, "session.list", body, opts)
@@ -52,6 +143,9 @@ defmodule Twelvgaige.Breech.IPC.Client do
 
   def get_session(address, session_id, opts \\ []),
     do: call(address, "session.show", %{"session_id" => session_id}, opts)
+
+  def get_operation(address, request_id, opts \\ []),
+    do: call(address, "operation.show", %{"request_id" => request_id}, opts)
 
   def list_session_events(address, session_id, opts \\ []) do
     body =
@@ -88,6 +182,9 @@ defmodule Twelvgaige.Breech.IPC.Client do
 
   def revoke_session(address, session_id, opts \\ []),
     do: call(address, "session.revoke", %{"session_id" => session_id}, opts)
+
+  def cancel_session(address, session_id, opts \\ []),
+    do: call(address, "session.cancel", %{"session_id" => session_id}, opts)
 
   def sandbox_health(address, opts \\ []), do: call(address, "sandbox.health", %{}, opts)
 
@@ -260,53 +357,78 @@ defmodule Twelvgaige.Breech.IPC.Client do
   @spec call(address(), String.t(), map(), keyword()) :: {:ok, term()} | {:error, term()}
   def call({:tcp, ip, port}, command, body, opts)
       when is_tuple(ip) and is_integer(port) and is_binary(command) and is_map(body) do
-    request = Protocol.request(command, body, token: Keyword.get(opts, :token))
+    request =
+      Protocol.request(command, body,
+        token: Keyword.get(opts, :token),
+        request_id: Keyword.get(opts, :request_id)
+      )
+
     timeout = Keyword.get(opts, :timeout_ms, @timeout_ms)
 
-    with {:ok, socket} <- connect_tcp(ip, port, timeout),
-         :ok <- :gen_tcp.send(socket, Protocol.encode(request)),
-         {:ok, payload} <- :gen_tcp.recv(socket, 0, timeout),
-         :ok <- :gen_tcp.close(socket),
-         {:ok, response} <- Protocol.decode(payload) do
-      decode_response(response)
-    else
-      {:error, reason} ->
-        {:error, transport_error(reason)}
+    case connect_tcp(ip, port, timeout) do
+      {:ok, socket} -> exchange(socket, request, command, timeout)
+      {:error, reason} -> {:error, transport_error(reason)}
     end
   end
 
   def call({:unix, path}, command, body, opts)
       when is_binary(path) and is_binary(command) and is_map(body) do
-    request = Protocol.request(command, body, token: Keyword.get(opts, :token))
+    request =
+      Protocol.request(command, body,
+        token: Keyword.get(opts, :token),
+        request_id: Keyword.get(opts, :request_id)
+      )
+
     timeout = Keyword.get(opts, :timeout_ms, @timeout_ms)
 
-    with {:ok, socket} <- connect_unix(path, timeout),
-         :ok <- :gen_tcp.send(socket, Protocol.encode(request)),
-         {:ok, payload} <- :gen_tcp.recv(socket, 0, timeout),
-         :ok <- :gen_tcp.close(socket),
-         {:ok, response} <- Protocol.decode(payload) do
-      decode_response(response)
-    else
-      {:error, reason} ->
-        {:error, transport_error(reason)}
-    end
-  end
-
-  def call({:npipe, path}, command, body, opts)
-      when is_binary(path) and is_binary(command) and is_map(body) do
-    request = Protocol.request(command, body, token: Keyword.get(opts, :token))
-    timeout = Keyword.get(opts, :timeout_ms, @timeout_ms)
-
-    with {:ok, payload} <- call_npipe_transport(path, Protocol.encode(request), timeout, opts),
-         {:ok, response} <- Protocol.decode(payload) do
-      decode_response(response)
-    else
-      {:error, reason} ->
-        {:error, transport_error(reason)}
+    case connect_unix(path, timeout) do
+      {:ok, socket} -> exchange(socket, request, command, timeout)
+      {:error, reason} -> {:error, transport_error(reason)}
     end
   end
 
   def call(_address, _command, _body, _opts), do: {:error, :invalid_ipc_address}
+
+  defp exchange(socket, request, command, timeout) do
+    try do
+      with :ok <- :gen_tcp.send(socket, Protocol.encode(request)),
+           {:ok, payload} <- receive_response(socket, command, request, timeout),
+           {:ok, response} <- Protocol.decode(payload) do
+        decode_response(response)
+      else
+        {:error, %Error{} = error} -> {:error, error}
+        {:error, :timeout} -> {:error, client_timeout(command, request, timeout)}
+        {:error, reason} -> {:error, transport_error(reason)}
+      end
+    after
+      _ = :gen_tcp.close(socket)
+    end
+  end
+
+  defp receive_response(socket, command, request, timeout) do
+    case :gen_tcp.recv(socket, 0, timeout) do
+      {:error, :timeout} -> {:error, client_timeout(command, request, timeout)}
+      result -> result
+    end
+  end
+
+  defp client_timeout(command, request, timeout) do
+    request_id = Map.fetch!(request, "request_id")
+
+    Error.new(
+      :timeout_error,
+      :client_timeout,
+      "client stopped waiting after #{timeout} ms; operation status is unknown",
+      retryable: true,
+      details: %{
+        request_id: request_id,
+        command: command,
+        disposition: "unknown",
+        operation_may_continue: true,
+        lookup_command: "twelvgaige operation show #{request_id}"
+      }
+    )
+  end
 
   defp safety_decision(address, command, round_id, shot_id, opts) do
     body = %{
@@ -343,16 +465,7 @@ defmodule Twelvgaige.Breech.IPC.Client do
     {:ok, {:unix, path}}
   end
 
-  def parse_address("npipe://" <> rest), do: parse_npipe_uri(rest)
-
-  def parse_address(address) when is_binary(address) do
-    if String.starts_with?(address, @windows_pipe_prefix) and
-         byte_size(address) > byte_size(@windows_pipe_prefix) do
-      {:ok, {:npipe, address}}
-    else
-      {:error, :invalid_ipc_address}
-    end
-  end
+  def parse_address(address) when is_binary(address), do: {:error, :invalid_ipc_address}
 
   def parse_address(_address), do: {:error, :invalid_ipc_address}
 
@@ -362,19 +475,6 @@ defmodule Twelvgaige.Breech.IPC.Client do
 
   defp connect_unix(path, timeout) do
     :gen_tcp.connect({:local, path}, 0, [:binary, packet: 4, active: false], timeout)
-  end
-
-  defp call_npipe_transport(path, payload, timeout, opts) do
-    case Keyword.get(opts, :npipe_transport, Keyword.get(opts, :pipe_transport)) do
-      transport when is_function(transport, 3) ->
-        transport.(path, payload, timeout_ms: timeout)
-
-      transport when is_function(transport, 2) ->
-        transport.(path, payload)
-
-      _transport ->
-        {:error, :named_pipe_unsupported}
-    end
   end
 
   defp decode_response(%{"ok" => true, "body" => body}), do: {:ok, body}
@@ -395,6 +495,7 @@ defmodule Twelvgaige.Breech.IPC.Client do
   end
 
   defp decode_error(%{"reason" => "not_found"}), do: :not_found
+  defp decode_error(%{"reason" => "workspace_set_not_found"}), do: :workspace_set_not_found
 
   defp decode_error(%{"reason" => reason}) when is_binary(reason) do
     case known_reason(reason) do
@@ -453,24 +554,6 @@ defmodule Twelvgaige.Breech.IPC.Client do
     host
     |> String.to_charlist()
     |> :inet.parse_address()
-  end
-
-  defp parse_npipe_uri(rest) do
-    rest =
-      rest
-      |> URI.decode()
-      |> String.trim_leading("/")
-
-    case String.split(rest, "/", trim: true) do
-      ["." | ["pipe" | segments]] when segments != [] ->
-        {:ok, {:npipe, @windows_pipe_prefix <> Enum.join(segments, "\\")}}
-
-      ["pipe" | segments] when segments != [] ->
-        {:ok, {:npipe, @windows_pipe_prefix <> Enum.join(segments, "\\")}}
-
-      _other ->
-        {:error, :invalid_ipc_address}
-    end
   end
 
   defp transport_error(:econnrefused), do: :daemon_unavailable

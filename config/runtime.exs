@@ -18,14 +18,14 @@ if enabled?.("TWELVGAIGE_OPERATIONS_ENABLED") do
         {:unix, :darwin} ->
           Path.join([System.user_home!(), "Library", "Application Support", "Twelvgaige"])
 
-        {:win32, _} ->
-          Path.join(System.get_env("LOCALAPPDATA") || System.user_home!(), "Twelvgaige")
-
-        _other ->
+        {:unix, :linux} ->
           Path.join(
             System.get_env("XDG_DATA_HOME") || Path.join(System.user_home!(), ".local/share"),
             "twelvgaige"
           )
+
+        {_family, name} ->
+          raise "unsupported Twelvgaige platform: #{name}"
       end
 
   machine_name = System.get_env("TWELVGAIGE_PODMAN_MACHINE", "twelvgaige")

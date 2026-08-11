@@ -7,7 +7,7 @@ defmodule Twelvgaige.Developer.Config do
   @top_fields ~w(version default_profile profiles)
   @profile_fields ~w(
     runtime repository repo base_ref auth_profile sandbox network allow_unrestricted_network
-    allowed_paths write timeout timeout_ms budget
+    allowed_paths source include_untracked include_ignored write timeout timeout_ms budget
   )
 
   @spec resolve_profile(String.t() | nil, keyword()) :: {:ok, map()} | {:error, term()}
@@ -19,7 +19,7 @@ defmodule Twelvgaige.Developer.Config do
     with {:ok, user} <- load_config(user_path),
          {:ok, project} <- load_config(project_path),
          name <- requested || project.default_profile || user.default_profile,
-         {:ok, values, sources} <- resolve(name, user, project) do
+         {:ok, values, sources, provenance} <- resolve(name, user, project) do
       {:ok,
        %{
          name: name,
@@ -27,8 +27,21 @@ defmodule Twelvgaige.Developer.Config do
          project_root: project_root,
          user_config_path: user_path,
          project_config_path: project_path,
-         sources: sources
+         sources: sources,
+         provenance: provenance
        }}
+    end
+  end
+
+  @doc "Returns configured developer-profile names without resolving credentials or runtime state."
+  def profile_names(opts \\ []) do
+    project_root = project_root(opts)
+    user_path = Keyword.get(opts, :user_config_path, user_config_path(opts))
+    project_path = Keyword.get(opts, :project_config_path, project_config_path(project_root))
+
+    with {:ok, user} <- load_config(user_path),
+         {:ok, project} <- load_config(project_path) do
+      {:ok, (Map.keys(user.profiles) ++ Map.keys(project.profiles)) |> Enum.uniq() |> Enum.sort()}
     end
   end
 
@@ -106,7 +119,7 @@ defmodule Twelvgaige.Developer.Config do
 
   defp resolve(nil, user, project) do
     sources = Enum.filter([user, project], & &1.present?) |> Enum.map(& &1.path)
-    {:ok, %{}, sources}
+    {:ok, %{}, sources, %{}}
   end
 
   defp resolve(name, user, project) when is_binary(name) do
@@ -121,7 +134,13 @@ defmodule Twelvgaige.Developer.Config do
         |> Enum.reject(fn {_path, values} -> map_size(values) == 0 end)
         |> Enum.map(&elem(&1, 0))
 
-      {:ok, Map.merge(user_values, project_values), sources}
+      provenance =
+        user_values
+        |> Map.keys()
+        |> Map.new(&{&1, :user_profile})
+        |> Map.merge(Map.new(Map.keys(project_values), &{&1, :repository_profile}))
+
+      {:ok, Map.merge(user_values, project_values), sources, provenance}
     end
   end
 

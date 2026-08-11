@@ -362,7 +362,7 @@ deterministic adapter and injected transports keeping normal tests offline.
 
 ## 12. Local Resource Model
 
-Twelvgaige must run comfortably on ordinary MacBooks and Windows laptops while other apps are open. The default profile is `laptop`.
+Twelvgaige must run comfortably on ordinary macOS and Linux developer laptops while other apps are open. The default profile is `laptop`.
 
 Approximate planning targets with remote LLM providers:
 
@@ -600,7 +600,9 @@ Exit codes:
 
 The HTTP API is useful but should not precede the CLI and core engine.
 
-Breech networking defaults to local-only. The CLI talks to the daemon through Unix domain sockets on macOS/Linux and authenticated loopback TCP on Windows by default. Windows named-pipe addresses and injected pipe transport tests exist, but native Windows named-pipe listener I/O remains opt-in until it is verified on Windows. Remote HTTP binding is opt-in and requires bearer-token auth or mTLS behind a trusted proxy.
+Breech networking defaults to local-only. The CLI talks to the daemon through
+Unix domain sockets. Authenticated loopback TCP is explicit. Remote HTTP binding
+is opt-in and requires bearer-token auth or mTLS behind a trusted proxy.
 
 Candidate endpoints:
 
@@ -652,7 +654,7 @@ Twelvgaige should follow external standards where they reduce ambiguity:
 - SSE streams follow WHATWG Server-Sent Events if SSE is implemented.
 - Webhook/event normalization should map cleanly to CloudEvents 1.0.
 - Kubernetes tools should follow Kubernetes API conventions and parse structured JSON output.
-- Linux paths follow XDG Base Directory; macOS uses Library/Application Support and Library/Logs conventions; Windows uses Known Folders, authenticated loopback TCP by default, and named-pipe paths only for explicit verification.
+- Linux paths follow XDG Base Directory; macOS uses Library/Application Support and Library/Logs conventions.
 - Later binary/container releases should support SBOM/provenance targets such as SPDX or CycloneDX, SLSA provenance, and OCI images where relevant.
 
 ## 19. Observability
@@ -862,9 +864,8 @@ Goal: support long-running rounds and human approval.
 - [x] OTP-owned shell cache for configured workflow and agent shell paths.
 - [x] Daemon-owned in-VM round submission.
 - [x] `round show` and `round list` against the in-memory daemon store.
-- [~] Authenticated loopback TCP, Windows default loopback TCP, macOS/Linux Unix socket IPC, and Windows named-pipe address support with the length-prefixed JSON protocol, including event replay and bounded follow. Client injected named-pipe transport tests and server injected named-pipe listener dispatcher tests are implemented; native named-pipe listener I/O remains pending Windows verification.
-- [x] Endpoint JSON discovery for TCP, Unix socket, and named-pipe IPC with generated TCP bearer tokens, owner-only file permissions, daemon singleton locks, and lock-gated stale cleanup.
-- [~] Windows named-pipe IPC address/discovery support remains opt-in; Windows defaults use authenticated loopback TCP until native listener I/O can be verified on Windows. Server-side pipe listener injection now verifies endpoint publishing and Breech dispatcher behavior without platform-specific pipe APIs.
+- [x] Authenticated loopback TCP and Unix socket IPC use the length-prefixed JSON protocol, including event replay and bounded follow.
+- [x] Endpoint JSON discovery for TCP and Unix socket IPC uses generated TCP bearer tokens, owner-only file permissions, daemon singleton locks, and lock-gated stale cleanup.
 - [x] `round watch` event replay and bounded follow, including `--until-terminal` cursor advancement and callback-delivered CLI batches that avoid collecting the whole stream first.
 - [x] `round approve --shot <safety-shot-id>`.
 - [x] `round reject --shot <safety-shot-id>`.
@@ -915,7 +916,7 @@ Goal: add platform-team integrations.
 - [x] HTTP API: transport-neutral router covers health, round create/list/show/cancel, safety approve/reject, event replay, audit replay, webhook triggers, and metrics; `Twelvgaige.API.Server` exposes it through a supervised local HTTP/1.1 listener.
 - [x] OpenAPI 3.1 contract for the current pure HTTP router at `GET /api/v1/openapi.json`.
 - [x] HTTP standards: RFC 9457 problem details, RFC 6750 bearer auth, RFC 9333 rate-limit headers, API `Retry-After`, OpenAPI 3.1, fixed-length HTTP/1.1 framing, response `Content-Length`, request limits, and remote bind policy are implemented.
-- [x] Local-only Breech IPC defaults use Unix sockets on macOS/Linux and authenticated loopback TCP on Windows, with Windows named-pipe address/discovery support kept opt-in until native listener I/O can be verified on Windows.
+- [x] Local-only Breech IPC defaults to Unix sockets; authenticated loopback TCP remains explicit.
 - [x] Webhook trigger: pure router supports opt-in signed webhook endpoints with timestamp freshness, nonce replay protection, JSON body limits, OpenAPI coverage, and Breech-backed round creation.
 - [x] Event stream API: router replays round events and audit records as JSON arrays, NDJSON, SSE, or CloudEvents batch JSON from `after_seq`; bounded follow, terminal follow, idle SSE heartbeats, bounded-replay headers, and response byte caps are implemented. The concrete HTTP listener supports resource-bounded `stream=true` chunked push for SSE and NDJSON round events with cursor advancement, heartbeats, stream-client caps, send timeouts, and terminal/limit/deadline stops. CLI `round watch` streams callback-delivered event batches from the same cursor contract.
 - [x] Event standards: NDJSON, SSE, and CloudEvents batch mapping are implemented and tested.
@@ -928,7 +929,7 @@ Goal: add platform-team integrations.
 - [x] Provider transport: provider URLs are validated before transport, unsafe schemes/userinfo/private destinations are denied by default, timeouts are clamped, fake transports stay first-class, and retry hints are preserved.
 - [x] Token/message budget enforcement: shot execution rejects oversized LLM message payloads before provider calls and rejects provider-reported token usage above shot budget.
 - [x] Optional scheduler: configured interval and five-field cron jobs run through Breech and are only started when `:scheduler_jobs` is configured.
-- [x] Native Mix release bundle: `twelvgaige_native` builds as a target-specific tarball with included ERTS, release lifecycle scripts, and generated product CLI wrappers for Unix and Windows. Generated release overlay directories are ignored and are not checked into git.
+- [x] Native Mix release bundle: `twelvgaige_native` builds as a target-specific tarball with included ERTS, Unix release lifecycle scripts, and a generated product CLI wrapper. Generated release overlay directories are ignored and are not checked into git.
 - [x] Burrito single-file executable: `twelvgaige` builds configured Burrito targets and launches the existing CLI dispatcher from Burrito runtime startup.
 - [x] GitHub Actions automation: CI, build, and release workflows call Makefile targets and pin every reusable action to a full commit SHA. Burrito executables are built in a multi-platform matrix and are the primary cross-platform release artifacts.
 
@@ -1062,14 +1063,13 @@ Unbounded parallel shots, large tool outputs, retained LLM traces, and terminal 
 
 Release gates and manual smoke checks are tracked in [`release-checklist.md`](release-checklist.md).
 
-- Verify native Windows named-pipe listener I/O on Windows hardware. Authenticated loopback TCP remains the Windows default until then.
-- Measure `minimal`, `laptop`, and `workstation` resource profiles on common MacBook and Windows laptop hardware.
+- Measure `minimal`, `laptop`, and `workstation` resource profiles on common macOS and Linux developer hardware.
 - Decide whether `queue_timeout` stays disabled by default or gets a conservative laptop default after measurement.
 - Validate durable retention defaults with real local workloads, especially retained bytes, retained terminal rounds, and cleanup cadence.
 - Decide whether cleanup must require an audit export checkpoint before terminal round records are removed.
 - k3d is now the preferred disposable local Kubernetes live-test target. Existing kind, minikube, or dev-cluster contexts remain supported through `TWELVGAIGE_K8S_CONTEXT`.
-- Build and smoke-test Mix release bundles on Linux and Windows CI runners. Mix releases are target-specific; the macOS bundle does not validate Linux or Windows runtime behavior.
-- Build and smoke-test Burrito binaries on runners with Zig `0.15.2`, `xz`, and `7z`/`7zz` for Windows targets. macOS Apple Silicon host smoke is verified locally with Homebrew `zig@0.15` and `BURRITO_CUSTOM_ERTS_MACOS_SILICON`; Linux, Linux ARM64, and Windows targets still need runner-native smoke coverage.
+- Build and smoke-test Mix release bundles on Linux CI runners. Mix releases are target-specific; the macOS bundle does not validate Linux runtime behavior.
+- Build and smoke-test Burrito binaries on runners with Zig `0.15.2` and `xz`. macOS Apple Silicon host smoke is verified locally with Homebrew `zig@0.15` and `BURRITO_CUSTOM_ERTS_MACOS_SILICON`; Linux and Linux ARM64 targets still need runner-native smoke coverage.
 
 ## 26. One-Sentence Pitch
 

@@ -71,9 +71,6 @@ jobs:
           - os: ubuntu-latest
             target: linux_arm64
             smoke: false
-          - os: ubuntu-latest
-            target: windows
-            smoke: false
           - os: macos-14
             target: macos_silicon
             smoke: true

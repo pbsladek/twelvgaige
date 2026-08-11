@@ -2,8 +2,8 @@ defmodule Twelvgaige.Breech.IPC.Endpoint do
   @moduledoc """
   Discovery file for the local Breech IPC listener.
 
-  The endpoint file is intentionally small JSON so shell wrappers and future
-  platform-specific launchers can inspect it without booting the full app.
+  The endpoint file is intentionally small JSON so shell wrappers can inspect
+  it without booting the full app.
   """
 
   alias Twelvgaige.Breech.IPC.Client
@@ -12,7 +12,6 @@ defmodule Twelvgaige.Breech.IPC.Endpoint do
   alias Twelvgaige.Error
 
   @filename "breech.endpoint.json"
-  @windows_pipe_prefix "\\\\.\\pipe\\"
 
   @type t :: %{
           address: Client.address(),
@@ -33,11 +32,6 @@ defmodule Twelvgaige.Breech.IPC.Endpoint do
 
       dir = env(opts, "TWELVGAIGE_RUNTIME_DIR") ->
         Path.expand(dir)
-
-      windows?(opts) ->
-        opts
-        |> windows_data_dir()
-        |> Path.join("run")
 
       dir = xdg_runtime_dir(opts) ->
         Path.join(dir, "twelvgaige")
@@ -121,16 +115,6 @@ defmodule Twelvgaige.Breech.IPC.Endpoint do
 
   def address_to_string({:unix, path}) when is_binary(path) do
     "unix://#{path}"
-  end
-
-  def address_to_string({:npipe, path}) when is_binary(path) do
-    pipe_name =
-      path
-      |> pipe_name()
-      |> String.split("\\", trim: true)
-      |> Enum.map_join("/", fn segment -> URI.encode(segment, &URI.char_unreserved?/1) end)
-
-    "npipe:////./pipe/#{pipe_name}"
   end
 
   def address_to_string(address) when is_binary(address), do: address
@@ -238,7 +222,7 @@ defmodule Twelvgaige.Breech.IPC.Endpoint do
     case File.chmod(path, mode) do
       :ok -> :ok
       {:error, :enotsup} -> :ok
-      {:error, :eperm} -> if(windows?(), do: :ok, else: {:error, :eperm})
+      {:error, :eperm} -> {:error, :eperm}
       {:error, _reason} = error -> error
     end
   end
@@ -251,19 +235,7 @@ defmodule Twelvgaige.Breech.IPC.Endpoint do
   defp corrupt_endpoint?(%Jason.DecodeError{}), do: true
   defp corrupt_endpoint?(_reason), do: false
 
-  defp pipe_name(@windows_pipe_prefix <> name), do: name
-  defp pipe_name(path), do: path
-
-  defp windows_data_dir(opts) do
-    case env(opts, "LOCALAPPDATA") do
-      nil -> Path.join([System.user_home!(), "AppData", "Local", "Twelvgaige"])
-      local_appdata -> Path.join(local_appdata, "Twelvgaige")
-    end
-  end
-
-  defp xdg_runtime_dir(opts) do
-    if windows?(opts), do: nil, else: env(opts, "XDG_RUNTIME_DIR")
-  end
+  defp xdg_runtime_dir(opts), do: env(opts, "XDG_RUNTIME_DIR")
 
   defp env(opts, name) do
     case Keyword.get(opts, :env) do
@@ -271,9 +243,5 @@ defmodule Twelvgaige.Breech.IPC.Endpoint do
       env when is_map(env) -> Map.get(env, name)
       _env -> nil
     end
-  end
-
-  defp windows?(opts \\ []) do
-    match?({:win32, _name}, Keyword.get(opts, :os_type, :os.type()))
   end
 end

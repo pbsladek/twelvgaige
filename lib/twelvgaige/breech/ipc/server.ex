@@ -2,9 +2,8 @@ defmodule Twelvgaige.Breech.IPC.Server do
   @moduledoc """
   Local Breech IPC listener.
 
-  Phase 3 uses loopback TCP for the fallback transport and tests. The protocol
-  itself is transport-neutral length-prefixed JSON, so Unix sockets and named
-  pipe transports can reuse the same dispatcher.
+  The listener supports Unix sockets and authenticated loopback TCP. The
+  protocol is transport-neutral length-prefixed JSON.
   """
 
   use GenServer
@@ -27,7 +26,6 @@ defmodule Twelvgaige.Breech.IPC.Server do
     :address,
     :port,
     :socket_path,
-    :pipe_path,
     :token,
     :breech,
     :acceptor,
@@ -36,6 +34,7 @@ defmodule Twelvgaige.Breech.IPC.Server do
     :lock,
     :operations,
     :manager_scheduler,
+    :workspace_manager,
     :session_start_fun,
     :session_review_fun,
     :session_retry_fun,
@@ -52,27 +51,30 @@ defmodule Twelvgaige.Breech.IPC.Server do
 
   @type start_option ::
           {:port, :inet.port_number()}
-          | {:transport, :tcp | :unix | :npipe}
+          | {:transport, :tcp | :unix}
           | {:socket_path, Path.t()}
-          | {:pipe_path, String.t()}
           | {:token, String.t()}
           | {:breech, GenServer.server()}
           | {:endpoint_path, Path.t()}
           | {:lock_path, Path.t()}
           | {:max_frame_bytes, pos_integer()}
           | {:allow_approve_all_safety?, boolean()}
-          | {:npipe_server_transport, module()}
-          | {:pipe_server_transport, module()}
           | GenServer.option()
 
   @spec start_link([start_option()]) :: GenServer.on_start()
   def start_link(opts \\ []) do
-    name = Keyword.get(opts, :name)
+    case Keyword.get(opts, :transport, :tcp) do
+      transport when transport in [:tcp, :unix] ->
+        name = Keyword.get(opts, :name)
 
-    if name do
-      GenServer.start_link(__MODULE__, opts, name: name)
-    else
-      GenServer.start_link(__MODULE__, opts)
+        if name do
+          GenServer.start_link(__MODULE__, opts, name: name)
+        else
+          GenServer.start_link(__MODULE__, opts)
+        end
+
+      unsupported ->
+        {:error, {:unsupported_ipc_transport, unsupported}}
     end
   end
 
@@ -110,7 +112,6 @@ defmodule Twelvgaige.Breech.IPC.Server do
         address: address,
         port: port_from_address(address),
         socket_path: socket_path_from_address(address),
-        pipe_path: pipe_path_from_address(address),
         token: token,
         breech: Keyword.get(opts, :breech, Breech),
         endpoint_path: endpoint_path,
@@ -119,6 +120,8 @@ defmodule Twelvgaige.Breech.IPC.Server do
           Keyword.get(opts, :operations, Process.whereis(Twelvgaige.Operations.SessionControl)),
         manager_scheduler:
           Keyword.get(opts, :manager_scheduler, Process.whereis(Twelvgaige.Manager.Scheduler)),
+        workspace_manager:
+          Keyword.get(opts, :workspace_manager, Process.whereis(Twelvgaige.Workspace.Manager)),
         session_start_fun:
           Keyword.get(opts, :session_start_fun, &Twelvgaige.Manager.SessionStart.start/2),
         session_review_fun:
@@ -287,38 +290,10 @@ defmodule Twelvgaige.Breech.IPC.Server do
     end
   end
 
-  defp listen(:npipe, opts) do
-    case Keyword.fetch(opts, :pipe_path) do
-      {:ok, path} when is_binary(path) ->
-        case Keyword.get(opts, :npipe_server_transport, Keyword.get(opts, :pipe_server_transport)) do
-          nil ->
-            if windows?() do
-              {:error, :named_pipe_transport_unimplemented}
-            else
-              {:error, :named_pipe_unsupported}
-            end
-
-          transport when is_atom(transport) ->
-            with {:ok, listener} <- transport.listen(path, opts) do
-              {:ok, {:transport_driver, transport, listener}, {:npipe, path}}
-            end
-
-          _transport ->
-            {:error, :invalid_named_pipe_transport}
-        end
-
-      :error ->
-        {:error, :pipe_path_required}
-    end
-  end
-
   defp listen(transport, _opts), do: {:error, {:unsupported_ipc_transport, transport}}
 
   defp ensure_unix_socket_path(path) do
     cond do
-      windows?() ->
-        {:error, :unix_socket_unsupported}
-
       byte_size(path) > @max_unix_socket_path_bytes ->
         {:error, {:unix_socket_path_too_long, path}}
 
@@ -332,16 +307,12 @@ defmodule Twelvgaige.Breech.IPC.Server do
 
   defp default_token(:tcp, endpoint_path), do: if(endpoint_path, do: Endpoint.token())
   defp default_token(:unix, _endpoint_path), do: nil
-  defp default_token(_transport, _endpoint_path), do: nil
 
   defp port_from_address({:tcp, _ip, port}), do: port
   defp port_from_address(_address), do: nil
 
   defp socket_path_from_address({:unix, path}), do: path
   defp socket_path_from_address(_address), do: nil
-
-  defp pipe_path_from_address({:npipe, path}), do: path
-  defp pipe_path_from_address(_address), do: nil
 
   defp cleanup_socket_path(%{socket_path: nil}), do: :ok
 
@@ -357,13 +328,9 @@ defmodule Twelvgaige.Breech.IPC.Server do
     case File.chmod(path, mode) do
       :ok -> :ok
       {:error, :enotsup} -> :ok
-      {:error, :eperm} -> if(windows?(), do: :ok, else: {:error, :eperm})
+      {:error, :eperm} -> {:error, :eperm}
       {:error, _reason} = error -> error
     end
-  end
-
-  defp windows? do
-    match?({:win32, _name}, :os.type())
   end
 
   defp accept_loop(parent, listen_socket, state) do
@@ -396,18 +363,7 @@ defmodule Twelvgaige.Breech.IPC.Server do
     close_transport(socket)
   end
 
-  defp accept_transport({:transport_driver, transport, listener}) do
-    case transport.accept(listener) do
-      {:ok, socket} -> {:ok, {:transport_driver, transport, socket}}
-      {:error, _reason} = error -> error
-    end
-  end
-
   defp accept_transport(listen_socket), do: :gen_tcp.accept(listen_socket)
-
-  defp recv_transport({:transport_driver, transport, socket}, timeout) do
-    transport.recv(socket, timeout)
-  end
 
   defp recv_transport(socket, timeout), do: :gen_tcp.recv(socket, 0, timeout)
 
@@ -422,15 +378,7 @@ defmodule Twelvgaige.Breech.IPC.Server do
 
   defp ensure_frame_size(_payload, _max_frame_bytes), do: {:error, :invalid_envelope}
 
-  defp send_transport({:transport_driver, transport, socket}, payload) do
-    transport.send(socket, payload)
-  end
-
   defp send_transport(socket, payload), do: :gen_tcp.send(socket, payload)
-
-  defp close_transport({:transport_driver, transport, resource}) do
-    transport.close(resource)
-  end
 
   defp close_transport(socket), do: :gen_tcp.close(socket)
 
@@ -476,6 +424,214 @@ defmodule Twelvgaige.Breech.IPC.Server do
     end
   end
 
+  defp execute(%{"command" => "workspace.list"} = request, state, _server) do
+    with {:ok, manager} <- require_workspace_manager(state),
+         {:ok, workspaces} <- Twelvgaige.Workspace.Manager.list(server: manager) do
+      Protocol.ok(request, Enum.map(workspaces, &json_safe/1))
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "workspace.show", "body" => body} = request, state, _server) do
+    with {:ok, manager} <- require_workspace_manager(state),
+         {:ok, workspace} <-
+           Twelvgaige.Workspace.Manager.get(body["workspace_id"], server: manager) do
+      Protocol.ok(request, json_safe(workspace))
+    else
+      :error -> Protocol.error(request, :workspace_not_found)
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "workspace.diff", "body" => body} = request, state, _server) do
+    with {:ok, manager} <- require_workspace_manager(state),
+         {:ok, workspace} <-
+           Twelvgaige.Workspace.Manager.get(body["workspace_id"], server: manager),
+         {:ok, patch} <- workspace_patch(workspace, state) do
+      Protocol.ok(request, %{
+        workspace_id: workspace.id,
+        manifest: json_safe(workspace.result_manifest),
+        patch: encode_patch(patch),
+        mutates_state: false
+      })
+    else
+      :error -> Protocol.error(request, :workspace_not_found)
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "workspace.cleanup", "body" => body} = request, state, _server) do
+    with {:ok, manager} <- require_workspace_manager(state),
+         true <- is_boolean(body["write"] || false),
+         true <- is_boolean(body["yes"] || false),
+         {:ok, report} <-
+           Twelvgaige.Workspace.Manager.cleanup(body["workspace_id"],
+             server: manager,
+             write: body["write"] || false,
+             yes: body["yes"] || false,
+             expected_epoch: body["expected_epoch"],
+             request_id: request["request_id"]
+           ) do
+      Protocol.ok(request, json_safe(report))
+    else
+      false -> Protocol.error(request, :invalid_ipc_request)
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "workspace.export", "body" => body} = request, state, _server) do
+    with {:ok, manager} <- require_workspace_manager(state),
+         destination when is_binary(destination) and destination != "" <- body["destination"],
+         {:ok, report} <-
+           Twelvgaige.Workspace.Manager.export(body["workspace_id"], destination,
+             server: manager,
+             write?: true,
+             request_id: request["request_id"]
+           ) do
+      Protocol.ok(request, json_safe(report))
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+      _invalid -> Protocol.error(request, :invalid_ipc_request)
+    end
+  end
+
+  defp execute(%{"command" => "workspace.apply", "body" => body} = request, state, _server) do
+    with {:ok, manager} <- require_workspace_manager(state),
+         true <- is_boolean(body["write"] || false),
+         true <- is_boolean(body["yes"] || false),
+         {:ok, report} <-
+           Twelvgaige.Workspace.Manager.apply(body["workspace_id"],
+             server: manager,
+             target: body["target"] || "review-worktree",
+             write?: body["write"] || false,
+             yes?: body["yes"] || false,
+             expected_epoch: body["expected_epoch"],
+             request_id: request["request_id"]
+           ) do
+      Protocol.ok(request, json_safe(report))
+    else
+      false -> Protocol.error(request, :invalid_ipc_request)
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "workspace.reconcile", "body" => body} = request, state, _server) do
+    with {:ok, manager} <- require_workspace_manager(state),
+         true <- is_boolean(body["write"] || false),
+         true <- is_boolean(body["yes"] || false),
+         action
+         when action in [
+                "quarantine",
+                "restore-backup",
+                "resume-export",
+                "resume-cleanup",
+                "discard-review"
+              ] <-
+           body["action"] || "quarantine",
+         {:ok, report} <-
+           Twelvgaige.Workspace.Manager.reconcile(body["workspace_id"],
+             server: manager,
+             write?: body["write"] || false,
+             yes?: body["yes"] || false,
+             action: reconcile_action(action),
+             expected_epoch: body["expected_epoch"],
+             request_id: request["request_id"]
+           ) do
+      Protocol.ok(request, json_safe(report))
+    else
+      false -> Protocol.error(request, :invalid_ipc_request)
+      {:error, reason} -> Protocol.error(request, reason)
+      _invalid -> Protocol.error(request, :workspace_reconcile_action_invalid)
+    end
+  end
+
+  defp execute(
+         %{"command" => "workspace.review.cleanup", "body" => body} = request,
+         state,
+         _server
+       ) do
+    with {:ok, manager} <- require_workspace_manager(state),
+         true <- is_boolean(body["write"] || false),
+         true <- is_boolean(body["yes"] || false),
+         {:ok, report} <-
+           Twelvgaige.Workspace.Manager.cleanup_review(body["workspace_id"],
+             server: manager,
+             write?: body["write"] || false,
+             yes?: body["yes"] || false,
+             expected_epoch: body["expected_epoch"],
+             request_id: request["request_id"]
+           ) do
+      Protocol.ok(request, json_safe(report))
+    else
+      false -> Protocol.error(request, :invalid_ipc_request)
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "workspace.retention.status"} = request, state, _server) do
+    with {:ok, manager} <- require_workspace_manager(state),
+         {:ok, report} <- Twelvgaige.Workspace.Manager.retention_status(server: manager) do
+      Protocol.ok(request, json_safe(report))
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "workspace.retention.run"} = request, state, _server) do
+    with {:ok, manager} <- require_workspace_manager(state),
+         {:ok, report} <- Twelvgaige.Workspace.Manager.run_retention(server: manager) do
+      Protocol.ok(request, json_safe(report))
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "workspace.set.list"} = request, state, _server) do
+    with {:ok, manager} <- require_workspace_manager(state),
+         {:ok, sets} <- Twelvgaige.Workspace.Manager.list_sets(server: manager) do
+      Protocol.ok(request, Enum.map(sets, &json_safe/1))
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "workspace.set.show", "body" => body} = request, state, _server) do
+    with set_id when is_binary(set_id) and set_id != "" <- body["set_id"],
+         {:ok, manager} <- require_workspace_manager(state),
+         {:ok, set} <- Twelvgaige.Workspace.Manager.get_set(set_id, server: manager) do
+      Protocol.ok(request, json_safe(set))
+    else
+      :error -> Protocol.error(request, :workspace_set_not_found)
+      {:error, reason} -> Protocol.error(request, reason)
+      _invalid -> Protocol.error(request, :invalid_ipc_request)
+    end
+  end
+
+  defp execute(%{"command" => "operation.show", "body" => body} = request, state, _server) do
+    case body["request_id"] do
+      request_id when is_binary(request_id) and request_id != "" ->
+        case find_operation(state, request_id) do
+          {:ok, operation} ->
+            Protocol.ok(request, operation)
+
+          :error ->
+            Protocol.error(
+              request,
+              Error.new(:input_error, :operation_not_found, "operation not found",
+                details: %{request_id: request_id}
+              )
+            )
+
+          {:error, reason} ->
+            Protocol.error(request, reason)
+        end
+
+      _invalid ->
+        Protocol.error(request, :invalid_ipc_request)
+    end
+  end
+
   defp execute(%{"command" => "session.list", "body" => body} = request, state, _server) do
     with {:ok, operations} <- require_operations(state),
          {:ok, sessions} <-
@@ -490,6 +646,8 @@ defmodule Twelvgaige.Breech.IPC.Server do
   end
 
   defp execute(%{"command" => "session.start", "body" => body} = request, state, _server) do
+    body = Map.put_new(body, "request_id", request["request_id"])
+
     case state.session_start_fun.(body,
            server: state.manager_scheduler,
            session_control: state.operations,
@@ -590,6 +748,16 @@ defmodule Twelvgaige.Breech.IPC.Server do
     with {:ok, operations} <- require_operations(state),
          {:ok, session} <-
            Twelvgaige.Operations.SessionControl.revoke(body["session_id"], server: operations) do
+      Protocol.ok(request, session)
+    else
+      {:error, reason} -> Protocol.error(request, reason)
+    end
+  end
+
+  defp execute(%{"command" => "session.cancel", "body" => body} = request, state, _server) do
+    with {:ok, operations} <- require_operations(state),
+         {:ok, session} <-
+           Twelvgaige.Operations.SessionControl.cancel(body["session_id"], server: operations) do
       Protocol.ok(request, session)
     else
       {:error, reason} -> Protocol.error(request, reason)
@@ -884,10 +1052,136 @@ defmodule Twelvgaige.Breech.IPC.Server do
     Protocol.error(request, :unknown_command)
   end
 
+  defp reconcile_action("restore-backup"), do: :restore_backup
+  defp reconcile_action("resume-export"), do: :resume_export
+  defp reconcile_action("resume-cleanup"), do: :resume_cleanup
+  defp reconcile_action("discard-review"), do: :discard_review
+  defp reconcile_action(_action), do: :quarantine
+
   defp require_operations(%{operations: operations}) when is_pid(operations),
     do: {:ok, operations}
 
   defp require_operations(_state), do: {:error, :operations_control_plane_unavailable}
+
+  defp require_workspace_manager(%{workspace_manager: manager}) when is_pid(manager),
+    do: {:ok, manager}
+
+  defp require_workspace_manager(_state), do: {:error, :workspace_manager_unavailable}
+
+  defp find_operation(state, request_id) do
+    case workspace_operation(state, request_id) do
+      {:ok, operation} -> {:ok, operation}
+      :error -> session_operation(state, request_id)
+    end
+  end
+
+  defp workspace_operation(%{workspace_manager: manager}, request_id) when is_pid(manager) do
+    case Twelvgaige.Workspace.Manager.get_operation(request_id, server: manager) do
+      {:ok, operation} ->
+        {:ok,
+         %{
+           request_id: operation.request_id,
+           kind: Atom.to_string(operation.kind),
+           status: Atom.to_string(operation.status),
+           workspace_id: operation.workspace_id,
+           terminal: Twelvgaige.Workspace.Operation.terminal?(operation),
+           updated_at: operation.updated_at
+         }}
+
+      :error ->
+        :error
+    end
+  end
+
+  defp workspace_operation(_state, _request_id), do: :error
+
+  defp session_operation(%{operations: operations}, request_id) when is_pid(operations) do
+    with {:ok, sessions} <- Twelvgaige.Operations.SessionControl.list(server: operations) do
+      case Enum.find(sessions, fn session ->
+             start_request = field(session, :start_request, %{})
+             field(start_request, :request_id) == request_id
+           end) do
+        nil ->
+          :error
+
+        session ->
+          status = field(session, :status)
+
+          {:ok,
+           %{
+             request_id: request_id,
+             kind: "session_start",
+             status: to_string(status),
+             session_id: field(session, :id),
+             terminal:
+               status in [
+                 :completed,
+                 :failed,
+                 :cancelled,
+                 :reviewable,
+                 "completed",
+                 "failed",
+                 "cancelled",
+                 "reviewable"
+               ],
+             updated_at: field(session, :updated_at)
+           }}
+      end
+    end
+  end
+
+  defp session_operation(_state, _request_id), do: :error
+
+  defp field(map, key, default \\ nil)
+
+  defp field(%{} = map, key, default),
+    do: Map.get(map, key, Map.get(map, to_string(key), default))
+
+  defp field(_value, _key, default), do: default
+
+  defp workspace_patch(%{result_manifest: %{no_change: true}, result_artifact_ref: nil}, _state),
+    do: {:ok, ""}
+
+  defp workspace_patch(%{result_artifact_ref: %Twelvgaige.Artifact.Ref{} = ref}, state) do
+    with {:ok, store} <- require_artifact_store(state),
+         {:ok, %{patch: patch}} <- Twelvgaige.Artifact.Store.get(ref, server: store),
+         true <- is_binary(patch) do
+      if byte_size(patch) <= state.max_frame_bytes - 16_384,
+        do: {:ok, patch},
+        else: {:error, :workspace_diff_too_large_for_ipc}
+    else
+      false -> {:error, :workspace_result_artifact_invalid}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp workspace_patch(_workspace, _state), do: {:error, :workspace_result_artifact_unavailable}
+
+  defp encode_patch(patch) when is_binary(patch) do
+    if String.valid?(patch),
+      do: %{encoding: "utf-8", data: patch},
+      else: %{encoding: "base64", data: Base.encode64(patch)}
+  end
+
+  defp json_safe(nil), do: nil
+  defp json_safe(value) when is_boolean(value) or is_number(value), do: value
+
+  defp json_safe(value) when is_binary(value) do
+    if String.valid?(value),
+      do: value,
+      else: %{"encoding" => "base64", "data" => Base.encode64(value)}
+  end
+
+  defp json_safe(value) when is_atom(value), do: Atom.to_string(value)
+  defp json_safe(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp json_safe(%_{} = value), do: value |> Map.from_struct() |> json_safe()
+  defp json_safe(value) when is_list(value), do: Enum.map(value, &json_safe/1)
+
+  defp json_safe(value) when is_map(value) do
+    Map.new(value, fn {key, child} -> {to_string(key), json_safe(child)} end)
+  end
+
+  defp json_safe(value), do: inspect(value)
 
   defp require_retention(%{retention: retention}) when is_pid(retention), do: {:ok, retention}
   defp require_retention(_state), do: {:error, :retention_enforcer_unavailable}

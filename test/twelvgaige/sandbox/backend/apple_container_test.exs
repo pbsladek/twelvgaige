@@ -123,6 +123,7 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainerTest do
     assert Path.basename(container_binary) == "container"
     assert contiguous?(create_args, ["--cap-drop", "ALL"])
     assert "--read-only" in create_args
+    assert "--interactive" in create_args
     assert contiguous?(create_args, ["--network", "none"])
     assert "--no-dns" in create_args
     refute "--security-opt" in create_args
@@ -130,6 +131,18 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainerTest do
 
     assert {:ok, %{status: :running, machine_id: ^resource_id}} =
              AppleContainer.start(resource_id, command_runner: runner)
+
+    assert {:ok,
+            %{
+              binary: ^container_binary,
+              arguments: ["start", "--attach", "--interactive", ^resource_id],
+              environment: [{"PATH", "/qualified/bin"}]
+            }} =
+             AppleContainer.stdio_transport(resource_id,
+               command_runner: runner,
+               container_binary_path: container_binary,
+               transport_environment: [{"PATH", "/qualified/bin"}]
+             )
   end
 
   test "distinct workers have distinct VM identities and identity drift quarantines recovery" do
@@ -310,6 +323,23 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainerTest do
 
     assert File.read!(Path.join(output, "result.txt")) == "qualified\n"
 
+    managed = Path.join(root, "managed")
+    File.mkdir_p!(managed)
+    File.write!(Path.join(managed, "deleted.txt"), "old\n")
+
+    assert {:ok, %{managed_snapshot_replaced: true, bytes: 10}} =
+             AppleContainer.export_workspace("sbx_export", managed,
+               manifest: manifest,
+               observed: %{status: :stopped},
+               allowed_export_roots: [root],
+               max_export_bytes: 1_024,
+               command_runner: runner,
+               container_binary_path: "/usr/local/bin/container"
+             )
+
+    assert File.read!(Path.join(managed, "result.txt")) == "qualified\n"
+    refute File.exists?(Path.join(managed, "deleted.txt"))
+
     assert_receive {:export_helper, args}
     assert contiguous?(args, ["--user", "65532:65532"])
     assert contiguous?(args, ["--cap-drop", "ALL"])
@@ -376,7 +406,7 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainerTest do
     end
   end
 
-  defp inspect_fixture(root, name, digest, manifest_digest) do
+  defp inspect_fixture(_root, name, digest, manifest_digest) do
     Jason.encode!(%{
       "id" => name,
       "status" => "stopped",
@@ -393,12 +423,6 @@ defmodule Twelvgaige.Sandbox.Backend.AppleContainerTest do
         "capDrop" => ["ALL"],
         "networks" => [],
         "mounts" => [
-          %{
-            "source" => root,
-            "destination" => "/run/twelvgaige-import/workspace",
-            "options" => ["readonly"],
-            "type" => "bind"
-          },
           %{
             "source" => name <> "-workspace",
             "destination" => "/workspace",

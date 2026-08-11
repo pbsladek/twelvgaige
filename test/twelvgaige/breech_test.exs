@@ -538,8 +538,12 @@ defmodule Twelvgaige.BreechTest do
              match?({:ok, %{status: :awaiting_safety}}, Breech.get_round(round_id))
            end)
 
-    assert :ok =
-             Breech.reject_safety(round_id, "approval", reason: "too risky", actor: "human:test")
+    assert eventually(fn ->
+             Breech.reject_safety(round_id, "approval",
+               reason: "too risky",
+               actor: "human:test"
+             ) == :ok
+           end)
 
     assert eventually(fn -> match?({:ok, %{status: :halted}}, Breech.get_round(round_id)) end)
 

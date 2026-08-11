@@ -10,6 +10,7 @@
 /packaging/mix_release_overlay/
 /packaging/mix_release_overlays/
 /twelvgaige
+/twelvgaige.escript
 /.elixir_ls/
 *.ez
 *.beam

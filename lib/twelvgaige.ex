@@ -440,9 +440,7 @@ defmodule Twelvgaige do
       :allow_unsafe_tools_without_safety?,
       :status,
       :reason,
-      :actor,
-      :npipe_transport,
-      :pipe_transport
+      :actor
     ])
     |> Keyword.merge(Keyword.take(opts, [:after_seq, :limit]))
     |> maybe_put_token(token)

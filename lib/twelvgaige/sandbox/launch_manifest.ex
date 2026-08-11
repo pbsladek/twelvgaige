@@ -253,6 +253,7 @@ defmodule Twelvgaige.Sandbox.LaunchManifest do
 
   defp validate_destination("/workspace"), do: :ok
   defp validate_destination("/artifacts"), do: :ok
+  defp validate_destination("/run/codex-home"), do: :ok
   defp validate_destination(_destination), do: {:error, :destination_not_allowed}
 
   defp validate_network(manifest, opts) do
@@ -306,23 +307,13 @@ defmodule Twelvgaige.Sandbox.LaunchManifest do
 
   defp expected_runtime_mounts(%{workspace_transport: :copy_snapshot, mounts: mounts}) do
     mounts
-    |> Enum.flat_map(fn mount ->
-      destination = value(mount, :destination)
-
-      [
-        %{
-          source: value(mount, :source) |> Path.expand(),
-          destination: import_destination(destination),
-          mode: :read_only,
-          type: :bind
-        },
-        %{
-          source: :sandbox_owned,
-          destination: destination,
-          mode: value(mount, :mode),
-          type: :volume
-        }
-      ]
+    |> Enum.map(fn mount ->
+      %{
+        source: :sandbox_owned,
+        destination: value(mount, :destination),
+        mode: value(mount, :mode),
+        type: :volume
+      }
     end)
     |> Enum.sort_by(& &1.destination)
   end
@@ -344,9 +335,6 @@ defmodule Twelvgaige.Sandbox.LaunchManifest do
   defp normalize_mount_type(%{volume: _details}), do: :volume
   defp normalize_mount_type(%{virtiofs: _details}), do: :bind
   defp normalize_mount_type(_type), do: :bind
-
-  defp import_destination(destination),
-    do: "/run/twelvgaige-import" <> destination
 
   defp digest(manifest) do
     manifest

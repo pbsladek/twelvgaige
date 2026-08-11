@@ -14,7 +14,11 @@ defmodule Twelvgaige.CLI.MainEnvTest do
 
     assert {:ok, output, 4} = Main.run(["status", "--format", "json"])
 
-    assert %{"error" => %{"message" => ":invalid_ipc_address"}} = Jason.decode!(output)
+    assert %{
+             "schema" => "twelvgaige.cli.result",
+             "schema_version" => 1,
+             "error" => %{"message" => ":invalid_ipc_address"}
+           } = Jason.decode!(output)
   end
 
   defp restore_env(key, nil), do: System.delete_env(key)

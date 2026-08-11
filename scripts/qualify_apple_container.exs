@@ -311,8 +311,8 @@ defmodule Twelvgaige.AppleContainerQualification do
     volumes = Enum.filter(observed.mounts, &(&1.type in ["volume", :volume]))
 
     assert!(
-      Enum.all?(host_mounts, &(&1.mode == :read_only)),
-      "Apple copy_snapshot retained a writable host bind mount"
+      host_mounts == [],
+      "Apple copy_snapshot exposed its host import mount to the worker"
     )
 
     assert!(
@@ -346,6 +346,7 @@ defmodule Twelvgaige.AppleContainerQualification do
       copy_snapshot: "pass",
       copy_snapshot_no_writable_host_mount: "pass",
       copy_snapshot_import_read_only: "pass",
+      copy_snapshot_source_not_mounted: "pass",
       copy_snapshot_declared_export: "pass",
       copy_snapshot_volume_bootstrap: "host_controlled_ephemeral_vm",
       copy_snapshot_export_bytes: export.bytes

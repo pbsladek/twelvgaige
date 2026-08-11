@@ -9,7 +9,6 @@ defmodule Twelvgaige.Crypto.KeyManagerTest do
   alias Twelvgaige.Crypto.KeyManager.LinuxSecretServiceBackend
   alias Twelvgaige.Crypto.KeyManager.MacOSKeychainBackend
   alias Twelvgaige.Crypto.KeyManager.TestBackend
-  alias Twelvgaige.Crypto.KeyManager.WindowsDPAPIBackend
   alias Twelvgaige.Crypto.KeyMaterial
 
   test "test backend supports create fetch rotate and retire through the behaviour" do
@@ -218,49 +217,6 @@ defmodule Twelvgaige.Crypto.KeyManagerTest do
              )
   end
 
-  test "windows DPAPI backend stores protected payloads and supports lifecycle" do
-    path = tmp_key_path()
-    runner = fake_dpapi_runner()
-
-    opts = [
-      id: "dpapi-key",
-      platform: {:win32, :nt},
-      path: path,
-      runner: runner
-    ]
-
-    assert {:ok, %Key{id: "dpapi-key", backend: :windows_dpapi, version: 1} = created} =
-             KeyManager.create_key(WindowsDPAPIBackend, opts)
-
-    assert File.exists?(path)
-    refute File.read!(path) =~ created.material.bytes
-    assert File.read!(path) =~ "protected_payload"
-
-    assert {:ok, %Key{id: "dpapi-key", version: 1}} =
-             KeyManager.fetch_key(WindowsDPAPIBackend, "dpapi-key", opts)
-
-    assert {:ok, %Key{id: "dpapi-key", version: 2} = rotated} =
-             KeyManager.rotate_key(WindowsDPAPIBackend, "dpapi-key", opts)
-
-    refute rotated.material.bytes == created.material.bytes
-
-    assert {:ok, %Key{id: "dpapi-key", status: :retired}} =
-             KeyManager.retire_key(WindowsDPAPIBackend, "dpapi-key", opts)
-
-    assert {:error, :key_retired} =
-             KeyManager.fetch_key(WindowsDPAPIBackend, "dpapi-key", opts)
-  end
-
-  test "windows DPAPI backend rejects non-Windows platforms" do
-    assert {:error, :unsupported_key_backend_platform} =
-             KeyManager.create_key(WindowsDPAPIBackend,
-               id: "dpapi-key",
-               platform: {:unix, :darwin},
-               path: tmp_key_path(),
-               runner: fake_dpapi_runner()
-             )
-  end
-
   defp tmp_key_path do
     dir =
       Path.join(
@@ -274,12 +230,7 @@ defmodule Twelvgaige.Crypto.KeyManagerTest do
     Path.join(dir, "key.json")
   end
 
-  defp posix_only(fun) do
-    case :os.type() do
-      {:win32, _name} -> :ok
-      _posix -> fun.()
-    end
-  end
+  defp posix_only(fun), do: fun.()
 
   defp fake_security_runner(store) do
     fn args, _opts ->
@@ -370,27 +321,5 @@ defmodule Twelvgaige.Crypto.KeyManagerTest do
     end)
     |> Map.new()
     |> Map.take(["application", "service", "id"])
-  end
-
-  defp fake_dpapi_runner do
-    fn args, stdin, _opts ->
-      script = List.last(args)
-
-      cond do
-        String.contains?(script, "]::Protect") ->
-          {"dpapi:" <> Base.encode64(stdin), 0}
-
-        String.contains?(script, "]::Unprotect") ->
-          with "dpapi:" <> encoded <- stdin,
-               {:ok, decoded} <- Base.decode64(encoded) do
-            {decoded, 0}
-          else
-            _invalid -> {"invalid protected payload", 1}
-          end
-
-        true ->
-          {"unknown script", 1}
-      end
-    end
   end
 end

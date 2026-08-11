@@ -80,9 +80,11 @@ defmodule Twelvgaige.Audit.Chain do
 
   defp drop_chain_fields(event) do
     Map.drop(event, [
+      :seq,
       :audit_chain_algorithm,
       :audit_previous_hash,
       :audit_chain_hash,
+      "seq",
       "audit_chain_algorithm",
       "audit_previous_hash",
       "audit_chain_hash"

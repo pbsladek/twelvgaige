@@ -93,9 +93,8 @@ make burrito BURRITO_TARGET=macos_silicon
 ```
 
 Choose the target for the machine you are publishing to: `macos_silicon`,
-`linux`, `linux_arm64`, or `windows`. Burrito needs Zig
-`0.15.2` and `xz` to build; Windows targets also need `7z` or `7zz`. The output
-is `burrito_out/twelvgaige_<target>` or `burrito_out/twelvgaige_<target>.exe`.
+`linux`, or `linux_arm64`. Burrito needs Zig `0.15.2` and `xz` to build. The
+output is `burrito_out/twelvgaige_<target>`.
 Run it like the normal CLI:
 
 ```bash
@@ -114,7 +113,7 @@ make package-burrito-smoke BURRITO_TARGET=macos_silicon
 
 The target-specific variables are `BURRITO_CUSTOM_ERTS_MACOS_SILICON`,
 `BURRITO_CUSTOM_ERTS_LINUX`,
-`BURRITO_CUSTOM_ERTS_LINUX_ARM64`, and `BURRITO_CUSTOM_ERTS_WINDOWS`.
+and `BURRITO_CUSTOM_ERTS_LINUX_ARM64`.
 `BURRITO_CUSTOM_ERTS` applies to every target. Only use a custom ERTS that
 matches the target OS and architecture. On macOS with newer SDKs, Homebrew's
 patched `zig@0.15` has proven more reliable than the upstream Zig binary.
@@ -125,7 +124,7 @@ GitHub workflows live in `.github/workflows`:
   audit, normal and persistence tests, authoring checks, and coverage.
 - `build.yml`: smoke-builds escript, Mix release artifacts, and Burrito
   executables. Burrito runs as a multi-platform matrix for `linux`,
-  `linux_arm64`, `windows`, and `macos_silicon`.
+  `linux_arm64`, and `macos_silicon`.
 - `release.yml`: publishes tag/manual release artifacts. Burrito binaries are
   the primary multi-platform release artifacts.
 
@@ -897,9 +896,8 @@ authority, merges a commit, or applies an artifact automatically.
 
 The default application-data directory is
 `~/Library/Application Support/Twelvgaige` on macOS,
-`%LOCALAPPDATA%\Twelvgaige` on Windows, and
-`$XDG_DATA_HOME/twelvgaige` or `~/.local/share/twelvgaige` on Linux. Override it
-with `TWELVGAIGE_DATA_ROOT`.
+and `$XDG_DATA_HOME/twelvgaige` or `~/.local/share/twelvgaige` on Linux.
+Override it with `TWELVGAIGE_DATA_ROOT`.
 
 ## Watch And Audit
 
@@ -1099,17 +1097,16 @@ By default, CLI commands discover the local Breech endpoint file. You can inspec
 twelvgaige daemon paths
 ```
 
-Default IPC is a Unix socket on macOS/Linux and authenticated loopback TCP on Windows. Windows named-pipe addresses can be encoded and discovered, and the IPC protocol is tested through injected pipe transports; `--transport npipe` is still an explicit platform-verification path until native Windows pipe listener I/O is validated.
+Default IPC is a Unix socket. Authenticated loopback TCP remains available as
+an explicit transport on macOS and Linux.
 
 Useful overrides:
 
 ```bash
 twelvgaige daemon serve --transport tcp --runtime-dir /tmp/twelvgaige
 twelvgaige daemon serve --transport unix --endpoint /tmp/twelvgaige/endpoint.json
-twelvgaige daemon paths --transport npipe
 TWELVGAIGE_BREECH_ENDPOINT=/tmp/twelvgaige/endpoint.json twelvgaige status
 TWELVGAIGE_BREECH_ADDR=tcp://127.0.0.1:4567 twelvgaige status
-TWELVGAIGE_BREECH_ADDR=npipe:////./pipe/twelvgaige-<user-hash>-breech twelvgaige status
 ```
 
 Use `crypto status` to see what protection is actually active:
@@ -1164,10 +1161,8 @@ headless operation. Env/file key backends require
 OS-protected. The macOS keychain backend wraps `/usr/bin/security` generic
 password items and is reported as OS-protected. Verify real login-Keychain
 behavior with `make keychain-smoke-macos KEYCHAIN_LIVE=1`; normal tests exclude
-that live tag and do not touch the user's Keychain. The Windows key backend is
-DPAPI-protected files through a PowerShell wrapper. It is user-profile bound and
-unit-tested with an injected runner; live Windows release verification remains
-pending. The Linux key backend uses FreeDesktop Secret Service through
+that live tag and do not touch the user's Keychain. The Linux key backend uses
+FreeDesktop Secret Service through
 `secret-tool`. It is intended for desktop Linux with a user D-Bus session and
 an unlocked collection, not WSL, containers, or headless servers. Use explicit
 env/file key backends for headless Linux only when the insecure-backend
@@ -1252,9 +1247,9 @@ twelvgaige store restore <source-path> <destination-path> [--replace] [--format 
 twelvgaige store migrate-sqlcipher --source <plaintext.db> --destination <encrypted.db> --key-env <env> [--replace] [--format human|json]
 twelvgaige store rewrap-envelope <envelope.json> --backup <backup.json> --old-key-env <env> --new-key-env <env> [--format human|json]
 
-twelvgaige daemon serve [--transport unix|tcp|npipe] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+twelvgaige daemon serve [--transport unix|tcp] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
 twelvgaige daemon stop [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
-twelvgaige daemon paths [--transport unix|tcp|npipe] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
+twelvgaige daemon paths [--transport unix|tcp] [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
 twelvgaige daemon token rotate [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
 
 twelvgaige session list [--runtime-dir <path>] [--endpoint <path>] [--format human|json]
