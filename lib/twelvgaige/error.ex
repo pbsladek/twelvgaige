@@ -34,10 +34,12 @@ defmodule Twelvgaige.Error do
     :unsupported_condition,
     :llm_timeout,
     :llm_rate_limited,
+    :llm_quota_exhausted,
     :llm_auth_failed,
     :llm_bad_request,
     :llm_provider_unavailable,
     :llm_context_too_large,
+    :llm_incomplete,
     :llm_unknown,
     :input_schema_violation,
     :output_parse_error,
@@ -100,10 +102,12 @@ defmodule Twelvgaige.Error do
           | :unsupported_condition
           | :llm_timeout
           | :llm_rate_limited
+          | :llm_quota_exhausted
           | :llm_auth_failed
           | :llm_bad_request
           | :llm_provider_unavailable
           | :llm_context_too_large
+          | :llm_incomplete
           | :llm_unknown
           | :input_schema_violation
           | :output_parse_error

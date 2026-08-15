@@ -301,7 +301,14 @@ defmodule Twelvgaige.LLM do
           |> Enum.reduce(0, &(byte_size(&1) + &2))
           |> then(&ceil(&1 / 4))
 
-        input + non_negative_option(opts, :max_tokens, 0)
+        output =
+          non_negative_option(
+            opts,
+            :max_completion_tokens,
+            non_negative_option(opts, :max_tokens, 0)
+          )
+
+        input + output
     end
   end
 

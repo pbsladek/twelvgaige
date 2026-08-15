@@ -1,11 +1,12 @@
 # Testing, Coverage, And E2E Plan
 
 Status: implemented record. The original 70% baseline described throughout the
-phase history has been superseded by a 75% aggregate repository gate. Coverage
-from the default and specialized offline suites is merged before enforcement,
-six security- and recovery-critical modules have an 85% floor, and two
-subprocess/protocol boundary modules have a 55% floor. Current commands and CI
-behavior are documented in [`../ci.md`](../ci.md).
+phase history has been superseded by a 76% aggregate repository gate. Coverage
+from the default and specialized offline suites is merged before enforcement.
+Security, recovery, manager-dispatch, durable-store, and sandbox-reconciliation
+modules have an 85% floor; subprocess/protocol boundary modules have a 55%
+floor; and the OpenAI/shared provider boundary has a 65% floor. Current commands
+and CI behavior are documented in [`../ci.md`](../ci.md).
 
 This plan records how test confidence was raised around Twelvgaige's CLI,
 daemon, authoring, storage, packaging, and integration surfaces. Historical
@@ -828,9 +829,10 @@ Goal: use the baseline to add targeted tests, not broad shallow assertions.
 
 Current target:
 
-- The required aggregate gate is 75%.
+- The required aggregate gate is 76%.
 - Merge the default and specialized offline suite exports before enforcement.
-- Keep the separate 85% critical-module and 55% boundary-module floors.
+- Keep the separate 85% critical-module, 55% subprocess/protocol boundary, and
+  65% provider-boundary floors.
 
 Priority areas:
 
@@ -889,12 +891,12 @@ Progress:
 
 ## Coverage Policy
 
-- Current aggregate gate: 75%. The initial milestone was 70%.
+- Current aggregate gate: 76%. The initial milestone was 70%.
 - Files excluded from coverage must be justified in `mix.exs` comments or this
   plan.
 - Lowering the threshold requires updating this plan with a reason.
-- Raising the threshold should happen in 5% increments after a stable week of
-  green CI.
+- Raise the threshold only from measured offline coverage, retaining enough
+  margin to avoid a flaky gate.
 - New user-visible CLI commands should include unit/component tests plus either
   an existing e2e path or a documented reason why process e2e is unnecessary.
 - New live integrations must include fake/offline tests first, then opt-in live
@@ -915,7 +917,8 @@ Progress:
 
 ## Definition Of Done For This Testing Track
 
-- `make coverage` enforces 75% aggregate offline coverage.
+- `make coverage` enforces 76% aggregate offline coverage plus critical and
+  boundary module floors.
 - `make e2e` runs the core CLI contract locally without network credentials.
 - `.github/workflows/e2e.yml` runs offline e2e on clean runners.
 - Package e2e reuses the same scripts against built artifacts.

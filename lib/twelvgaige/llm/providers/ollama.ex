@@ -44,8 +44,9 @@ defmodule Twelvgaige.LLM.Providers.Ollama do
       |> Common.request(provider_id(), endpoint(opts), request_opts)
 
     with {:ok, response} <- Common.call_transport(request, opts),
-         :ok <- ensure_success(response) do
-      {:ok, normalize_response(model, response, request)}
+         :ok <- ensure_success(response),
+         {:ok, normalized} <- normalize_response(model, response, request) do
+      {:ok, normalized}
     end
   end
 
@@ -103,45 +104,72 @@ defmodule Twelvgaige.LLM.Providers.Ollama do
     body = Common.response_body(response)
     message = Map.get(body, "message", %{})
 
-    %Response{
-      provider: provider_id(),
-      model: model,
-      content: Map.get(message, "content") || Map.get(body, "response") || "",
-      tool_calls: tool_calls(message),
-      usage:
-        Common.usage(Map.get(body, "prompt_eval_count"), Map.get(body, "eval_count"), %{
-          provider_usage: Map.take(body, ["prompt_eval_count", "eval_count", "eval_duration"])
-        }),
-      finish_reason: Map.get(body, "done_reason"),
-      raw_redacted: Common.raw_redacted(request)
-    }
+    with {:ok, calls} <- tool_calls(message) do
+      {:ok,
+       %Response{
+         provider: provider_id(),
+         model: model,
+         content: Map.get(message, "content") || Map.get(body, "response") || "",
+         tool_calls: calls,
+         usage:
+           Common.usage(Map.get(body, "prompt_eval_count"), Map.get(body, "eval_count"), %{
+             provider_usage: Map.take(body, ["prompt_eval_count", "eval_count", "eval_duration"])
+           }),
+         finish_reason: Map.get(body, "done_reason"),
+         raw_redacted: Common.raw_redacted(request)
+       }}
+    end
   end
 
   defp tool_calls(%{"tool_calls" => calls}) when is_list(calls) do
     calls
     |> Enum.with_index()
-    |> Enum.map(fn {call, index} -> normalize_tool_call(call, index) end)
+    |> Enum.reduce_while({:ok, []}, fn {call, index}, {:ok, acc} ->
+      case normalize_tool_call(call, index) do
+        {:ok, normalized} -> {:cont, {:ok, [normalized | acc]}}
+        {:error, _error} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, normalized} -> {:ok, Enum.reverse(normalized)}
+      {:error, _error} = error -> error
+    end
   end
 
-  defp tool_calls(_message), do: []
+  defp tool_calls(_message), do: {:ok, []}
 
   defp normalize_tool_call(%{"function" => function} = call, index) when is_map(function) do
-    %{
-      "id" => Map.get(call, "id") || "tool_call_#{index + 1}",
-      "name" => Map.get(function, "name"),
-      "input" => Common.parse_arguments(Map.get(function, "arguments"))
-    }
+    normalize_tool_arguments(
+      Map.get(call, "id") || "tool_call_#{index + 1}",
+      Map.get(function, "name"),
+      Map.get(function, "arguments")
+    )
   end
 
   defp normalize_tool_call(%{"name" => name} = call, index) do
-    %{
-      "id" => Map.get(call, "id") || "tool_call_#{index + 1}",
-      "name" => name,
-      "input" => Common.parse_arguments(Map.get(call, "arguments"))
-    }
+    normalize_tool_arguments(
+      Map.get(call, "id") || "tool_call_#{index + 1}",
+      name,
+      Map.get(call, "arguments")
+    )
   end
 
   defp normalize_tool_call(_call, index) do
-    %{"id" => "tool_call_#{index + 1}", "name" => nil, "input" => %{}}
+    malformed_tool_call("tool_call_#{index + 1}", nil)
+  end
+
+  defp normalize_tool_arguments(id, name, arguments) do
+    case Common.decode_arguments(arguments) do
+      {:ok, input} -> {:ok, %{"id" => id, "name" => name, "input" => input}}
+      {:error, :invalid_tool_arguments} -> malformed_tool_call(id, name)
+    end
+  end
+
+  defp malformed_tool_call(id, name) do
+    {:error,
+     Error.new(:output_error, :output_parse_error, "ollama returned malformed tool arguments",
+       retryable: false,
+       details: %{provider: provider_id(), tool_call_id: id, tool_name: name}
+     )}
   end
 end

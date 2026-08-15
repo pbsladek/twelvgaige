@@ -21,6 +21,10 @@ defmodule Twelvgaige.LLM.ProviderConfig do
     "ollama" => ["TWELVGAIGE_OLLAMA_BASE_URL", "OLLAMA_HOST"]
   }
 
+  @api_envs %{
+    "openai" => ["TWELVGAIGE_OPENAI_API"]
+  }
+
   @spec resolve(String.t() | atom(), keyword()) :: keyword()
   def resolve(provider, opts) when is_list(opts) do
     provider = normalize_provider(provider)
@@ -29,6 +33,7 @@ defmodule Twelvgaige.LLM.ProviderConfig do
     |> merge_runtime_config(provider)
     |> maybe_put_env(:api_key, Map.get(@api_key_envs, provider, []))
     |> maybe_put_env(:base_url, Map.get(@base_url_envs, provider, []))
+    |> maybe_put_env(:api, Map.get(@api_envs, provider, []))
   end
 
   defp merge_runtime_config(opts, provider) do
@@ -73,6 +78,10 @@ defmodule Twelvgaige.LLM.ProviderConfig do
 
   defp normalize_key("api_key"), do: :api_key
   defp normalize_key("base_url"), do: :base_url
+  defp normalize_key("api"), do: :api
+  defp normalize_key("store"), do: :store
+  defp normalize_key("max_tokens"), do: :max_tokens
+  defp normalize_key("max_completion_tokens"), do: :max_completion_tokens
   defp normalize_key("timeout_ms"), do: :timeout_ms
   defp normalize_key("max_timeout_ms"), do: :max_timeout_ms
   defp normalize_key("allow_insecure_provider_url"), do: :allow_insecure_provider_url

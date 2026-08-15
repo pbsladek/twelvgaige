@@ -32,10 +32,10 @@ events, metrics, or audit output.
 
 ## Provider Environment Variables
 
-| Provider | Secret Variables | Endpoint Variables |
-| --- | --- | --- |
-| `openai` | `TWELVGAIGE_OPENAI_API_KEY`, then `OPENAI_API_KEY` | `TWELVGAIGE_OPENAI_BASE_URL` |
-| `ollama` | none by default | `TWELVGAIGE_OLLAMA_BASE_URL`, then `OLLAMA_HOST` |
+| Provider | Secret Variables | Endpoint Variables | API Selection |
+| --- | --- | --- | --- |
+| `openai` | `TWELVGAIGE_OPENAI_API_KEY`, then `OPENAI_API_KEY` | `TWELVGAIGE_OPENAI_BASE_URL` | `TWELVGAIGE_OPENAI_API` |
+| `ollama` | none by default | `TWELVGAIGE_OLLAMA_BASE_URL`, then `OLLAMA_HOST` | n/a |
 
 The `TWELVGAIGE_*` variables let an operator give this tool scoped credentials
 without affecting other OpenAI tooling in the same shell.
@@ -61,6 +61,25 @@ Or use a Twelvgaige-specific variable:
 ```bash
 export TWELVGAIGE_OPENAI_API_KEY='sk-...'
 ```
+
+Chat Completions is the compatibility default. Select the Responses API when
+you want its typed items, richer tool support, or future model features:
+
+```bash
+export TWELVGAIGE_OPENAI_API=responses
+```
+
+Accepted values are `responses` and `chat_completions`. A Responses request
+uses `/v1/responses`, maps system guidance to `instructions`, sends tool calls
+and results as correlated items, and translates JSON Schema output into
+`text.format`. Responses storage is disabled by default; trusted runtime code
+may set `store: true` when provider-managed state is intentional. A custom
+`TWELVGAIGE_OPENAI_BASE_URL` is an exact endpoint override, so it must match the
+selected API.
+
+For Chat Completions, Twelvgaige translates its provider-neutral `max_tokens`
+option to OpenAI's current `max_completion_tokens` request field. Trusted code
+may set `max_completion_tokens` explicitly to override that translated value.
 
 Create an agent shell:
 
@@ -160,7 +179,8 @@ Embedded callers may configure providers without environment variables:
 Application.put_env(:twelvgaige, :llm_providers,
   openai: [
     api_key: System.fetch_env!("OPENAI_API_KEY"),
-    base_url: "https://api.openai.com/v1/chat/completions"
+    api: :responses,
+    store: false
   ]
 )
 ```

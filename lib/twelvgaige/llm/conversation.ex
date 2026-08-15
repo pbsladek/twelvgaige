@@ -23,6 +23,7 @@ defmodule Twelvgaige.LLM.Conversation do
           optional(:tool_calls) => [tool_call()],
           optional(:tool_call_id) => String.t(),
           optional(:name) => String.t(),
+          optional(:provider_items) => [map()],
           optional(:source) => atom() | String.t()
         }
 
@@ -53,6 +54,7 @@ defmodule Twelvgaige.LLM.Conversation do
     |> put_if(:tool_calls, Keyword.get(opts, :tool_calls))
     |> put_if(:tool_call_id, Keyword.get(opts, :tool_call_id))
     |> put_if(:name, Keyword.get(opts, :name))
+    |> put_if(:provider_items, Keyword.get(opts, :provider_items))
     |> put_if(:source, Keyword.get(opts, :source))
   end
 
@@ -63,6 +65,7 @@ defmodule Twelvgaige.LLM.Conversation do
         response.tool_calls
         |> Enum.with_index()
         |> Enum.map(fn {call, index} -> normalize_tool_call!(call, index) end),
+      provider_items: response.provider_items,
       source: :provider
     )
   end
@@ -101,6 +104,14 @@ defmodule Twelvgaige.LLM.Conversation do
   @spec name(map()) :: String.t() | nil
   def name(message), do: value(message, :name, nil)
 
+  @spec provider_items(map()) :: [map()]
+  def provider_items(message) do
+    case value(message, :provider_items, []) do
+      items when is_list(items) -> Enum.filter(items, &is_map/1)
+      _other -> []
+    end
+  end
+
   defp normalize_message(%{} = message, index) do
     role = role(message)
     content = content(message)
@@ -118,6 +129,7 @@ defmodule Twelvgaige.LLM.Conversation do
             tool_calls: if(role == "assistant", do: tool_calls(message), else: nil),
             tool_call_id: tool_call_id(message),
             name: name(message),
+            provider_items: if(role == "assistant", do: provider_items(message), else: nil),
             source: value(message, :source, nil)
           )
 

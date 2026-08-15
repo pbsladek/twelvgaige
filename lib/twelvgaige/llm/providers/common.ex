@@ -23,6 +23,14 @@ defmodule Twelvgaige.LLM.Providers.Common do
     "openai" => ["api.openai.com"]
   }
 
+  @quota_error_codes ~w(
+    credit_balance_exhausted
+    insufficient_quota
+    organization_spend_limit_exceeded
+    project_spend_limit_exceeded
+    organization_usage_limit_exceeded
+  )
+
   @spec call_transport(map(), keyword()) :: {:ok, map()} | {:error, Error.t()}
   def call_transport(request, opts) do
     with :ok <- validate_request(request, opts) do
@@ -68,18 +76,22 @@ defmodule Twelvgaige.LLM.Providers.Common do
   end
 
   defp observe_provider_response(provider, response, opts) do
-    case provider_limiter(opts) do
-      nil ->
-        :ok
+    if quota_exhausted?(response_body(response)) do
+      :ok
+    else
+      case provider_limiter(opts) do
+        nil ->
+          :ok
 
-      limiter ->
-        account = Keyword.get(opts, :provider_account, "default")
+        limiter ->
+          account = Keyword.get(opts, :provider_account, "default")
 
-        case ProviderLimiter.observe_response(provider, account, response, server: limiter) do
-          :ok -> :ok
-          {:ok, _cooldown} -> :ok
-          {:error, reason} -> {:error, provider_control_error(provider, reason)}
-        end
+          case ProviderLimiter.observe_response(provider, account, response, server: limiter) do
+            :ok -> :ok
+            {:ok, _cooldown} -> :ok
+            {:error, reason} -> {:error, provider_control_error(provider, reason)}
+          end
+      end
     end
   catch
     :exit, reason -> {:error, provider_control_error(provider, reason)}
@@ -160,6 +172,9 @@ defmodule Twelvgaige.LLM.Providers.Common do
         status in [408, 504] ->
           {:llm_timeout, true, false}
 
+        quota_exhausted?(body) ->
+          {:llm_quota_exhausted, false, false}
+
         status == 429 ->
           {:llm_rate_limited, true, false}
 
@@ -185,6 +200,7 @@ defmodule Twelvgaige.LLM.Providers.Common do
       details: %{
         provider: provider,
         status: status,
+        provider_code: error_code(body),
         retry_after: retry_after(headers),
         body: Redactor.redact_json(body)
       }
@@ -252,17 +268,21 @@ defmodule Twelvgaige.LLM.Providers.Common do
   @spec message_name(map()) :: String.t() | nil
   def message_name(message), do: Conversation.name(message)
 
-  @spec parse_arguments(term()) :: map()
-  def parse_arguments(arguments) when is_map(arguments), do: arguments
+  @spec message_provider_items(map()) :: [map()]
+  def message_provider_items(message), do: Conversation.provider_items(message)
 
-  def parse_arguments(arguments) when is_binary(arguments) do
+  @spec decode_arguments(term()) :: {:ok, map()} | {:error, :invalid_tool_arguments}
+  def decode_arguments(arguments) when is_map(arguments), do: {:ok, arguments}
+
+  def decode_arguments(arguments) when is_binary(arguments) do
     case Jason.decode(arguments) do
-      {:ok, decoded} when is_map(decoded) -> decoded
-      _other -> %{}
+      {:ok, decoded} when is_map(decoded) -> {:ok, decoded}
+      _other -> {:error, :invalid_tool_arguments}
     end
   end
 
-  def parse_arguments(_arguments), do: %{}
+  def decode_arguments(nil), do: {:ok, %{}}
+  def decode_arguments(_arguments), do: {:error, :invalid_tool_arguments}
 
   @spec usage(non_neg_integer() | nil, non_neg_integer() | nil, map()) :: map()
   def usage(input_tokens, output_tokens, extra \\ %{}) do
@@ -344,6 +364,15 @@ defmodule Twelvgaige.LLM.Providers.Common do
   defp error_message(%{"message" => message}) when is_binary(message), do: message
   defp error_message(%{"raw" => raw}) when is_binary(raw), do: raw
   defp error_message(_body), do: "request failed"
+
+  defp error_code(%{"error" => error}) when is_map(error) do
+    value = Map.get(error, "code") || Map.get(error, "type")
+    if is_binary(value), do: value
+  end
+
+  defp error_code(_body), do: nil
+
+  defp quota_exhausted?(body), do: error_code(body) in @quota_error_codes
 
   defp context_too_large?(body) do
     body

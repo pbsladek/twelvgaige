@@ -2,7 +2,34 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
   use ExUnit.Case, async: true
 
   alias Twelvgaige.LLM
+  alias Twelvgaige.LLM.Conversation
   alias Twelvgaige.LLM.Providers.Common
+
+  defmodule RecordingLimiter do
+    use GenServer
+
+    def start_link(owner), do: GenServer.start_link(__MODULE__, owner)
+    def init(owner), do: {:ok, owner}
+
+    def handle_call({:acquire, provider, account, tokens, cost}, _from, owner) do
+      permit = %{
+        id: "permit-test",
+        provider: provider,
+        account: account,
+        reserved_tokens: tokens,
+        reserved_cost_micros: cost
+      }
+
+      {:reply, {:ok, permit}, owner}
+    end
+
+    def handle_call({:complete, _permit, _usage}, _from, owner), do: {:reply, :ok, owner}
+
+    def handle_call({:observe_response, _provider, _account, _response} = message, _from, owner) do
+      send(owner, {:provider_limiter, message})
+      {:reply, :ok, owner}
+    end
+  end
 
   test "preserves assistant tool calls and tool result identity for OpenAI" do
     messages = [
@@ -86,12 +113,15 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
                    %{role: "user", content: "check health"}
                  ],
                  api_key: "sk-secret",
+                 max_tokens: 32,
                  transport: transport
                )
 
       assert_receive {:request, request}
       assert request.url == "https://api.openai.com/v1/chat/completions"
       assert Enum.at(request.body["messages"], 0)["role"] == "system"
+      assert request.body["max_completion_tokens"] == 32
+      refute Map.has_key?(request.body, "max_tokens")
 
       assert response.provider == "openai"
       assert response.finish_reason == "tool_calls"
@@ -106,6 +136,232 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
              ]
 
       assert {"authorization", "[REDACTED]"} in response.raw_redacted.headers
+    end
+
+    test "prefers an explicit Chat Completions token limit" do
+      parent = self()
+
+      transport = fn request ->
+        send(parent, {:request, request})
+
+        {:ok,
+         %{
+           status: 200,
+           headers: [],
+           body: %{"choices" => [%{"message" => %{"content" => "done"}}]}
+         }}
+      end
+
+      assert {:ok, _response} =
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 max_tokens: 32,
+                 max_completion_tokens: 64,
+                 transport: transport
+               )
+
+      assert_receive {:request, request}
+      assert request.body["max_completion_tokens"] == 64
+      refute Map.has_key?(request.body, "max_tokens")
+    end
+
+    test "serializes and normalizes Responses API items" do
+      parent = self()
+
+      transport = fn request ->
+        send(parent, {:request, request})
+
+        {:ok,
+         %{
+           status: 200,
+           headers: [],
+           body: %{
+             "id" => "resp_1",
+             "status" => "completed",
+             "output" => [
+               %{"id" => "reasoning_1", "type" => "reasoning", "summary" => []},
+               %{
+                 "id" => "message_1",
+                 "type" => "message",
+                 "content" => [
+                   %{"type" => "output_text", "text" => ~s({"healthy":true})}
+                 ]
+               },
+               %{
+                 "id" => "function_item_1",
+                 "type" => "function_call",
+                 "call_id" => "call_response_1",
+                 "name" => "http_get",
+                 "arguments" => ~s({"url":"https://example.com/health"})
+               }
+             ],
+             "usage" => %{"input_tokens" => 11, "output_tokens" => 4}
+           }
+         }}
+      end
+
+      messages = [
+        %{role: "system", content: "Return health as JSON."},
+        %{role: "user", content: "Check the service."},
+        %{
+          role: "assistant",
+          content: "Checking.",
+          tool_calls: [
+            %{id: "call_original", name: "http_get", input: %{url: "https://example.com"}}
+          ]
+        },
+        %{
+          role: "tool",
+          name: "http_get",
+          tool_call_id: "call_original",
+          content: ~s({"status":200})
+        }
+      ]
+
+      response_format = %{
+        "type" => "json_schema",
+        "json_schema" => %{
+          "name" => "health",
+          "strict" => true,
+          "schema" => %{
+            "type" => "object",
+            "properties" => %{"healthy" => %{"type" => "boolean"}},
+            "required" => ["healthy"],
+            "additionalProperties" => false
+          }
+        }
+      }
+
+      assert {:ok, response} =
+               LLM.complete(:openai, "gpt-test", messages,
+                 api: :responses,
+                 api_key: "sk-secret",
+                 max_tokens: 32,
+                 response_format: response_format,
+                 tools: [
+                   %{
+                     name: "http_get",
+                     description: "Fetch a URL",
+                     input_schema: %{
+                       "type" => "object",
+                       "properties" => %{"url" => %{"type" => "string"}}
+                     }
+                   },
+                   %{"type" => "web_search"}
+                 ],
+                 transport: transport
+               )
+
+      assert_receive {:request, request}
+      assert request.url == "https://api.openai.com/v1/responses"
+      assert request.body["model"] == "gpt-test"
+      assert request.body["instructions"] == "Return health as JSON."
+      assert request.body["max_output_tokens"] == 32
+      assert request.body["store"] == false
+
+      assert request.body["input"] == [
+               %{"role" => "user", "content" => "Check the service."},
+               %{"role" => "assistant", "content" => "Checking."},
+               %{
+                 "type" => "function_call",
+                 "call_id" => "call_original",
+                 "name" => "http_get",
+                 "arguments" => ~s({"url":"https://example.com"})
+               },
+               %{
+                 "type" => "function_call_output",
+                 "call_id" => "call_original",
+                 "output" => ~s({"status":200})
+               }
+             ]
+
+      assert request.body["tools"] ==
+               [
+                 %{
+                   "type" => "function",
+                   "name" => "http_get",
+                   "description" => "Fetch a URL",
+                   "parameters" => %{
+                     "type" => "object",
+                     "properties" => %{"url" => %{"type" => "string"}}
+                   },
+                   "strict" => false
+                 },
+                 %{"type" => "web_search"}
+               ]
+
+      assert get_in(request.body, ["text", "format", "type"]) == "json_schema"
+      assert get_in(request.body, ["text", "format", "name"]) == "health"
+      assert get_in(request.body, ["text", "format", "strict"]) == true
+      assert get_in(request.body, ["text", "format", "schema", "type"]) == "object"
+
+      assert response.content == ~s({"healthy":true})
+      assert response.finish_reason == "completed"
+      assert response.usage.total_tokens == 15
+      assert response.provider_response_id == "resp_1"
+      assert length(response.provider_items) == 3
+
+      assert response.tool_calls == [
+               %{
+                 "id" => "call_response_1",
+                 "name" => "http_get",
+                 "input" => %{"url" => "https://example.com/health"}
+               }
+             ]
+
+      replay_transport = fn replay_request ->
+        send(parent, {:replay_request, replay_request})
+
+        {:ok,
+         %{
+           status: 200,
+           headers: [],
+           body: %{"id" => "resp_2", "status" => "completed", "output" => [], "usage" => %{}}
+         }}
+      end
+
+      assert {:ok, replay_response} =
+               LLM.complete(
+                 :openai,
+                 "gpt-test",
+                 [
+                   %{role: "user", content: "Check the service."},
+                   Conversation.assistant(response),
+                   Conversation.tool_result(
+                     "call_response_1",
+                     "http_get",
+                     ~s({"status":200})
+                   )
+                 ],
+                 api: :responses,
+                 transport: replay_transport
+               )
+
+      assert replay_response.provider_response_id == "resp_2"
+      assert_receive {:replay_request, replay_request}
+
+      assert replay_request.body["input"] ==
+               [%{"role" => "user", "content" => "Check the service."}] ++
+                 response.provider_items ++
+                 [
+                   %{
+                     "type" => "function_call_output",
+                     "call_id" => "call_response_1",
+                     "output" => ~s({"status":200})
+                   }
+                 ]
+    end
+
+    test "rejects unknown OpenAI API selections before transport" do
+      transport = fn _request -> flunk("transport must not run for an invalid API selection") end
+
+      assert {:error, error} =
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 api: :unknown,
+                 transport: transport
+               )
+
+      assert error.reason == :llm_bad_request
+      assert error.message =~ "responses or chat_completions"
     end
 
     test "maps retryable provider errors and redacts error details" do
@@ -133,6 +389,101 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
       assert error.details.retry_after == "2"
       assert error.details.body["api_key"] == "[REDACTED]"
     end
+
+    test "fails closed when a provider reports incomplete output" do
+      cases = [
+        {:responses,
+         %{
+           "id" => "resp_incomplete",
+           "status" => "incomplete",
+           "incomplete_details" => %{"reason" => "max_output_tokens"},
+           "output" => []
+         }},
+        {:chat_completions,
+         %{
+           "choices" => [
+             %{"message" => %{"content" => "partial"}, "finish_reason" => "length"}
+           ]
+         }}
+      ]
+
+      for {api, body} <- cases do
+        transport = fn _request -> {:ok, %{status: 200, headers: [], body: body}} end
+
+        assert {:error, error} =
+                 LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                   api: api,
+                   transport: transport
+                 )
+
+        assert error.reason == :llm_incomplete
+        refute error.retryable
+      end
+    end
+
+    test "preserves a refusal as an explicit safety error" do
+      transport = fn _request ->
+        {:ok,
+         %{
+           status: 200,
+           headers: [],
+           body: %{
+             "id" => "resp_refusal",
+             "status" => "completed",
+             "output" => [
+               %{
+                 "type" => "message",
+                 "content" => [%{"type" => "refusal", "refusal" => "cannot comply"}]
+               }
+             ]
+           }
+         }}
+      end
+
+      assert {:error, error} =
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 api: :responses,
+                 transport: transport
+               )
+
+      assert error.reason == :llm_bad_request
+      assert error.safety_required
+    end
+
+    test "rejects malformed function arguments instead of converting them to an empty map" do
+      transport = fn _request ->
+        {:ok,
+         %{
+           status: 200,
+           headers: [],
+           body: %{
+             "choices" => [
+               %{
+                 "finish_reason" => "tool_calls",
+                 "message" => %{
+                   "tool_calls" => [
+                     %{
+                       "id" => "call_bad",
+                       "function" => %{"name" => "lookup", "arguments" => "{broken"}
+                     }
+                   ]
+                 }
+               }
+             ]
+           }
+         }}
+      end
+
+      assert {:error, error} =
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 transport: transport
+               )
+
+      assert error.class == :output_error
+      assert error.reason == :output_parse_error
+      assert error.details.tool_call_id == "call_bad"
+      refute Map.has_key?(error.details, :arguments)
+    end
   end
 
   describe "provider error classifier" do
@@ -157,6 +508,55 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
         assert error.reason == reason
         assert error.retryable == retryable
       end
+    end
+
+    test "distinguishes exhausted quota from retryable request rate limits" do
+      limiter = start_supervised!({RecordingLimiter, self()})
+
+      for code <- [
+            "credit_balance_exhausted",
+            "insufficient_quota",
+            "organization_spend_limit_exceeded",
+            "project_spend_limit_exceeded",
+            "organization_usage_limit_exceeded"
+          ] do
+        transport = fn _request ->
+          {:ok,
+           %{
+             status: 429,
+             headers: [{"retry-after", "1"}],
+             body: %{"error" => %{"code" => code, "message" => "quota exhausted"}}
+           }}
+        end
+
+        assert {:error, error} =
+                 LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                   provider_limiter: limiter,
+                   transport: transport
+                 )
+
+        assert error.reason == :llm_quota_exhausted
+        refute error.retryable
+        assert error.details.provider_code == code
+        refute_receive {:provider_limiter, _message}
+      end
+
+      rate_limit_transport = fn _request ->
+        {:ok,
+         %{
+           status: 429,
+           headers: [{"retry-after", "1"}],
+           body: %{"error" => %{"code" => "rate_limit_exceeded", "message" => "slow down"}}
+         }}
+      end
+
+      assert {:error, %{reason: :llm_rate_limited, retryable: true}} =
+               LLM.complete(:openai, "gpt-test", [%{role: "user", content: "hi"}],
+                 provider_limiter: limiter,
+                 transport: rate_limit_transport
+               )
+
+      assert_receive {:provider_limiter, {:observe_response, "openai", "default", %{status: 429}}}
     end
 
     test "maps transport timeouts into retryable timeout errors" do
@@ -506,6 +906,32 @@ defmodule Twelvgaige.LLM.Providers.ProviderAdaptersTest do
 
       assert error.reason == :llm_bad_request
       refute error.retryable
+    end
+
+    test "rejects malformed native tool arguments" do
+      transport = fn _request ->
+        {:ok,
+         %{
+           status: 200,
+           headers: [],
+           body: %{
+             "message" => %{
+               "tool_calls" => [
+                 %{"id" => "call_bad", "function" => %{"name" => "lookup", "arguments" => []}}
+               ]
+             }
+           }
+         }}
+      end
+
+      assert {:error, error} =
+               LLM.complete(:ollama, "llama-test", [%{role: "user", content: "hello"}],
+                 transport: transport
+               )
+
+      assert error.class == :output_error
+      assert error.reason == :output_parse_error
+      assert error.details.tool_call_id == "call_bad"
     end
   end
 end

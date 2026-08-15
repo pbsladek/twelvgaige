@@ -165,6 +165,7 @@ Provider credentials come from environment variables or trusted runtime config:
 
 ```bash
 export TWELVGAIGE_OPENAI_API_KEY=...
+export TWELVGAIGE_OPENAI_API=responses
 ```
 
 The bundled `simple` workflow uses local Ollama, so it runs without a hosted

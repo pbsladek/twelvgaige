@@ -1120,10 +1120,12 @@ Provider errors must be classified:
 
 - `:llm_timeout`
 - `:llm_rate_limited`
+- `:llm_quota_exhausted`
 - `:llm_auth_failed`
 - `:llm_bad_request`
 - `:llm_provider_unavailable`
 - `:llm_context_too_large`
+- `:llm_incomplete`
 - `:llm_unknown`
 
 Provider adapters must preserve retry hints when available:
@@ -1140,7 +1142,7 @@ Provider adapters must preserve retry hints when available:
 Retry defaults:
 
 - Retryable: timeout, rate-limited, provider unavailable, unknown
-- Non-retryable: auth failed, bad request, context too large unless trimming can fix it
+- Non-retryable: quota exhausted, auth failed, bad request, incomplete output, and context too large unless trimming can fix it
 
 ### 12.2 Provider Configuration
 
@@ -1154,6 +1156,10 @@ Common provider config:
 | `api_key` | Runtime secret value supplied by process options, application config, or environment. Never from shells. |
 | `api_key_ref` | Future secret key reference, not the key value. |
 | `base_url` | Optional endpoint override. |
+| `api` | OpenAI API selection: `responses` or `chat_completions`. |
+| `store` | Explicit OpenAI provider-side response storage choice; Responses defaults to `false`. |
+| `max_tokens` | Provider-neutral output limit; OpenAI Chat Completions serializes it as `max_completion_tokens`. |
+| `max_completion_tokens` | Optional explicit OpenAI Chat Completions output limit; overrides `max_tokens`. |
 | `timeout_ms` | Provider call timeout. |
 | `max_concurrent_calls` | Provider-specific concurrency cap. |
 | `default_headers` | Redacted, provider-specific headers. |
@@ -1164,7 +1170,7 @@ Provider-specific defaults:
 
 | Provider | Secret source | Endpoint behavior | Laptop concurrency default |
 | --- | --- | --- | ---: |
-| `openai` | `TWELVGAIGE_OPENAI_API_KEY`, `OPENAI_API_KEY`, or secret ref | Hosted API, optional base URL override from `TWELVGAIGE_OPENAI_BASE_URL` | 4 |
+| `openai` | `TWELVGAIGE_OPENAI_API_KEY`, `OPENAI_API_KEY`, or secret ref | Hosted Responses or Chat Completions API selected by `TWELVGAIGE_OPENAI_API`; optional exact endpoint override from `TWELVGAIGE_OPENAI_BASE_URL` | 4 |
 | `ollama` | none by default | Local HTTP endpoint, default host from `TWELVGAIGE_OLLAMA_BASE_URL`, `OLLAMA_HOST`, or local default | 1 |
 
 Ollama is treated as a local runtime. On the laptop profile, default global Ollama calls are capped at 1 because model inference can consume substantial CPU, RAM, and GPU/VRAM outside the BEAM. Users may raise this in `workstation` or `server` profiles.
@@ -1746,10 +1752,12 @@ Reasons include:
 - `:unsupported_condition`
 - `:llm_timeout`
 - `:llm_rate_limited`
+- `:llm_quota_exhausted`
 - `:llm_auth_failed`
 - `:llm_bad_request`
 - `:llm_provider_unavailable`
 - `:llm_context_too_large`
+- `:llm_incomplete`
 - `:llm_unknown`
 - `:input_schema_violation`
 - `:output_parse_error`
@@ -3193,6 +3201,11 @@ Tag meanings:
 | `:slow` | Tests expected to exceed normal unit-test timing. | excluded |
 
 Provider and Kubernetes live tests must require explicit environment opt-in in addition to tags, for example `TWELVGAIGE_PROVIDER_LIVE=1` or `TWELVGAIGE_K8S_LIVE=1`. The live Kubernetes smoke tests use `TWELVGAIGE_K8S_CONTEXT`, optional `TWELVGAIGE_K8S_NAMESPACE`, and optional `TWELVGAIGE_K8S_TIMEOUT_MS`; normal tests still use fake command runners.
+
+The OpenAI live provider gate qualifies Responses and Chat Completions
+independently. Each API must pass plain-text, strict structured-output, forced
+function-call, and tool-result continuation contracts, with separate retained
+logs.
 
 ### 26.0.2 Fixture Layout
 

@@ -78,11 +78,17 @@ Use `make doctor-live` first when setting up a machine for live tests. Live
 artifacts are written under `artifacts/live/<platform>` locally unless
 `LIVE_ARTIFACT_DIR` is overridden.
 
+The OpenAI live suite qualifies Responses and Chat Completions independently.
+Both run by default and each must pass plain-text, strict structured-output,
+forced function-call, and tool-result continuation contracts. Set
+`OPENAI_LIVE_APIS=responses` or `OPENAI_LIVE_APIS=chat_completions` to run one
+surface. Each surface writes a separate redacted test log.
+
 ## GitHub Workflows
 
 - `ci.yml`: format, compile, Credo, Sobelow, dependency advisories, unit and
-  persistence tests, authoring checks, and the 75%
-  aggregate coverage gate.
+  persistence tests, authoring checks, and aggregate plus critical-boundary
+  coverage gates, including a dedicated provider-adapter floor.
 - `e2e.yml`: offline process-level CLI checks on Linux and macOS.
 - `build.yml`: package and smoke-test escript, Mix release, and Burrito
   artifacts.
@@ -141,8 +147,9 @@ external systems and are manual/scheduled health checks, not ordinary PR gates.
 Coverage remains a separate required job instead of being folded into
 `make ci`. That keeps the default CI log shorter and preserves an explicit
 coverage artifact for review. It publishes LCOV, Cobertura XML, and ExCoveralls
-JSON for Elixir. Codecov enforces 75% project coverage and 90% changed-line
-coverage. The local qualification gate also enforces 85% for six critical
-authorization/schema modules and 55% for the two subprocess/protocol boundary
-modules. These repository gates run before any external upload and remain
-authoritative.
+JSON for Elixir. Codecov enforces 76% project coverage and 90% changed-line
+coverage. The local qualification gate also enforces 85% for critical
+authorization, schema, manager-dispatch, durable-store, and sandbox-reconciliation
+modules; 55% for the two subprocess/protocol boundary modules; and 65% for the
+OpenAI provider and shared provider-transport boundary. These repository gates
+run before any external upload and remain authoritative.

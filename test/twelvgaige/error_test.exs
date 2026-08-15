@@ -25,6 +25,8 @@ defmodule Twelvgaige.ErrorTest do
     refute error.retryable
     refute error.safety_required
     assert error.details == %{}
+    assert Error.valid_reason?(:llm_quota_exhausted)
+    assert Error.valid_reason?(:llm_incomplete)
   end
 
   test "converts to the CLI JSON error shape" do

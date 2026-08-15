@@ -7,6 +7,7 @@ defmodule Twelvgaige.LLM.ProviderConfigTest do
   @env_names [
     "TWELVGAIGE_OPENAI_API_KEY",
     "OPENAI_API_KEY",
+    "TWELVGAIGE_OPENAI_API",
     "TWELVGAIGE_OPENAI_BASE_URL",
     "TWELVGAIGE_OLLAMA_BASE_URL",
     "OLLAMA_HOST"
@@ -54,6 +55,14 @@ defmodule Twelvgaige.LLM.ProviderConfigTest do
     assert Keyword.fetch!(opts, :api_key) == "sk-specific"
   end
 
+  test "selects the OpenAI API from the environment" do
+    System.put_env("TWELVGAIGE_OPENAI_API", "responses")
+
+    opts = ProviderConfig.resolve(:openai, [])
+
+    assert Keyword.fetch!(opts, :api) == "responses"
+  end
+
   test "application runtime config wins over environment defaults" do
     System.put_env("OPENAI_API_KEY", "sk-env")
 
@@ -74,7 +83,11 @@ defmodule Twelvgaige.LLM.ProviderConfigTest do
     Application.put_env(:twelvgaige, :llm_providers, %{
       "openai" => %{
         "api_key" => "sk-map",
+        "api" => "responses",
         "base_url" => "https://api.example.test/v1/chat/completions",
+        "store" => false,
+        "max_tokens" => 128,
+        "max_completion_tokens" => 256,
         "timeout_ms" => 1_000,
         "allow_remote_provider_url" => true,
         "ignored" => "value"
@@ -84,7 +97,11 @@ defmodule Twelvgaige.LLM.ProviderConfigTest do
     opts = ProviderConfig.resolve("openai", [])
 
     assert Keyword.fetch!(opts, :api_key) == "sk-map"
+    assert Keyword.fetch!(opts, :api) == "responses"
     assert Keyword.fetch!(opts, :base_url) == "https://api.example.test/v1/chat/completions"
+    assert Keyword.fetch!(opts, :store) == false
+    assert Keyword.fetch!(opts, :max_tokens) == 128
+    assert Keyword.fetch!(opts, :max_completion_tokens) == 256
     assert Keyword.fetch!(opts, :timeout_ms) == 1_000
     assert Keyword.fetch!(opts, :allow_remote_provider_url)
     refute Keyword.has_key?(opts, :ignored)

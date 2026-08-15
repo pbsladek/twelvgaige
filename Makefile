@@ -27,6 +27,7 @@ SQLCIPHER_STORE_KEY_ENV ?= TWELVGAIGE_SQLCIPHER_SMOKE_KEY
 KEYCHAIN_LIVE ?= 0
 PROVIDER_LIVE ?= 0
 PROVIDER_LIVE_PROVIDERS ?=
+OPENAI_LIVE_APIS ?= responses,chat_completions
 K3D_LIVE ?= 0
 K3D_CLUSTER_PREFIX ?= twelvgaige-live
 K3D_NAMESPACE ?= default
@@ -146,7 +147,7 @@ help:
 	@printf "%s\n" "  make dependency-audit  Audit locked Hex dependencies"
 	@printf "%s\n" "  make typecheck         Run Dialyzer via Dialyxir"
 	@printf "%s\n" "  make test-local        Run default local test suite"
-	@printf "%s\n" "  make coverage          Run offline tests with the 75% aggregate coverage gate"
+	@printf "%s\n" "  make coverage          Run offline aggregate, critical, boundary, and provider coverage gates"
 	@printf "%s\n" "  make coverage-export   Generate coverage report and summary artifact"
 	@printf "%s\n" "  make e2e               Build escript and run offline CLI E2E"
 	@printf "%s\n" "  make e2e-artifacts     Run offline E2E and keep artifacts under $(E2E_ARTIFACT_DIR)"
@@ -627,8 +628,10 @@ e2e-k3d: deps
 e2e-provider-live: deps
 	@test "$(PROVIDER_LIVE)" = "1" || { printf "%s\n" "set PROVIDER_LIVE=1 to call live LLM provider APIs." >&2; exit 1; }
 	mkdir -p "$(LIVE_ARTIFACT_DIR)"
-	TWELVGAIGE_PROVIDER_LIVE=1 TWELVGAIGE_PROVIDER_LIVE_PROVIDERS='$(PROVIDER_LIVE_PROVIDERS)' MIX_ENV=test mix test --include provider_live test/twelvgaige/llm/provider_live_test.exs > "$(LIVE_ARTIFACT_DIR)/provider-live.log" 2>&1 || { cat "$(LIVE_ARTIFACT_DIR)/provider-live.log"; exit 1; }
-	cat "$(LIVE_ARTIFACT_DIR)/provider-live.log"
+	LIVE_ARTIFACT_DIR="$(LIVE_ARTIFACT_DIR)" \
+	TWELVGAIGE_PROVIDER_LIVE_PROVIDERS='$(PROVIDER_LIVE_PROVIDERS)' \
+	TWELVGAIGE_OPENAI_LIVE_APIS='$(OPENAI_LIVE_APIS)' \
+	scripts/run_provider_live_matrix.sh
 
 .PHONY: e2e-sqlcipher-live
 e2e-sqlcipher-live: sqlcipher-store-system

@@ -311,7 +311,8 @@ defmodule Twelvgaige.Shot.ExecutorTest do
     assert result.output == %{"summary" => "green"}
 
     assert_receive {:provider_request, request}
-    assert request.body["max_tokens"] == 10
+    assert request.body["max_completion_tokens"] == 10
+    refute Map.has_key?(request.body, "max_tokens")
     assert get_in(request.body, ["tools", Access.at(0), "function", "name"]) == "shell_read"
 
     assert get_in(request.body, ["response_format", "json_schema", "schema", "type"]) ==

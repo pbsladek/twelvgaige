@@ -12,6 +12,9 @@ defmodule Twelvgaige.Sandbox.Reconciler do
 
           {:error, reason} ->
             %{status: :quarantine, reason: reason}
+
+          other ->
+            %{status: :quarantine, reason: {:invalid_reconciliation_response, other}}
         end
 
       {resource_id, decision}

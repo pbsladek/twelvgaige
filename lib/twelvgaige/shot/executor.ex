@@ -104,6 +104,7 @@ defmodule Twelvgaige.Shot.Executor do
       Keyword.get(opts, :llm_opts, []) ++
         Keyword.take(opts, [
           :api_key,
+          :api,
           :base_url,
           :transport,
           :timeout_ms,

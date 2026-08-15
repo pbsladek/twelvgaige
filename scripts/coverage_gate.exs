@@ -7,7 +7,10 @@ defmodule Twelvgaige.Qualification.CoverageGate do
     Twelvgaige.DelegatedSession.Codex.EventCodec,
     Twelvgaige.DelegatedSession.Codex.Schema,
     Twelvgaige.Integration.Codex,
-    Twelvgaige.Manager.Executor.Codex
+    Twelvgaige.Manager.Executor.Codex,
+    Twelvgaige.Manager.Executor,
+    Twelvgaige.Manager.Store.Local,
+    Twelvgaige.Sandbox.Reconciler
   ]
 
   @boundary_modules [
@@ -15,10 +18,16 @@ defmodule Twelvgaige.Qualification.CoverageGate do
     Twelvgaige.DelegatedSession.Codex.AppServerClient
   ]
 
+  @provider_modules [
+    Twelvgaige.LLM.Providers.Common,
+    Twelvgaige.LLM.Providers.OpenAI
+  ]
+
   def run(files) do
-    threshold = threshold!("TWELVGAIGE_COVERAGE_THRESHOLD", 75.0)
+    threshold = threshold!("TWELVGAIGE_COVERAGE_THRESHOLD", 76.0)
     critical_threshold = threshold!("TWELVGAIGE_CRITICAL_COVERAGE_THRESHOLD", 85.0)
     boundary_threshold = threshold!("TWELVGAIGE_BOUNDARY_COVERAGE_THRESHOLD", 55.0)
+    provider_threshold = threshold!("TWELVGAIGE_PROVIDER_COVERAGE_THRESHOLD", 65.0)
     load_cover!()
     {:ok, _pid} = :cover.start()
     Enum.each(files, &import!/1)
@@ -38,10 +47,12 @@ defmodule Twelvgaige.Qualification.CoverageGate do
 
     total_percent = aggregate_percent!(measured_results)
 
-    line_results = line_coverage!(@critical_modules ++ @boundary_modules)
+    line_results =
+      line_coverage!(Enum.uniq(@critical_modules ++ @boundary_modules ++ @provider_modules))
 
     critical = module_results(@critical_modules, line_results)
     boundary = module_results(@boundary_modules, line_results)
+    providers = module_results(@provider_modules, line_results)
 
     critical_failures =
       Enum.flat_map(critical, fn result ->
@@ -53,7 +64,12 @@ defmodule Twelvgaige.Qualification.CoverageGate do
         if result.percent < boundary_threshold, do: [result], else: []
       end)
 
-    failures = critical_failures ++ boundary_failures
+    provider_failures =
+      Enum.flat_map(providers, fn result ->
+        if result.percent < provider_threshold, do: [result], else: []
+      end)
+
+    failures = critical_failures ++ boundary_failures ++ provider_failures
 
     evidence = %{
       schema_version: 1,
@@ -64,6 +80,8 @@ defmodule Twelvgaige.Qualification.CoverageGate do
       critical_modules: critical,
       boundary_threshold: boundary_threshold,
       boundary_modules: boundary,
+      provider_threshold: provider_threshold,
+      provider_modules: providers,
       inputs: Enum.map(files, &Path.relative_to_cwd/1)
     }
 
@@ -83,9 +101,13 @@ defmodule Twelvgaige.Qualification.CoverageGate do
         names = Enum.map_join(boundary_failures, ", ", &"#{&1.module}=#{&1.percent}%")
         raise "boundary module coverage is below #{boundary_threshold}%: #{names}"
 
+      provider_failures != [] ->
+        names = Enum.map_join(provider_failures, ", ", &"#{&1.module}=#{&1.percent}%")
+        raise "provider module coverage is below #{provider_threshold}%: #{names}"
+
       true ->
         IO.puts(
-          "Coverage qualification passed: aggregate=#{total_percent}% critical>=#{critical_threshold}% boundary>=#{boundary_threshold}%"
+          "Coverage qualification passed: aggregate=#{total_percent}% critical>=#{critical_threshold}% boundary>=#{boundary_threshold}% provider>=#{provider_threshold}%"
         )
     end
   after

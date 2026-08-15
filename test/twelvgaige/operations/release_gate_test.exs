@@ -290,22 +290,26 @@ defmodule Twelvgaige.Operations.ReleaseGateTest do
 
   defp qualification_now(root) do
     newest =
-      [
-        "qualification/evidence/operations/live-qualification.json",
-        "qualification/evidence/verification/podman-live-qualification.json",
-        "qualification/evidence/verification/apple-container-live-qualification.json",
-        "qualification/evidence/cli/developer-workflow.json",
-        "qualification/evidence/lifecycle/fault-matrix.json",
-        "qualification/evidence/migrations/previous-release.json",
-        "qualification/evidence/workspace/git-2.39.0-macos-arm64.json",
-        "qualification/evidence/cli/release-interrupt.json"
-      ]
-      |> Enum.map(fn relative ->
-        evidence = root |> Path.join(relative) |> File.read!() |> Jason.decode!()
-        generated_at = evidence["generated_at"] || evidence["observed_at"]
+      ReleaseGate.matrix()
+      |> Enum.flat_map(fn
+        %{evidence: relative} -> [relative]
+        _entry -> []
+      end)
+      |> Enum.uniq()
+      |> Enum.flat_map(fn relative ->
+        path = Path.join(root, relative)
 
-        {:ok, generated, _offset} = DateTime.from_iso8601(generated_at)
-        generated
+        if File.regular?(path) do
+          evidence = path |> File.read!() |> Jason.decode!()
+          generated_at = evidence["generated_at"] || evidence["observed_at"]
+
+          case DateTime.from_iso8601(generated_at || "") do
+            {:ok, generated, _offset} -> [generated]
+            _invalid -> []
+          end
+        else
+          []
+        end
       end)
       |> Enum.max_by(&DateTime.to_unix(&1, :microsecond))
 
